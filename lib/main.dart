@@ -16,7 +16,7 @@ const kInk = Color(0xFF1B1D22);
 const kGray = Color(0xFF7A808C);
 const kLine = Color(0xFFE3E6EC);
 const kDark = Color(0xFF262A31); // 검색 켜짐 등 진한 바탕
-const kRegion = Color(0xFFA9805F); // 지역 단추·펼친 시·도·동네 바탕 (파스텔 브라운)
+const kRegion = Color(0xFF3A4D66); // 지역 단추·고른 시·도·동네 바탕 (채도 낮은 어두운 파랑)
 const kDataBase = 'https://90mkr.github.io/df-app-lab/data/'; // 안드로이드 앱이 자료를 받아 오는 곳
 const kTop = 20; // 종류별로 지도에 보이는 수
 
@@ -908,43 +908,38 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
-      decoration: _card(),
-      child: Row(children: [
-        Flexible(
-          flex: middle == null ? 1 : 0,
-          fit: middle == null ? FlexFit.tight : FlexFit.loose,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // 지역 메뉴: 눈에 띄는 「지역」 단추, 옆의 지금 지역을 눌러도 열린다
-            GestureDetector(
-              onTap: onRegion,
-              behavior: HitTestBehavior.opaque,
-              child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(7, 5, 10, 5),
-                  decoration: BoxDecoration(color: kRegion, borderRadius: BorderRadius.circular(8)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    PinGlyph(size: 17, color: Colors.white, bg: kRegion),
-                    SizedBox(width: 3),
-                    Text('지역', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white, height: 1.2)),
-                  ]),
-                ),
-                const SizedBox(width: 8),
-                Text('${area.sido} ', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kInk)),
-                Text(area.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kInk)),
-                Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 22, color: kInk),
-              ]),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              sub,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11.5, color: kGray),
-            ),
-          ]),
+    final w = MediaQuery.of(context).size.width;
+    final inline = w >= 600; // 넓으면 설명 글을 지역 이름 오른쪽에
+    final region = GestureDetector(
+      onTap: onRegion,
+      behavior: HitTestBehavior.opaque,
+      child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
+        // 네모 지역 단추 (열리면 ✕)
+        Container(
+          width: 42,
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: kRegion, borderRadius: BorderRadius.circular(10)),
+          child: open ? const _XGlyph(size: 16) : const PinGlyph(size: 24, color: Colors.white, bg: kRegion),
         ),
+        const SizedBox(width: 10),
+        Text('${area.sido} ', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: kInk)),
+        Flexible(
+          child: Text(area.name,
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk)),
+        ),
+        Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 28, color: kInk),
+      ]),
+    );
+    final subText = Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: kGray));
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      decoration: _card(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          if (!inline) Expanded(child: Align(alignment: Alignment.centerLeft, child: region)) else Flexible(child: region),
+          if (inline && middle == null) ...[const SizedBox(width: 16), Expanded(child: subText)],
+          if (inline && middle != null) ...[const SizedBox(width: 16), Flexible(flex: 0, child: subText)],
         if (middle != null) ...[const SizedBox(width: 18), Expanded(child: middle!)],
         const SizedBox(width: 8),
         // 가게 이름 검색
@@ -973,12 +968,28 @@ class _Header extends StatelessWidget {
           ),
           child: const Text('순위', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
         ),
+        ]),
+        if (!inline) Padding(padding: const EdgeInsets.only(top: 6, left: 2), child: subText),
       ]),
     );
   }
 }
 
-// 지역 고르기: 시·도 3칸 격자, 누르면 그 줄 바로 아래에 구 단위 동네가 2칸으로 펼쳐진다
+// 직접 그린 ✕ (지역 메뉴 닫기)
+class _XGlyph extends StatelessWidget {
+  final double size;
+  const _XGlyph({required this.size});
+  @override
+  Widget build(BuildContext context) => Transform.rotate(
+        angle: math.pi / 4,
+        child: Stack(alignment: Alignment.center, children: [
+          Container(width: size * 1.25, height: 2, color: Colors.white),
+          Container(width: 2, height: size * 1.25, color: Colors.white),
+        ]),
+      );
+}
+
+// 지역 고르기: 왼쪽 시·도 목록, 오른쪽에 그 시·도의 동네 목록 (머리말 아래로 펼침)
 class RegionPanel extends StatefulWidget {
   final List<Sido> sidos;
   final Area current;
@@ -990,27 +1001,26 @@ class RegionPanel extends StatefulWidget {
 }
 
 class _RegionPanelState extends State<RegionPanel> {
-  late String? open = widget.current.sido;
-  static const kPanel = Color(0xFFF5F6F8);
+  late String sel = widget.current.sido;
+  static const kSide = Color(0xFFF3F5F8);
   static const kOff = Color(0xFFA9AEB8);
+  static const kSoft = Color(0xFFB7C3D4); // 진한 파랑 위의 흐린 글
 
   @override
   Widget build(BuildContext context) {
-    final rows = <List<Sido>>[];
-    for (var i = 0; i < widget.sidos.length; i += 3) {
-      rows.add(widget.sidos.sublist(i, math.min(i + 3, widget.sidos.length)));
-    }
+    final cur = widget.sidos.where((x) => x.name == sel).firstOrNull ?? widget.sidos.first;
+    final h = math.min(MediaQuery.of(context).size.height * 0.6, 460.0);
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.64),
       margin: const EdgeInsets.only(bottom: 8),
       decoration: _card(),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
+      clipBehavior: Clip.antiAlias,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+          child: Row(children: [
             const Text.rich(TextSpan(children: [
               TextSpan(text: '전국 ', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w400, color: kInk)),
-              TextSpan(text: '지역', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kInk)),
+              TextSpan(text: '지역 선택', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kInk)),
             ])),
             const Spacer(),
             InkWell(
@@ -1027,100 +1037,89 @@ class _RegionPanelState extends State<RegionPanel> {
               ),
             ),
           ]),
-          const SizedBox(height: 10),
-          Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: kLine, width: 1)),
-            child: Column(children: [
-              for (var r = 0; r < rows.length; r++) ...[
-                if (r > 0) const Divider(height: 1, thickness: 1, color: kLine),
-                IntrinsicHeight(
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    for (var c = 0; c < 3; c++) ...[
-                      if (c > 0) const VerticalDivider(width: 1, thickness: 1, color: kLine),
-                      Expanded(child: c < rows[r].length ? _sidoCell(rows[r][c]) : const SizedBox(height: 46)),
-                    ],
-                  ]),
-                ),
-                if (rows[r].any((s) => s.name == open)) _panel(rows[r].firstWhere((s) => s.name == open)),
-              ],
-            ]),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _sidoCell(Sido s) {
-    final isOpen = s.name == open;
-    return InkWell(
-      onTap: () => setState(() => open = isOpen ? null : s.name),
-      child: Container(
-        height: 46,
-        color: isOpen ? kRegion : Colors.white,
-        padding: const EdgeInsets.only(left: 16, right: 10),
-        child: Row(children: [
-          Text(s.name,
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: isOpen ? FontWeight.w700 : FontWeight.w600,
-                  color: isOpen ? Colors.white : (s.ready ? kInk : kOff))),
-          if (s.ready) ...[
-            const SizedBox(width: 5),
-            Container(width: 5, height: 5, decoration: const BoxDecoration(color: kFoodTint, shape: BoxShape.circle)),
-          ],
-          const Spacer(),
-          Icon(isOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 20, color: isOpen ? Colors.white : kGray),
-        ]),
-      ),
-    );
-  }
-
-  Widget _panel(Sido s) {
-    if (s.areas.isEmpty) {
-      return Container(
-        width: double.infinity, // 가로 전체를 채운다
-        color: kRegion,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        child: const Text('준비 중입니다. 인천부터 차례로 넓혀 갑니다.', style: TextStyle(fontSize: 13, color: Color(0xFFF3E9E1))),
-      );
-    }
-    final pairs = <List<Area>>[];
-    for (var i = 0; i < s.areas.length; i += 2) {
-      pairs.add(s.areas.sublist(i, math.min(i + 2, s.areas.length)));
-    }
-    return Container(
-      width: double.infinity,
-      color: kRegion,
-      padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
-      child: Column(children: [
-        for (final pr in pairs)
-          Row(children: [
-            for (var c = 0; c < 2; c++) Expanded(child: c < pr.length ? _areaItem(pr[c]) : const SizedBox()),
+        ),
+        const Divider(height: 1, thickness: 1, color: kLine),
+        SizedBox(
+          height: h,
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            // 시·도
+            Container(
+              width: 96,
+              color: kSide,
+              child: ListView(padding: const EdgeInsets.symmetric(vertical: 6), children: [
+                for (final x in widget.sidos)
+                  InkWell(
+                    onTap: () => setState(() => sel = x.name),
+                    child: Container(
+                      height: 46,
+                      color: x.name == cur.name ? kRegion : Colors.transparent,
+                      padding: const EdgeInsets.only(left: 18),
+                      alignment: Alignment.centerLeft,
+                      child: Row(children: [
+                        Text(x.name,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: x.name == cur.name ? FontWeight.w700 : FontWeight.w600,
+                              color: x.name == cur.name ? Colors.white : (x.ready ? kInk : kOff),
+                            )),
+                        if (x.ready) ...[
+                          const SizedBox(width: 5),
+                          Container(width: 5, height: 5, decoration: const BoxDecoration(color: kFoodTint, shape: BoxShape.circle)),
+                        ],
+                      ]),
+                    ),
+                  ),
+              ]),
+            ),
+            // 동네
+            Expanded(
+              child: Container(
+                color: kRegion,
+                child: ListView(padding: const EdgeInsets.fromLTRB(18, 8, 10, 12), children: [
+                  SizedBox(
+                    height: 44,
+                    child: Row(children: [
+                      Text(cur.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                      const SizedBox(width: 8),
+                      Text(cur.ready ? '${cur.areas.where((a) => a.ready).length}곳 이용 가능' : '준비 중',
+                          style: const TextStyle(fontSize: 12, color: kSoft)),
+                    ]),
+                  ),
+                  Container(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                  if (cur.areas.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text('준비 중입니다. 인천부터 차례로 넓혀 갑니다.', style: TextStyle(fontSize: 13.5, color: kSoft, height: 1.5)),
+                    )
+                  else
+                    for (final a in cur.areas) _areaRow(a),
+                ]),
+              ),
+            ),
           ]),
+        ),
       ]),
     );
   }
 
-  Widget _areaItem(Area a) {
+  Widget _areaRow(Area a) {
     final ok = a.ready;
     final on = a.id == widget.current.id;
     return InkWell(
       onTap: ok ? () => widget.onPick(a) : null,
       child: SizedBox(
-        height: 42,
+        height: 46,
         child: Row(children: [
           Flexible(
             child: Text(a.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 14, fontWeight: on ? FontWeight.w700 : FontWeight.w400, color: ok ? Colors.white : const Color(0xFFE2D2C4))),
+                style: TextStyle(fontSize: 15, fontWeight: on ? FontWeight.w700 : FontWeight.w400, color: ok ? Colors.white : kSoft.withValues(alpha: 0.7))),
           ),
-          if (on) ...[const SizedBox(width: 4), const Icon(Icons.check_rounded, size: 16, color: Colors.white)],
-          if (!ok) ...[const SizedBox(width: 6), const Text('준비 중', style: TextStyle(fontSize: 11, color: Color(0xFFE2D2C4)))],
+          if (on) ...[const SizedBox(width: 6), const Icon(Icons.check_rounded, size: 17, color: Colors.white)],
+          if (!ok) ...[const SizedBox(width: 8), Text('준비 중', style: TextStyle(fontSize: 11.5, color: kSoft.withValues(alpha: 0.7)))],
           const Spacer(),
-          Icon(Icons.chevron_right_rounded, size: 18, color: ok ? Colors.white : const Color(0xFFD2BCA9)),
-          const SizedBox(width: 6),
+          if (ok) const Icon(Icons.chevron_right_rounded, size: 20, color: Colors.white),
         ]),
       ),
     );
