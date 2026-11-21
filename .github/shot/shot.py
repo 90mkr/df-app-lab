@@ -119,7 +119,14 @@ def run(pg):
     b = find("올라온 영상", exact=False)
     if b:
         log.append(f"새로 올라온 영상 위치 {b}")
-    if tap_text("전국 지도", 5):
+    log.append("따라먹기 글자: " + " / ".join(x for x in labels() if "따라" in x or "전국" in x)[:600])
+    ok = tap_text("전국 지도", 5)
+    if not ok:
+        b = find("따라 먹기", exact=False)
+        log.append(f"따라 먹기 제목 위치 {b}")
+        tap(352, 413, 5)  # 제목 줄 오른쪽 「전국 지도」 자리
+        ok = True
+    if ok:
         shot("따라가기_처음")
         for _ in range(4):
             tap(356, 732, 1.0)
