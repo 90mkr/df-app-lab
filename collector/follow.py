@@ -30,7 +30,7 @@ YT = "https://www.googleapis.com/youtube/v3/"
 MAX_PAGES = int(os.environ.get("FOLLOW_PAGES", "60"))     # 처음 한 번, 채널당 최대 3,000개
 KAKAO_MAX = int(os.environ.get("FOLLOW_KAKAO", "9000"))   # 한 번에 카카오에 묻는 최대 수
 SIDO_ONLY = [x.strip() for x in os.environ.get("FOLLOW_SIDO", "").split(",") if x.strip()]  # 시범: "서울"
-VER = 6      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
+VER = 7      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
 BOILER = 8   # 한 채널의 영상 8개 이상에 같은 주소 → 가게가 아니라 회사·문의 주소로 본다
 
 SIDO = r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|충청[남북]도|전라[남북]도|경상[남북]도)"
@@ -40,7 +40,8 @@ ADDR_RE = re.compile(SIDO + r"[가-힣]*\s+[가-힣]{1,6}(시|군|구)(\s+[가-�
 SKIP_LINE = re.compile(r"(문의|사서함|팬레터|우편|보내실|사무실|본사|회사|협찬|제휴|광고|구독|business|contact)", re.I)
 GENERIC = re.compile(r"^(위치|주소|장소|location|information|info|식당\s*정보|가게\s*정보|매장\s*정보|정보|영업\s*시간|운영\s*시간|메뉴|가격|길찾기"
                      r"|((google|naver|kakao|구글|네이버|카카오)\s*)?(maps?|지도|맵)"
-                     r"|중식|한식|일식|양식|분식|간식|겨울\s*간식|디저트|카페|베이커리|술집|맛집|노포|대한민국|한국|korea|[가-힣]{1,4}점)$", re.I)
+                     r"|중식|한식|일식|양식|분식|간식|겨울\s*간식|디저트|카페|베이커리|술집|맛집|노포|대한민국|한국|korea|[가-힣]{1,4}점"
+                     r"|(지점|매장|가게|식당)\s*(안내|정보|위치|목록)|(찾아)?오시는\s*길)$", re.I)
 NUMBERED = re.compile(r"^\s*(\d{1,2}\s*[.)]|[0-9]️?⃣|[①-⑳])")
 EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2190-\u21FF\u2500-\u27BF\u2B00-\u2BFF\u200b-\u200f\ufeff\ufe0f\u20e3]")   # 그림글자·화살표·■▣▶ 같은 기호
 QUOTED = re.compile(r"['‘’\"“”\[【]([^'‘’\"“”\[\]【】]{2,30})['‘’\"“”\]】]")
@@ -139,9 +140,10 @@ def name_for(lines, i, m):
             n = bracket(t) or clean_name(t)
             if n:
                 return n
-        n = bracket(t)
-        if n:
-            return n
+        if k == 1:
+            n = bracket(t)   # [가게명] 은 주소 바로 윗줄일 때만 (「[지점 안내]」 같은 머리말은 건너뜀)
+            if n:
+                return n
         if not near and k <= 2:
             near = clean_name(t)
     return near
