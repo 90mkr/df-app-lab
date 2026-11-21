@@ -1194,7 +1194,7 @@ class _MapPageState extends State<MapPage> {
                   points: [for (final p in course!.stops) p.point],
                   color: kAccent,
                   strokeWidth: 3,
-                  pattern: const StrokePattern.dashed(segments: [10, 7]),
+                  pattern: StrokePattern.dashed(segments: const [10, 7]),
                 ),
               ]),
             MarkerLayer(

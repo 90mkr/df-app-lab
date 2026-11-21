@@ -502,6 +502,7 @@ def yt_channels(all_out):
         for v in o.get("vids", []):
             vids.setdefault(v["id"], []).append(v)
     cc = load_json(CHANNELS, {})
+    today = dt.date.today()
     if YOUTUBE_KEY:
         try:
             need = [vid for vid, vs in vids.items() if not vs[0].get("cid")]
@@ -513,9 +514,8 @@ def yt_channels(all_out):
                         v["cid"] = it["snippet"].get("channelId", "")
                         if hd:
                             v["mx"] = 1  # 고화질 표지가 있는 영상 (앱의 큰 사진)
-            today = dt.date.today()
             cids = {v["cid"] for vs in vids.values() for v in vs if v.get("cid")}
-            stale = [c for c in cids if c not in cc or (today - dt.date.fromisoformat(cc[c].get("d", "2000-01-01"))).days > 30]
+            stale = [c for c in cids if c not in cc or (today - dt.date.fromisoformat(cc[c].get("d", "2000-01-01"))).days > 25]  # 25일 지나면 새로 (30일 넘기지 않게)
             for i in range(0, len(stale), 50):
                 q = urllib.parse.urlencode({"part": "snippet,statistics", "id": ",".join(stale[i:i + 50]), "key": YOUTUBE_KEY})
                 for it in get_json("https://www.googleapis.com/youtube/v3/channels?" + q).get("items", []):
@@ -526,9 +526,11 @@ def yt_channels(all_out):
                         "s": int(it.get("statistics", {}).get("subscriberCount", 0) or 0),
                         "d": today.isoformat(),
                     }
-            save_json(CHANNELS, cc)
         except Exception as e:
             print("유튜버 정보 중단:", str(e)[:120])
+    # 유튜브 정책: 채널 정보(프로필 사진 주소·구독자 수)는 30일 넘게 두지 않는다 — 그새 새로 못 받은 채널은 지운다(앱은 첫 글자로)
+    cc = {k: x for k, x in cc.items() if (today - dt.date.fromisoformat(x.get("d", "2000-01-01"))).days <= 30}
+    save_json(CHANNELS, cc)
     per = {}
     for o in all_out:
         seen = set()

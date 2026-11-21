@@ -1100,7 +1100,8 @@ class _PointerPainter extends CustomPainter {
 }
 
 // 유튜버 동그라미 + 이름 + 다녀간 수
-// 유튜버 프로필 사진은 본인 얼굴인 경우가 많아 쓰지 않고, 이름 첫 글자로 보여 준다 (시안도 첫 글자)
+// 사진은 유튜브 공식 연동(채널 정보)으로 받은 프로필 이미지 — 수집기가 30일 안에 새로 받고, 못 받은 채널은 이름 첫 글자
+// (스토어 소개 사진·광고에는 유튜버 이미지를 쓰지 않는다)
 class ChanAvatar extends StatelessWidget {
   final Chan c;
   final Color ring;
@@ -1110,16 +1111,28 @@ class ChanAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = _bgs[c.name.hashCode.abs() % _bgs.length];
+    final initial = Container(
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: Text(c.initial, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+    );
     final circle = Container(
       width: 58,
       height: 58,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ring, width: 1)),
-      child: Container(
-        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-        alignment: Alignment.center,
-        child: Text(c.initial, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-      ),
+      child: c.thumb.isEmpty
+          ? initial
+          : ClipOval(
+              child: Image.network(
+                c.thumb,
+                fit: BoxFit.cover,
+                width: 52,
+                height: 52,
+                webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                errorBuilder: (_, __, ___) => initial,
+              ),
+            ),
     );
     if (!label) return circle;
     return SizedBox(
