@@ -12,6 +12,11 @@ on:
         description: '이번에 모을 동네 (쉼표로, 비우면 전부)'
         required: false
         default: ''
+      follow_only:
+        description: '유튜버 따라가기만 모으기 (동네 자료는 그대로)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -30,7 +35,16 @@ jobs:
       - name: 저장소 받기
         uses: actions/checkout@v7
 
+      - name: 유튜버 따라가기 모으기
+        timeout-minutes: 30
+        continue-on-error: true
+        env:
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
+        run: python3 -u collector/follow.py
+
       - name: 맛집 자료 모으기
+        if: ${{ !inputs.follow_only }}
         timeout-minutes: 45
         env:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}

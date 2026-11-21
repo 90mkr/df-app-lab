@@ -1918,7 +1918,7 @@ class SettingsPage extends StatelessWidget {
               const SizedBox(height: 16),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4),
-                child: Text('영상과 표지 사진의 저작권은 각 유튜버에게 있습니다. 지도 © OpenStreetMap · 모범음식점 정보 행정안전부(공공데이터포털)',
+                child: Text('영상과 표지 사진의 저작권은 각 유튜버에게 있습니다.\n지도 © OpenStreetMap · 모범음식점 정보 행정안전부(공공데이터포털)',
                     style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub, height: 1.4)),
               ),
             ]),
