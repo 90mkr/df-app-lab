@@ -39,7 +39,7 @@ YOUTUBE_KEY = os.environ.get("YOUTUBE_KEY", "").strip()
 # 구글 지도(별점·리뷰 수) 열쇠 — 따로 없으면 유튜브 열쇠를 같이 쓴다
 GOOGLE_KEY = (os.environ.get("GOOGLE_KEY", "") or YOUTUBE_KEY).strip()
 GOOGLE_MAX = int(os.environ.get("GOOGLE_MAX", "30"))   # 하루 새로 조회하는 최대 수 (무료 범위 유지)
-GOOGLE_DAYS = int(os.environ.get("GOOGLE_DAYS", "14"))  # 같은 가게는 이 기간 동안 다시 조회하지 않음
+GOOGLE_DAYS = int(os.environ.get("GOOGLE_DAYS", "90"))  # 같은 가게는 석 달 동안 다시 조회하지 않음 (순위는 자주 안 바뀜)
 MIN_REVIEWS = int(os.environ.get("MIN_REVIEWS", "30"))  # 구글 리뷰가 이보다 적으면 순위 제외
 CACHE = os.path.join(os.path.dirname(__file__), "..", "web", "data", "google_cache.json")
 PLACES_CACHE = os.path.join(os.path.dirname(__file__), "places_cache.json")  # 가게 목록 (7일마다 새로)
