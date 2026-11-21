@@ -3,7 +3,7 @@ import re
 import sys
 
 path = "android/app/src/main/AndroidManifest.xml"
-label = sys.argv[1] if len(sys.argv) > 1 else "송도 맛집"
+label = sys.argv[1] if len(sys.argv) > 1 else "콕플"
 s = open(path, encoding="utf-8").read()
 
 if "android.permission.INTERNET" not in s:
@@ -25,6 +25,10 @@ if "android.intent.action.DIAL" not in s:
         <intent>
             <action android:name="android.intent.action.DIAL" />
             <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
         </intent>"""
     if "<queries>" in s:
         s = s.replace("<queries>", "<queries>" + extra, 1)

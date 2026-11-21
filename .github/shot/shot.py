@@ -110,6 +110,9 @@ def run(pg):
         time.sleep(1.5)
     tap_text("내 콕")
     shot("내콕")
+    if tap_text("설정", 2):
+        shot("설정")
+        tap_text("뒤로", 1.5)
     # 지역 메뉴 → 영종도
     tap_text("홈")
     b = find("지역", exact=False)
@@ -148,6 +151,21 @@ with sync_playwright() as p:
             pg.screenshot(path=f"{OUT}/99_중단.png")
         except Exception:
             pass
+    # 태블릿(세로 820×1180) — 영상은 한 줄에 2개
+    try:
+        pg.set_viewport_size({"width": 820, "height": 1180})
+        time.sleep(3)
+        b = None
+        for lab in ("영상",):
+            loc = pg.get_by_role("button", name=lab, exact=True)
+            if loc.count():
+                b = loc.first.bounding_box()
+        if b:
+            pg.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+            time.sleep(3)
+        pg.screenshot(path=f"{OUT}/97_태블릿_영상.png")
+    except Exception as e:
+        log.append(f"[태블릿] {e}")
     # 넓은 화면도 한 장
     try:
         pg.set_viewport_size({"width": 1280, "height": 800})
@@ -155,6 +173,27 @@ with sync_playwright() as p:
         pg.screenshot(path=f"{OUT}/98_넓은화면.png")
     except Exception as e:
         log.append(f"[넓은 화면] {e}")
+    # 유튜브 표지 확인 (여러 크기 · CORS · 쇼츠)
+    try:
+        vid = "9FVJZsbhIUM"
+        for nm in ("hqdefault", "mqdefault", "maxresdefault", "hq720", "sddefault"):
+            r = ctx.request.get(f"https://i.ytimg.com/vi/{vid}/{nm}.jpg")
+            hd = r.headers
+            log.append(f"[표지] {nm}: {r.status} cors={hd.get('access-control-allow-origin')} 크기={len(r.body())}")
+            if r.status == 200:
+                open(f"{OUT}/thumb_{nm}.jpg", "wb").write(r.body())
+        import json as _j
+        ids = []
+        try:
+            d = _j.load(open("web/data/songdo.json", encoding="utf-8"))
+            ids = [v["id"] for p in d["places"] for v in p["vids"]][:12]
+        except Exception as e:
+            log.append(f"[쇼츠] 자료 못 읽음 {e}")
+        for v in ids:
+            r = ctx.request.fetch(f"https://www.youtube.com/shorts/{v}", method="HEAD", max_redirects=0)
+            log.append(f"[쇼츠] {v}: {r.status}")
+    except Exception as e:
+        log.append(f"[표지 확인] {e}")
     br.close()
 
 with open(f"{OUT}/log.txt", "w", encoding="utf-8") as f:

@@ -30,7 +30,7 @@ jobs:
       - name: 저장소 받기
         uses: actions/checkout@v7
 
-      - name: 송도 맛집 자료 모으기
+      - name: 맛집 자료 모으기
         timeout-minutes: 45
         env:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
@@ -45,7 +45,7 @@ jobs:
           git config user.name "df-app-lab"
           git config user.email "dfmail@naver.com"
           git add -f web/data/*.json collector/*.json
-          git commit -m "송도 맛집 자료 갱신" || exit 0
+          git commit -m "맛집 자료 갱신" || exit 0
           git pull --rebase origin main
           git push
 
@@ -78,14 +78,15 @@ jobs:
         if: steps.webcache.outputs.cache-hit != 'true'
         run: |
           flutter create --org kr.designfeel --project-name df_app_lab --platforms web .
-          sed -i 's#<title>.*</title>#<title>송도 맛집 지도</title>#' web/index.html
+          sed -i 's#<title>.*</title>#<title>콕플 – 유튜브 맛집 지도</title>#' web/index.html
           flutter pub get
           flutter build web --release --base-href /df-app-lab/
 
       - name: 최신 맛집 자료 넣기
         run: |
-          mkdir -p build/web/data
+          mkdir -p build/web/data build/web/policy
           cp web/data/*.json build/web/data/
+          cp web/policy/*.html build/web/policy/
 
       - name: 새 화면이 바로 보이게 (판 번호 찍기)
         run: python3 tool/stamp_web.py ${{ github.run_id }}
@@ -144,7 +145,7 @@ jobs:
       - name: 빠진 기본 파일 채우기
         run: |
           flutter create --org kr.designfeel --project-name df_app_lab --platforms android,web .
-          python3 tool/patch_android.py "송도 맛집"
+          python3 tool/patch_android.py "콕플"
 
       - name: 안드로이드 설치 파일 만들기
         run: |

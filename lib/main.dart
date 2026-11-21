@@ -32,7 +32,7 @@ class DfApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '송도 맛집',
+      title: '콕플',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'Pretendard',
@@ -209,6 +209,7 @@ class Area {
   final bool ready;
   final List<double>? bbox; // 서쪽 경도, 남쪽 위도, 동쪽 경도, 북쪽 위도
   final int count, food, cafe; // 수집할 때 미리 센 가게 수 (축소 화면 숫자 묶음용)
+  final List<String> tour; // 동네 테마 이름 (굵은 앞말, 가는 뒷말) — 예: 송도 한 바퀴
   Area(Map<String, dynamic> j, this.sido)
       : id = j['id'] ?? '',
         name = j['name'] ?? '',
@@ -221,7 +222,8 @@ class Area {
         bbox = j['bbox'] is List ? (j['bbox'] as List).map((e) => (e as num).toDouble()).toList() : null,
         count = (j['count'] ?? 0) as int,
         food = (j['food'] ?? 0) as int,
-        cafe = (j['cafe'] ?? 0) as int;
+        cafe = (j['cafe'] ?? 0) as int,
+        tour = ((j['tour'] ?? []) as List).map((e) => '$e').toList();
   LatLng get center => LatLng(lat, lng);
   List<double> get box => bbox ?? [lng - 0.05, lat - 0.04, lng + 0.05, lat + 0.04];
   bool contains(LatLng p) => p.longitude >= box[0] && p.longitude <= box[2] && p.latitude >= box[1] && p.latitude <= box[3];
@@ -581,12 +583,12 @@ class _MapPageState extends State<MapPage> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             mixTitle(c.bold, c.light, size: 18),
             const SizedBox(height: 3),
-            Text('${c.stops.length}곳 · ${c.trip} (직선 거리로 어림)', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w300, color: kSub)),
+            Text(c.route ? '${c.stops.length}곳 · ${c.trip} (직선 거리로 어림)' : c.sub, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w300, color: kSub)),
           ]),
         ),
         rows: [
           for (var i = 0; i < c.stops.length; i++) ...[
-            if (i > 0)
+            if (i > 0 && c.route)
               Padding(
                 padding: const EdgeInsets.only(left: 22, top: 2, bottom: 2),
                 child: Text('↓ ${distText(meters(c.stops[i - 1].point, c.stops[i].point))}', style: const TextStyle(fontSize: 10.5, color: kSub)),
@@ -956,7 +958,7 @@ class _MapPageState extends State<MapPage> {
   String subText(int total, int cards) {
     final d = data;
     final cs = course;
-    if (cs != null) return '${cs.name} · ${cs.stops.length}곳을 순서대로 이었어요';
+    if (cs != null) return cs.route ? '${cs.name} · ${cs.stops.length}곳을 순서대로 이었어요' : '${cs.name} · ${cs.stops.length}곳';
     if (zoom < kClusterZoom) return '동네별 가게 수  ·  확대하면 가게가 보여요';
     if (d == null) return '맛집 자료를 불러오는 중';
     if (query.isNotEmpty) return total == 0 ? '「$query」 찾는 집이 없습니다' : '「$query」 $total곳';
@@ -1190,7 +1192,7 @@ class _MapPageState extends State<MapPage> {
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'kr.designfeel.df_app_lab',
             ),
-            if (course != null)
+            if (course != null && course!.route)
               PolylineLayer(polylines: [
                 Polyline(
                   points: [for (final p in course!.stops) p.point],
