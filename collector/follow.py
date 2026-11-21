@@ -28,9 +28,9 @@ CACHE = os.path.join(HERE, "follow_cache.json")
 OUT = os.path.join(HERE, "..", "web", "data", "follow.json")
 YT = "https://www.googleapis.com/youtube/v3/"
 MAX_PAGES = int(os.environ.get("FOLLOW_PAGES", "60"))     # 처음 한 번, 채널당 최대 3,000개
-KAKAO_MAX = int(os.environ.get("FOLLOW_KAKAO", "5000"))   # 한 번에 카카오에 묻는 최대 수
+KAKAO_MAX = int(os.environ.get("FOLLOW_KAKAO", "9000"))   # 한 번에 카카오에 묻는 최대 수
 SIDO_ONLY = [x.strip() for x in os.environ.get("FOLLOW_SIDO", "").split(",") if x.strip()]  # 시범: "서울"
-VER = 2      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
+VER = 3      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
 BOILER = 8   # 한 채널의 영상 8개 이상에 같은 주소 → 가게가 아니라 회사·문의 주소로 본다
 
 SIDO = r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|충청[남북]도|전라[남북]도|경상[남북]도)"
@@ -38,7 +38,9 @@ SIDO = r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|
 ADDR_RE = re.compile(SIDO + r"[가-힣]*\s+[가-힣]{1,6}(시|군|구)(\s+[가-힣]{1,6}(구|읍|면))?\s+[가-힣0-9·.]{1,15}(로|길|동|가|리)"
                      r"\s*\d{1,4}(-\d{1,4})?(\s*번?길\s*\d{1,4}(-\d{1,4})?)?")
 SKIP_LINE = re.compile(r"(문의|사서함|팬레터|우편|보내실|사무실|본사|회사|협찬|제휴|광고|구독|business|contact)", re.I)
-GENERIC = re.compile(r"^(위치|주소|장소|location|information|info|식당\s*정보|가게\s*정보|매장\s*정보|정보|영업\s*시간|운영\s*시간|메뉴|가격|지도|네이버\s*지도|구글\s*지도)$", re.I)
+GENERIC = re.compile(r"^(위치|주소|장소|location|information|info|식당\s*정보|가게\s*정보|매장\s*정보|정보|영업\s*시간|운영\s*시간|메뉴|가격|길찾기"
+                     r"|((google|naver|kakao|구글|네이버|카카오)\s*)?(maps?|지도|맵)"
+                     r"|중식|한식|일식|양식|분식|간식|겨울\s*간식|디저트|카페|베이커리|술집|맛집|노포|[가-힣]{1,4}점)$", re.I)
 NUMBERED = re.compile(r"^\s*(\d{1,2}\s*[.)]|[0-9]️?⃣|[①-⑳])")
 EMOJI = re.compile(r"[\U0001F000-\U0001FAFF☀-➿⬀-⯿️⃣]")
 QUOTED = re.compile(r"['‘’\"“”\[【]([^'‘’\"“”\[\]【】]{2,30})['‘’\"“”\]】]")
@@ -85,7 +87,7 @@ def kakao(path, **q):
 
 # ---------- 설명란에서 가게 이름·주소 뽑기 ----------
 
-PRICE = re.compile(r"(KRW|USD|\$|₩|가격|\d{1,3}(,\d{3})+|\d+\s*원(\s|$)|영업|휴무|매주|시간|주차|예약|택배)", re.I)
+PRICE = re.compile(r"(KRW|USD|\$|₩|가격|\d{1,3}(,\d{3})+|\d+\s*원(\s|$)|영업|운영|휴무|매주|시간|주차|예약|택배|\d+시)", re.I)
 LABEL = re.compile(r"^(상호\s*명?|가게\s*(명|이름)?|식당\s*(명|이름)?|매장\s*명?|업체\s*명?|장소)\s*[:：]\s*")
 
 
@@ -175,6 +177,11 @@ def sim(a, b):
     return len(ga & gb) / len(ga | gb)
 
 
+def chars(a, b):
+    a, b = set(C.norm(C.base_name(a))), set(C.norm(C.base_name(b)))
+    return len(a & b) / max(len(a), len(b), 1)
+
+
 def geocode(addr, cache):
     g = cache["g"].get(addr)
     if g is not None:
@@ -228,8 +235,13 @@ def resolve(name, addr, cache):
         if name:
             docs = kakao("search/keyword.json", query=name, x=g["x"], y=g["y"], radius=250, sort="distance", size=10).get("documents", [])
             for d in docs:
+                if not foodish(d):
+                    continue
+                dist = int(d.get("distance") or 9999)
                 s = sim(d.get("place_name", ""), name)
-                if s > score and int(d.get("distance") or 9999) <= 250 and foodish(d):
+                if dist <= 30 and s < 0.5 and chars(d.get("place_name", ""), name) >= 0.6:
+                    s = 0.55   # 같은 건물, 비슷한 이름
+                if s > score and dist <= 250:
                     best, score = d, s
         if score < 0.5:
             # 이름이 없거나 안 맞으면 그 주소 자리(30m 안)의 음식점·카페
