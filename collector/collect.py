@@ -157,15 +157,32 @@ def kakao_blog(query):
     return {"items": items}
 
 
+def blog_home(url):
+    """글 주소에서 블로그 첫 화면 주소를 뽑는다."""
+    m = re.match(r"https?://(?:m\.)?blog\.naver\.com/([^/?#]+)", url or "")
+    if m:
+        return f"https://blog.naver.com/{m.group(1)}"
+    m = re.match(r"(https?://[^/]+\.tistory\.com)", url or "")
+    if m:
+        return m.group(1)
+    m = re.match(r"(https?://[^/]+)", url or "")
+    return m.group(1) if m else ""
+
+
 def blog_stats(place):
     base = base_name(place["place_name"])
     key = norm(base)
     query = f"{AREA_NAME} {base}"
     res = naver_blog(query) if (NAVER_ID and NAVER_SECRET) else kakao_blog(query)
     since = (dt.date.today() - dt.timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
-    clean_posts, ad_count = [], 0
+    clean_posts, ad_count, home = [], 0, ""
     for it in res.get("items", []):
         title, desc = clean(it.get("title")), clean(it.get("description"))
+        # 블로그 이름에 가게 이름이 들어 있으면 가게가 직접 쓰는 블로그 → 바로가기로만 쓰고 점수에선 뺀다
+        if len(key) >= 2 and key in norm(clean(it.get("bloggername"))):
+            if not home:
+                home = blog_home(it.get("link"))
+            continue
         if key not in norm(title + desc):
             continue
         if (it.get("postdate") or "0") < since:
@@ -190,7 +207,7 @@ def blog_stats(place):
             oldest = dt.datetime.strptime(min(dates), "%Y%m%d").date()
             span = max((dt.date.today() - oldest).days, 3)
             est = round(len(clean_posts) * RECENT_DAYS / span)
-    return clean_posts, ad_count, est
+    return clean_posts, ad_count, est, home
 
 
 # ---------- 3. 유튜브 ----------
@@ -231,14 +248,14 @@ def rank_kind(kind, code, label, prev):
 
     def one(p):
         try:
-            posts, ads, est = blog_stats(p)
+            posts, ads, est, home = blog_stats(p)
         except Exception as e:
             print("블로그 실패", p["place_name"], str(e)[:120])
-            posts, ads, est = [], 0, 0
+            posts, ads, est, home = [], 0, 0, ""
         done[0] += 1
         if done[0] % 200 == 0:
             print(f"  [{label}] 블로그 {done[0]}/{len(places)}")
-        return {"p": p, "posts": posts, "ads": ads, "est": est, "vids": prev.get(str(p["id"]), [])}
+        return {"p": p, "posts": posts, "ads": ads, "est": est, "home": home, "vids": prev.get(str(p["id"]), [])}
 
     with ThreadPoolExecutor(max_workers=6) as ex:
         rows = list(ex.map(one, places))
@@ -273,6 +290,7 @@ def rank_kind(kind, code, label, prev):
             "addr": p.get("road_address_name") or p.get("address_name"),
             "tel": p.get("phone"),
             "kakao": p.get("place_url"),
+            "home": r["home"],
             "blog": r["est"],
             "ads": r["ads"],
             "score": round(100 * r["raw"] / top),

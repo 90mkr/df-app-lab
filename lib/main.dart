@@ -60,7 +60,7 @@ class Video {
 }
 
 class Place {
-  final String id, kind, name, cat, addr, tel, kakao;
+  final String id, kind, name, cat, addr, tel, kakao, home;
   final double lat, lng;
   final int blog, ads, score;
   final List<Post> posts;
@@ -73,6 +73,7 @@ class Place {
         addr = j['addr'] ?? '',
         tel = j['tel'] ?? '',
         kakao = j['kakao'] ?? '',
+        home = j['home'] ?? '',
         lat = (j['lat'] as num).toDouble(),
         lng = (j['lng'] as num).toDouble(),
         blog = j['blog'] ?? 0,
@@ -497,6 +498,10 @@ class PlaceSheet extends StatelessWidget {
             Expanded(child: _Btn(label: '카카오맵', onTap: () => openUrl(p.kakao))),
             const SizedBox(width: 8),
             Expanded(child: _Btn(label: '네이버 지도', onTap: () => openUrl(naver))),
+            if (p.home.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Expanded(child: _Btn(label: '가게 블로그', onTap: () => openUrl(p.home))),
+            ],
             if (p.tel.isNotEmpty) ...[
               const SizedBox(width: 8),
               Expanded(child: _Btn(label: '전화', primary: true, onTap: () => openUrl('tel:${p.tel}'))),
@@ -565,7 +570,7 @@ class PlaceSheet extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 12),
-          const Text('블로그 글은 제목과 앞부분만 보여 드리며, 누르면 원래 글로 이동합니다.', style: TextStyle(fontSize: 11, color: kGray)),
+          const Text('블로그 글은 제목과 앞부분만 보여 드리며, 누르면 원래 글로 이동합니다. 가게가 직접 쓴 글과 광고 의심 글은 점수에서 뺐습니다.', style: TextStyle(fontSize: 11, color: kGray)),
         ],
       ),
     );
