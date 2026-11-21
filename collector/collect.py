@@ -25,7 +25,9 @@ from concurrent.futures import ThreadPoolExecutor
 AREA = (126.600, 37.355, 126.700, 37.420)
 AREA_NAME = "송도"
 RECENT_DAYS = 90
-YOUTUBE_TOP = int(os.environ.get("YOUTUBE_TOP", "80"))
+YOUTUBE_TOP = int(os.environ.get("YOUTUBE_TOP", "30"))  # 종류별 유튜브 확인 수
+TOP_N = int(os.environ.get("TOP_N", "20"))  # 종류별로 앱에 남기는 수
+KINDS = [("food", "FD6", "맛집"), ("cafe", "CE7", "카페")]
 OUT = os.path.join(os.path.dirname(__file__), "..", "web", "data", "songdo.json")
 
 AD_WORDS = ["협찬", "체험단", "원고료", "소정의", "제공받", "지원받", "광고", "업체로부터", "서포터즈", "무료로 제공"]
@@ -57,9 +59,9 @@ def get_json(url, headers=None, tries=3):
 
 # ---------- 1. 카카오: 음식점 목록 ----------
 
-def kakao_rect(x1, y1, x2, y2, page):
+def kakao_rect(x1, y1, x2, y2, page, code="FD6"):
     q = urllib.parse.urlencode({
-        "category_group_code": "FD6",
+        "category_group_code": code,
         "rect": f"{x1},{y1},{x2},{y2}",
         "page": page,
         "size": 15,
@@ -68,7 +70,7 @@ def kakao_rect(x1, y1, x2, y2, page):
                     {"Authorization": f"KakaoAK {KAKAO_KEY}"})
 
 
-def collect_places():
+def collect_places(code="FD6"):
     """송도 범위를 약 1km 칸으로 나누고, 한 칸에 45곳이 넘으면 4칸씩 3번까지 더 쪼갠다."""
     places = {}
     calls = [0]
@@ -76,7 +78,7 @@ def collect_places():
     def fetch_all(x1, y1, x2, y2):
         docs, page = [], 1
         while True:
-            res = kakao_rect(x1, y1, x2, y2, page)
+            res = kakao_rect(x1, y1, x2, y2, page, code)
             calls[0] += 1
             docs += res["documents"]
             if res["meta"]["is_end"] or page >= 3:
@@ -84,7 +86,7 @@ def collect_places():
             page += 1
 
     def walk(x1, y1, x2, y2, depth):
-        first = kakao_rect(x1, y1, x2, y2, 1)
+        first = kakao_rect(x1, y1, x2, y2, 1, code)
         calls[0] += 1
         total = first["meta"]["total_count"]
         if total > 45 and depth < 3:
@@ -222,15 +224,9 @@ def short_category(cat):
     return parts[2] if len(parts) > 2 else (parts[-1] if parts else "")
 
 
-def main():
-    if not KAKAO_KEY:
-        print("열쇠가 없습니다: KAKAO_REST_KEY")
-        sys.exit(1)
-    print("블로그 검색:", "네이버" if (NAVER_ID and NAVER_SECRET) else "다음(카카오)")
-
-    places = collect_places()
-    print(f"카카오 음식점 {len(places)}곳")
-
+def rank_kind(kind, code, label, prev):
+    places = collect_places(code)
+    print(f"[{label}] 카카오 {len(places)}곳")
     done = [0]
 
     def one(p):
@@ -240,23 +236,14 @@ def main():
             print("블로그 실패", p["place_name"], str(e)[:120])
             posts, ads, est = [], 0, 0
         done[0] += 1
-        if done[0] % 100 == 0:
-            print(f"  블로그 {done[0]}/{len(places)}")
-        return {"p": p, "posts": posts, "ads": ads, "est": est, "vids": []}
+        if done[0] % 200 == 0:
+            print(f"  [{label}] 블로그 {done[0]}/{len(places)}")
+        return {"p": p, "posts": posts, "ads": ads, "est": est, "vids": prev.get(str(p["id"]), [])}
 
     with ThreadPoolExecutor(max_workers=6) as ex:
         rows = list(ex.map(one, places))
-
     rows.sort(key=lambda r: r["est"], reverse=True)
-    # 지난번 자료의 유튜브 영상은 그대로 이어 쓴다 (하루 사용량이 모자라 못 찾은 곳 대비)
-    prev = {}
-    try:
-        with open(OUT, encoding="utf-8") as f:
-            prev = {str(o["id"]): o.get("vids", []) for o in json.load(f).get("places", [])}
-    except Exception:
-        pass
-    for r in rows:
-        r["vids"] = prev.get(str(r["p"]["id"]), [])
+
     if YOUTUBE_KEY:
         for r in rows[:YOUTUBE_TOP]:
             if not r["posts"]:
@@ -266,16 +253,19 @@ def main():
                 if found:
                     r["vids"] = found
             except Exception as e:
-                print("유튜브 중단:", e)
+                print("유튜브 중단:", str(e)[:120])
                 break
 
-    out = []
     for r in rows:
+        r["raw"] = 10 * math.log2(1 + r["est"]) + 6 * min(len(r["vids"]), 3)
+    rows.sort(key=lambda r: r["raw"], reverse=True)
+    top = max([r["raw"] for r in rows] + [1])
+    out = []
+    for r in rows[:TOP_N]:
         p = r["p"]
-        n_blog = r["est"]
-        raw = 10 * math.log2(1 + n_blog) + 6 * min(len(r["vids"]), 3)
         out.append({
             "id": p["id"],
+            "kind": kind,
             "name": p["place_name"],
             "cat": short_category(p.get("category_name")),
             "lat": float(p["y"]),
@@ -283,30 +273,48 @@ def main():
             "addr": p.get("road_address_name") or p.get("address_name"),
             "tel": p.get("phone"),
             "kakao": p.get("place_url"),
-            "blog": n_blog,
+            "blog": r["est"],
             "ads": r["ads"],
-            "raw": round(raw, 2),
+            "score": round(100 * r["raw"] / top),
             "posts": r["posts"][:6],
             "vids": r["vids"],
         })
+    return out, len(places)
 
-    top = max([o["raw"] for o in out] + [1])
-    for o in out:
-        o["score"] = round(100 * o.pop("raw") / top)
-    out.sort(key=lambda o: o["score"], reverse=True)
+
+def main():
+    if not KAKAO_KEY:
+        print("열쇠가 없습니다: KAKAO_REST_KEY")
+        sys.exit(1)
+    print("블로그 검색:", "네이버" if (NAVER_ID and NAVER_SECRET) else "다음(카카오)")
+
+    # 지난번 자료의 유튜브 영상은 이어 쓴다 (하루 사용량이 모자라 못 찾은 곳 대비)
+    prev = {}
+    try:
+        with open(OUT, encoding="utf-8") as f:
+            prev = {str(o["id"]): o.get("vids", []) for o in json.load(f).get("places", [])}
+    except Exception:
+        pass
+
+    all_out, scanned = [], {}
+    for kind, code, label in KINDS:
+        out, n = rank_kind(kind, code, label, prev)
+        all_out += out
+        scanned[kind] = n
+        print(f"[{label}] 상위 {len(out)}곳: " + ", ".join(o["name"] for o in out[:5]) + " …")
 
     data = {
         "area": AREA_NAME,
         "updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
         "recent_days": RECENT_DAYS,
-        "count": len(out),
-        "places": out,
+        "scanned": scanned,
+        "count": len(all_out),
+        "places": all_out,
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
-    hot = sum(1 for o in out if o["score"] >= 30)
-    print(f"저장 완료: {len(out)}곳, 화제 30점 이상 {hot}곳")
+    print(f"저장 완료: {len(all_out)}곳 ({os.path.getsize(OUT) // 1024}KB)")
 
 
 if __name__ == "__main__":

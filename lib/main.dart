@@ -14,7 +14,7 @@ const kGray = Color(0xFF7A808C);
 const kLine = Color(0xFFE3E6EC);
 const kDataUrl = 'https://90mkr.github.io/df-app-lab/data/songdo.json';
 const kCenter = LatLng(37.3905, 126.6430);
-const kHot = 40; // 이 점수 이상만 기본으로 지도에 보인다
+const kTop = 20; // 종류별로 지도에 보이는 수
 
 void main() => runApp(const DfApp());
 
@@ -60,13 +60,14 @@ class Video {
 }
 
 class Place {
-  final String id, name, cat, addr, tel, kakao;
+  final String id, kind, name, cat, addr, tel, kakao;
   final double lat, lng;
   final int blog, ads, score;
   final List<Post> posts;
   final List<Video> vids;
   Place(Map<String, dynamic> j)
       : id = '${j['id']}',
+        kind = j['kind'] ?? 'food',
         name = j['name'] ?? '',
         cat = j['cat'] ?? '',
         addr = j['addr'] ?? '',
@@ -115,8 +116,8 @@ class _MapPageState extends State<MapPage> {
   final map = MapController();
   SongdoData? data;
   String? error;
-  String cat = '전체';
-  bool showAll = false;
+  String kind = 'food';
+  String get kindLabel => kind == 'cafe' ? '카페' : '맛집';
 
   @override
   void initState() {
@@ -134,26 +135,12 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  List<String> get cats {
-    final d = data;
-    if (d == null) return ['전체'];
-    final count = <String, int>{};
-    for (final p in d.places.where((p) => p.score >= kHot)) {
-      if (p.cat.isEmpty) continue;
-      count[p.cat] = (count[p.cat] ?? 0) + 1;
-    }
-    final top = count.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    return ['전체', ...top.take(7).map((e) => e.key)];
-  }
-
   List<Place> get visible {
     final d = data;
     if (d == null) return [];
-    return d.places.where((p) {
-      if (!showAll && p.score < kHot) return false;
-      if (cat != '전체' && p.cat != cat) return false;
-      return true;
-    }).toList();
+    final list = d.places.where((p) => p.kind == kind && p.score > 0).toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    return list.take(kTop).toList();
   }
 
   void openPlace(Place p) {
@@ -168,7 +155,7 @@ class _MapPageState extends State<MapPage> {
   }
 
   void openRank() {
-    final list = visible..sort((a, b) => b.score.compareTo(a.score));
+    final list = visible;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -186,8 +173,9 @@ class _MapPageState extends State<MapPage> {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text.rich(TextSpan(children: [
-                  const TextSpan(text: '화제 순위 ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
-                  TextSpan(text: '${cat == '전체' ? '' : '$cat · '}${list.length}곳', style: const TextStyle(fontSize: 13, color: kGray)),
+                  TextSpan(text: '송도 $kindLabel ', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: kInk)),
+                  TextSpan(text: '화제 순위', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
+                  TextSpan(text: '  상위 ${list.length}곳', style: const TextStyle(fontSize: 13, color: kGray)),
                 ])),
               );
             }
@@ -225,7 +213,6 @@ class _MapPageState extends State<MapPage> {
   @override
   Widget build(BuildContext context) {
     final list = visible;
-    final labelIds = (List<Place>.from(list)..sort((a, b) => b.score.compareTo(a.score))).take(25).map((p) => p.id).toSet();
     return Scaffold(
       body: Stack(children: [
         FlutterMap(
@@ -238,12 +225,12 @@ class _MapPageState extends State<MapPage> {
             ),
             MarkerLayer(
               markers: [
-                for (final p in list.reversed)
+                for (var i = list.length - 1; i >= 0; i--)
                   Marker(
-                    point: p.point,
-                    width: 140,
+                    point: list[i].point,
+                    width: 150,
                     height: 64,
-                    child: PlaceMarker(place: p, showLabel: labelIds.contains(p.id), onTap: () => openPlace(p)),
+                    child: PlaceMarker(place: list[i], rank: i + 1, onTap: () => openPlace(list[i])),
                   ),
               ],
             ),
@@ -254,17 +241,16 @@ class _MapPageState extends State<MapPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _Header(data: data, onRank: data == null ? null : openRank),
+              _Header(data: data, kindLabel: kindLabel, onRank: data == null ? null : openRank),
               const SizedBox(height: 8),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(children: [
-                  for (final c in cats)
+                  for (final k in const [['food', '맛집'], ['cafe', '카페']])
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
-                      child: _Chip(label: c, on: c == cat, onTap: () => setState(() => cat = c)),
+                      child: _Chip(label: k[1], on: kind == k[0], onTap: () => setState(() => kind = k[0])),
                     ),
-                  _Chip(label: showAll ? '화제 맛집만 보기' : '전체 음식점 보기', on: showAll, onTap: () => setState(() => showAll = !showAll)),
                 ]),
               ),
             ]),
@@ -313,12 +299,12 @@ BoxDecoration _card({double r = 14}) => BoxDecoration(
 
 class _Header extends StatelessWidget {
   final SongdoData? data;
+  final String kindLabel;
   final VoidCallback? onRank;
-  const _Header({required this.data, required this.onRank});
+  const _Header({required this.data, required this.kindLabel, required this.onRank});
 
   @override
   Widget build(BuildContext context) {
-    final hot = data?.places.where((p) => p.score >= kHot).length ?? 0;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
       decoration: _card(),
@@ -327,11 +313,11 @@ class _Header extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text.rich(TextSpan(children: [
               TextSpan(text: '송도 ', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w400, color: kInk)),
-              TextSpan(text: '맛집 지도', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: kInk)),
+              TextSpan(text: '맛집·카페 지도', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: kInk)),
             ])),
             const SizedBox(height: 2),
             Text(
-              data == null ? '블로그·유튜브 화제 순' : '블로그·유튜브 화제 $hot곳  ·  ${data!.updated} 기준',
+              data == null ? '블로그·유튜브 화제 순' : '$kindLabel 화제 상위 $kTop곳  ·  ${data!.updated} 기준',
               style: const TextStyle(fontSize: 11.5, color: kGray),
             ),
           ]),
@@ -377,15 +363,15 @@ class _Chip extends StatelessWidget {
 
 class PlaceMarker extends StatelessWidget {
   final Place place;
-  final bool showLabel;
+  final int rank;
   final VoidCallback onTap;
-  const PlaceMarker({super.key, required this.place, required this.showLabel, required this.onTap});
+  const PlaceMarker({super.key, required this.place, required this.rank, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final s = place.score;
-    final size = s <= 0 ? 8.0 : 10.0 + s / 100 * 12;
-    final color = s <= 0 ? const Color(0xFFB9BEC8) : Color.lerp(const Color(0xFF8FB0FF), kBlue, s / 100)!;
+    final size = rank <= 3 ? 18.0 : 14.0;
+    final color = rank <= 3 ? kBlue : Color.lerp(const Color(0xFF8FB0FF), kBlue, s / 100)!;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.translucent,
@@ -403,8 +389,7 @@ class PlaceMarker extends StatelessWidget {
         ),
         SizedBox(
           height: 22,
-          child: showLabel
-              ? Container(
+          child: Container(
                   margin: const EdgeInsets.only(top: 3),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
@@ -412,9 +397,15 @@ class PlaceMarker extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: kLine, width: 1),
                   ),
-                  child: Text(place.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: kInk)),
-                )
-              : null,
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: '$rank ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: rank <= 3 ? kBlue : kGray)),
+                      TextSpan(text: place.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: kInk)),
+                    ]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
         ),
       ]),
     );
