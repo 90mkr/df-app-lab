@@ -587,12 +587,12 @@ class PlaceMarker extends StatelessWidget {
                     width: img,
                     height: img,
                     child: thumb.isEmpty
-                        ? kindFill(place.kind, img * 0.42)
+                        ? kindFill(place.kind, img * 0.58)
                         : Image.network(
                             thumb,
                             fit: BoxFit.cover,
                             webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                            errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.42),
+                            errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.58),
                           ),
                   ),
                 ),
@@ -693,8 +693,85 @@ IconData kindIconFilled(String kind) => kind == 'cafe' ? Icons.local_cafe : Icon
 Widget kindFill(String kind, double size) => Container(
       color: kindTint(kind),
       alignment: Alignment.center,
-      child: Icon(kindIconFilled(kind), size: size, color: Colors.white),
+      child: KindGlyph(kind: kind, size: size, bg: kindTint(kind)),
     );
+
+// 직접 그린 그림: 맛집은 요리사 모자, 카페는 원두
+class KindGlyph extends StatelessWidget {
+  final String kind;
+  final double size;
+  final Color color, bg;
+  const KindGlyph({super.key, required this.kind, required this.size, this.color = Colors.white, required this.bg});
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.square(size), painter: kind == 'cafe' ? _BeanPainter(color, bg) : _ChefHatPainter(color, bg));
+}
+
+class _ChefHatPainter extends CustomPainter {
+  final Color color, bg;
+  _ChefHatPainter(this.color, this.bg);
+  @override
+  void paint(Canvas c, Size s) {
+    final k = s.width / 24;
+    final p = Paint()
+      ..color = color
+      ..isAntiAlias = true;
+    // 위쪽 몽실한 부분 (둥근 세 덩이)
+    c.drawCircle(Offset(7.2 * k, 10.2 * k), 4.5 * k, p);
+    c.drawCircle(Offset(12 * k, 7.4 * k), 5.3 * k, p);
+    c.drawCircle(Offset(16.8 * k, 10.2 * k), 4.5 * k, p);
+    // 몸통
+    c.drawRect(Rect.fromLTRB(7.4 * k, 10.2 * k, 16.6 * k, 16.8 * k), p);
+    // 주름 두 줄
+    final pleat = Paint()
+      ..color = bg
+      ..strokeWidth = 1.0 * k
+      ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true;
+    c.drawLine(Offset(10.4 * k, 12.6 * k), Offset(10.4 * k, 16.2 * k), pleat);
+    c.drawLine(Offset(13.6 * k, 12.6 * k), Offset(13.6 * k, 16.2 * k), pleat);
+    // 아래 띠 (몸통과 살짝 띄움)
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTRB(7.4 * k, 17.8 * k, 16.6 * k, 20.8 * k), Radius.circular(1 * k)), p);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChefHatPainter o) => o.color != color || o.bg != bg;
+}
+
+class _BeanPainter extends CustomPainter {
+  final Color color, bg;
+  _BeanPainter(this.color, this.bg);
+  @override
+  void paint(Canvas c, Size s) {
+    final k = s.width / 24;
+    c.save();
+    c.translate(12 * k, 12 * k);
+    c.rotate(-0.6); // 비스듬히 누운 원두
+    c.drawOval(
+      Rect.fromCenter(center: Offset.zero, width: 12.6 * k, height: 18.4 * k),
+      Paint()
+        ..color = color
+        ..isAntiAlias = true,
+    );
+    // 가운데 갈라진 홈 (S자)
+    final groove = ui.Path()
+      ..moveTo(0, -8.4 * k)
+      ..cubicTo(-3.4 * k, -3 * k, 3.4 * k, 3 * k, 0, 8.4 * k);
+    c.drawPath(
+      groove,
+      Paint()
+        ..color = bg
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8 * k
+        ..strokeCap = StrokeCap.round
+        ..isAntiAlias = true,
+    );
+    c.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _BeanPainter o) => o.color != color || o.bg != bg;
+}
 String thumbOf(Place p) => p.vids.isNotEmpty ? 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg' : '';
 
 // 방송 출연 표시 (진한 회색, 작게)
@@ -737,7 +814,7 @@ class IconMarker extends StatelessWidget {
             border: Border.all(color: kindEdge(place.kind), width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 6)],
           ),
-          child: Icon(kindIconFilled(place.kind), size: 14, color: Colors.white),
+          child: KindGlyph(kind: place.kind, size: 18, bg: kindTint(place.kind)),
         ),
         Transform.translate(
           offset: const Offset(0, -1.5),
