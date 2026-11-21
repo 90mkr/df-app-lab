@@ -920,6 +920,8 @@ def run_all():
     only = [x for x in os.environ.get("AREAS", "").split(",") if x]
     if only:
         areas = [a for a in areas if a["id"] in only]
+    # 새 동네를 먼저: 이미 연 동네는 저장된 자료가 있어 하루 늦어도 괜찮다
+    areas.sort(key=lambda a: bool(a.get("ready")))
     for a in areas:
         AREA = tuple(a["bbox"])
         AREA_NAME = a.get("q") or a["name"]
