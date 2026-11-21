@@ -1,4 +1,4 @@
-"""자동 제작 때 안드로이드 설정을 맞춘다: 인터넷 권한, 앱 이름, 바깥 링크 열기 허용."""
+"""자동 제작 때 안드로이드 설정을 맞춘다: 인터넷·위치 권한, 앱 이름, 바깥 링크 열기 허용."""
 import re
 import sys
 
@@ -8,6 +8,11 @@ s = open(path, encoding="utf-8").read()
 
 if "android.permission.INTERNET" not in s:
     s = s.replace("<application", '<uses-permission android:name="android.permission.INTERNET"/>\n    <application', 1)
+
+# 내 주변 맛집: 위치 권한
+for perm in ("ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"):
+    if f"android.permission.{perm}" not in s:
+        s = s.replace("<application", f'<uses-permission android:name="android.permission.{perm}"/>\n    <application', 1)
 
 s = re.sub(r'android:label="[^"]*"', f'android:label="{label}"', s, count=1)
 

@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -71,6 +72,7 @@ class Place {
   final List<List<int>> hours; // [여는 요일, 시각(hhmm), 닫는 요일, 시각] 요일 0=일, 닫는 시각 없으면 -1
   final List<String> week; // "월요일: 오전 11:00~오후 9:00" 같은 7줄
   final List<String> tv; // 출연한 방송 이름 (블로그 글로 확인)
+  final bool big; // 대형 카페 (블로그 글로 확인)
   final List<String> feat; // 편의 정보 (주차·애견 동반 등, 구글 기준)
   Place(Map<String, dynamic> j)
       : id = '${j['id']}',
@@ -94,6 +96,7 @@ class Place {
         hours = ((j['hours'] ?? []) as List).map((e) => (e as List).map((x) => (x as num).toInt()).toList()).toList(),
         week = ((j['week'] ?? []) as List).map((e) => '$e').toList(),
         tv = ((j['tv'] ?? []) as List).map((e) => '$e').toList(),
+        big = j['big'] == true,
         feat = ((j['feat'] ?? []) as List).map((e) => '$e').toList();
   LatLng get point => LatLng(lat, lng);
 }
@@ -145,6 +148,33 @@ OpenInfo? openInfo(Place p) {
   if (next[0] == day && nextIn < 1440) return OpenInfo(false, '준비 중', '준비 중 · ${hm(next[1])} 시작');
   final when = (next[0] == (day + 1) % 7 && nextIn < 2 * 1440) ? '내일' : '${kDays[next[0]]}요일';
   return OpenInfo(false, '영업 종료', '영업 종료 · $when ${hm(next[1])} 시작');
+}
+
+double meters(LatLng a, LatLng b) {
+  const r = 6371000.0;
+  final dLat = (b.latitude - a.latitude) * math.pi / 180;
+  final dLng = (b.longitude - a.longitude) * math.pi / 180;
+  final h = math.pow(math.sin(dLat / 2), 2) +
+      math.cos(a.latitude * math.pi / 180) * math.cos(b.latitude * math.pi / 180) * math.pow(math.sin(dLng / 2), 2);
+  return 2 * r * math.asin(math.sqrt(h));
+}
+
+String distText(double m) => m < 1000 ? '${(m / 10).round() * 10}m' : '${(m / 1000).toStringAsFixed(1)}km';
+
+// 내 위치 (거부·실패하면 null)
+Future<LatLng?> myLocation() async {
+  try {
+    if (!kIsWeb && !await Geolocator.isLocationServiceEnabled()) return null;
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return null;
+    final pos = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 12)),
+    );
+    return LatLng(pos.latitude, pos.longitude);
+  } catch (_) {
+    return null;
+  }
 }
 
 // ---------------- 지역 (전국 확장용: 시·도 → 동네) ----------------
@@ -232,9 +262,43 @@ class _MapPageState extends State<MapPage> {
   Area area = kDefaultArea;
   SongdoData? data;
   String? error;
-  String kind = 'all'; // all 전체, tv 방송탄, food 맛집, cafe 카페
+  String kind = 'all'; // all 전체, near 내 주변, tv 방송탄, food 맛집, cafe 카페, big 대형 카페
+  LatLng? me; // 내 위치
+  bool locating = false;
+  static const kNearMeters = 3000.0; // 내 주변: 3km 안
   double zoom = 13;
-  String get kindLabel => switch (kind) { 'cafe' => '카페', 'food' => '맛집', 'tv' => '방송탄 집', _ => '맛집·카페' };
+  String get kindLabel => switch (kind) {
+        'cafe' => '카페',
+        'food' => '맛집',
+        'tv' => '방송탄 집',
+        'near' => '내 주변',
+        'big' => '대형 카페',
+        _ => '맛집·카페',
+      };
+
+  // 분류 단추를 눌렀을 때: 내 주변은 위치부터 확인
+  Future<void> pickKind(String k) async {
+    if (k != 'near') {
+      setState(() => kind = k);
+      return;
+    }
+    setState(() {
+      kind = 'near';
+      locating = true;
+    });
+    final pos = await myLocation();
+    if (!mounted) return;
+    setState(() {
+      locating = false;
+      if (pos != null) me = pos;
+    });
+    if (pos == null) {
+      setState(() => kind = 'all');
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('내 위치를 확인하지 못했습니다. 위치 사용을 허용해 주세요.')));
+      return;
+    }
+    map.move(pos, 15);
+  }
 
   @override
   void initState() {
@@ -308,6 +372,14 @@ class _MapPageState extends State<MapPage> {
     var src = d.places.where((p) => p.score > 0);
     if (kind == 'food' || kind == 'cafe') src = src.where((p) => p.kind == kind);
     if (kind == 'tv') src = src.where((p) => p.tv.isNotEmpty);
+    if (kind == 'big') src = src.where((p) => p.kind == 'cafe' && p.big);
+    if (kind == 'near') {
+      final at = me;
+      if (at == null) return [];
+      final near = src.where((p) => meters(at, p.point) <= kNearMeters).toList()
+        ..sort((a, b) => meters(at, a.point).compareTo(meters(at, b.point)));
+      return near.take(kTop).toList();
+    }
     final list = src.toList()..sort((a, b) => b.score.compareTo(a.score));
     return (kind == 'food' || kind == 'cafe') ? list.take(kTop).toList() : list;
   }
@@ -349,6 +421,20 @@ class _MapPageState extends State<MapPage> {
       out[i] = got ?? (2, 0);
     }
     return out;
+  }
+
+  String subText(int total, int cards) {
+    final d = data;
+    if (d == null) return '맛집 자료를 불러오는 중';
+    if (kind == 'near') {
+      if (locating || me == null) return '내 위치를 확인하는 중';
+      if (total == 0) return '3km 안에 아직 자료가 있는 집이 없습니다';
+      return '내 위치에서 가까운 $total곳  ·  가까운 순';
+    }
+    if (total == 0) {
+      return kind == 'big' ? '대형 카페는 매일 새벽에 확인합니다' : kind == 'tv' ? '방송탄 집은 매일 새벽에 확인합니다' : '아직 자료가 없습니다';
+    }
+    return cards < total ? '$kindLabel 상위 $total곳 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $total곳  ·  ${d.updated} 기준';
   }
 
   Marker markerFor(Place p, int i, int t, int d) {
@@ -405,8 +491,8 @@ class _MapPageState extends State<MapPage> {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text.rich(TextSpan(children: [
-                  TextSpan(text: '${area.name} $kindLabel ', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: kInk)),
-                  TextSpan(text: '화제 순위', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
+                  TextSpan(text: kind == 'near' ? '내 주변 ' : '${area.name} $kindLabel ', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: kInk)),
+                  TextSpan(text: kind == 'near' ? '가까운 순' : '화제 순위', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
                   TextSpan(text: '  상위 ${list.length}곳', style: const TextStyle(fontSize: 13, color: kGray)),
                 ])),
               );
@@ -440,7 +526,9 @@ class _MapPageState extends State<MapPage> {
                         final o = openInfo(p);
                         return Text.rich(
                           TextSpan(children: [
-                            if (kind == 'all' || kind == 'tv')
+                            if (kind == 'near' && me != null)
+                              TextSpan(text: '${distText(meters(me!, p.point))}  ·  ', style: const TextStyle(fontWeight: FontWeight.w600, color: kInk)),
+                            if (kind == 'all' || kind == 'tv' || kind == 'near')
                               TextSpan(
                                 text: p.kind == 'cafe' ? '카페  ·  ' : '맛집  ·  ',
                                 style: TextStyle(fontWeight: FontWeight.w600, color: kindTint(p.kind)),
@@ -496,7 +584,25 @@ class _MapPageState extends State<MapPage> {
               userAgentPackageName: 'kr.designfeel.df_app_lab',
             ),
             MarkerLayer(
-              markers: [for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2)],
+              markers: [
+                for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2),
+                if (me != null)
+                  Marker(
+                    key: const ValueKey('me'),
+                    point: me!,
+                    width: 22,
+                    height: 22,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 6)],
+                      ),
+                      child: Container(decoration: const BoxDecoration(color: kBlue, shape: BoxShape.circle)),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
@@ -505,15 +611,15 @@ class _MapPageState extends State<MapPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _Header(data: data, area: area, onRegion: openRegion, kindLabel: kindLabel, total: list.length, cards: cards, onRank: data == null ? null : openRank),
+              _Header(data: data, area: area, onRegion: openRegion, sub: subText(list.length, cards), onRank: data == null ? null : openRank),
               const SizedBox(height: 8),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(children: [
-                  for (final k in const [['all', '전체'], ['tv', '방송탄'], ['food', '맛집'], ['cafe', '카페']])
+                  for (final k in const [['all', '전체'], ['near', '내 주변'], ['tv', '방송탄'], ['food', '맛집'], ['cafe', '카페'], ['big', '대형 카페']])
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
-                      child: _Chip(label: k[1], on: kind == k[0], onTap: () => setState(() => kind = k[0])),
+                      child: _Chip(label: k[1], on: kind == k[0], onTap: () => pickKind(k[0])),
                     ),
                 ]),
               ),
@@ -541,16 +647,17 @@ class _MapPageState extends State<MapPage> {
                     ]),
             ),
           ),
-        if (data != null && kind == 'tv' && list.isEmpty)
+        if (data != null && (kind == 'tv' || kind == 'big') && list.isEmpty)
           Center(
             child: Container(
               margin: const EdgeInsets.all(30),
               padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
               decoration: _card(),
-              child: const Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('방송 나온 집을 확인하고 있습니다', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: kInk)),
-                SizedBox(height: 4),
-                Text('매일 새벽 블로그 글로 자동 확인합니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4)),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(kind == 'tv' ? '방송 나온 집을 확인하고 있습니다' : '대형 카페를 확인하고 있습니다',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: kInk)),
+                const SizedBox(height: 4),
+                const Text('매일 새벽 블로그 글로 자동 확인합니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4)),
               ]),
             ),
           ),
@@ -578,18 +685,9 @@ class _Header extends StatelessWidget {
   final SongdoData? data;
   final Area area;
   final VoidCallback onRegion;
-  final String kindLabel;
-  final int total, cards;
+  final String sub;
   final VoidCallback? onRank;
-  const _Header({
-    required this.data,
-    required this.area,
-    required this.onRegion,
-    required this.kindLabel,
-    required this.total,
-    required this.cards,
-    required this.onRank,
-  });
+  const _Header({required this.data, required this.area, required this.onRegion, required this.sub, required this.onRank});
 
   @override
   Widget build(BuildContext context) {
@@ -612,11 +710,7 @@ class _Header extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              data == null
-                  ? '블로그·유튜브 화제 순'
-                  : total == 0
-                      ? '$kindLabel 확인 중  ·  매일 새벽에 확인합니다'
-                      : (cards < total ? '$kindLabel 상위 $total곳 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $total곳  ·  ${data!.updated} 기준'),
+              sub,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11.5, color: kGray),

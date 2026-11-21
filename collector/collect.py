@@ -331,6 +331,33 @@ def tv_check(name):
     return found[:2]
 
 
+BIG_KEYS = ("대형카페", "초대형카페", "대형베이커리카페")
+
+
+def big_check(name):
+    """대형 카페: '대형카페'가 가게 이름 가까이 나오는 블로그 글이 2개 이상(또는 제목 1개)이면 인정."""
+    base = base_name(name)
+    key = norm(base)
+    if len(key) < 3:
+        return False
+    q = urllib.parse.urlencode({"query": f"{base} 대형카페", "sort": "accuracy", "size": 50})
+    res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
+    near = 0
+    for d in res.get("documents", []):
+        title = norm(clean(d.get("title")))
+        text = title + "|" + norm(clean(d.get("contents")))
+        spots = [m.start() for m in re.finditer(re.escape(key), text)]
+        if not spots:
+            continue
+        if key in title and any(k in title for k in BIG_KEYS):
+            return True
+        for k in BIG_KEYS:
+            if any(abs(m.start() - sp) <= TV_NEAR for m in re.finditer(k, text) for sp in spots):
+                near += 1
+                break
+    return near >= 2
+
+
 def blog_home(url):
     """글 주소에서 블로그 첫 화면 주소를 뽑는다."""
     m = re.match(r"https?://(?:m\.)?blog\.naver\.com/([^/?#]+)", url or "")
@@ -756,22 +783,28 @@ def main():
         all_out += out
         print(f"[{label}] " + " / ".join(f"{o['name']}({o['score']}, 구글 {o['greviews']})" for o in out))
 
-    # 방송 출연: 순위에 든 집만, 한 달에 한 번 (카카오가 멈추면 지난 결과를 그대로 씀)
+    # 방송 출연·대형 카페: 순위에 든 집만, 한 달에 한 번 (카카오가 멈추면 지난 결과를 그대로 씀)
     tvc = load_json(TV_CACHE, {})
     checked = 0
     for o in all_out:
         pid = str(o["id"])
         h = tvc.get(pid)
-        if BLOG_UP[0] and not (h and (dt.date.today() - dt.date.fromisoformat(h["d"])).days < TV_DAYS):
+        stale = not (h and (dt.date.today() - dt.date.fromisoformat(h["d"])).days < TV_DAYS)
+        need_big = o["kind"] == "cafe" and (stale or "b" not in (h or {}))
+        if BLOG_UP[0] and (stale or need_big):
             try:
-                h = {"t": tv_check(o["name"]), "d": dt.date.today().isoformat()}
+                t = tv_check(o["name"]) if stale else h.get("t", [])
+                b = big_check(o["name"]) if o["kind"] == "cafe" else False
+                h = {"t": t, "b": b, "d": dt.date.today().isoformat() if stale else h["d"]}
                 tvc[pid] = h
                 checked += 1
             except Exception as e:
-                print("방송 확인 실패", o["name"], str(e)[:80])
+                print("방송·대형 확인 실패", o["name"], str(e)[:80])
         o["tv"] = (h or {}).get("t", [])
+        o["big"] = bool((h or {}).get("b", False))
     save_json(TV_CACHE, tvc)
-    print(f"방송 확인 {checked}곳 새로, 방송 나온 집: " + ", ".join(f"{o['name']}({'·'.join(o['tv'])})" for o in all_out if o["tv"]))
+    print(f"방송·대형 확인 {checked}곳 새로, 방송 나온 집: " + ", ".join(f"{o['name']}({'·'.join(o['tv'])})" for o in all_out if o["tv"])
+          + " / 대형 카페: " + ", ".join(o["name"] for o in all_out if o.get("big")))
 
     data = {
         "area": AREA_NAME,
