@@ -365,6 +365,11 @@ class _MapPageState extends State<MapPage> {
     _load();
   }
 
+  void zoomBy(double d) {
+    final cam = map.camera;
+    map.move(cam.center, (cam.zoom + d).clamp(11.0, 19.0));
+  }
+
   void openFeats() {
     showModalBottomSheet(
       context: context,
@@ -848,6 +853,18 @@ class _MapPageState extends State<MapPage> {
             ),
           ),
         Positioned(
+          right: 12,
+          bottom: 30,
+          child: Container(
+            decoration: _card(r: 10),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _ZoomBtn(plus: true, onTap: () => zoomBy(1)),
+              Container(width: 42, height: 1, color: kLine),
+              _ZoomBtn(plus: false, onTap: () => zoomBy(-1)),
+            ]),
+          ),
+        ),
+        Positioned(
           right: 6,
           bottom: 4,
           child: GestureDetector(
@@ -914,7 +931,7 @@ class _Header extends StatelessWidget {
                   ]),
                 ),
                 const SizedBox(width: 8),
-                Text('${area.sido} ', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: kInk)),
+                Text('${area.sido} ', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kInk)),
                 Text(area.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kInk)),
                 Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 22, color: kInk),
               ]),
@@ -1046,7 +1063,7 @@ class _RegionPanelState extends State<RegionPanel> {
           Text(s.name,
               style: TextStyle(
                   fontSize: 15,
-                  fontWeight: isOpen ? FontWeight.w700 : FontWeight.w400,
+                  fontWeight: isOpen ? FontWeight.w700 : FontWeight.w600,
                   color: isOpen ? Colors.white : (s.ready ? kInk : kOff))),
           if (s.ready) ...[
             const SizedBox(width: 5),
@@ -1102,6 +1119,27 @@ class _RegionPanelState extends State<RegionPanel> {
           const Spacer(),
           Icon(Icons.chevron_right_rounded, size: 18, color: ok ? Colors.white : const Color(0xFFD2BCA9)),
           const SizedBox(width: 6),
+        ]),
+      ),
+    );
+  }
+}
+
+// 지도 확대(+)·축소(−) 단추
+class _ZoomBtn extends StatelessWidget {
+  final bool plus;
+  final VoidCallback onTap;
+  const _ZoomBtn({required this.plus, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        width: 42,
+        height: 42,
+        child: Stack(alignment: Alignment.center, children: [
+          Container(width: 15, height: 2, decoration: BoxDecoration(color: kInk, borderRadius: BorderRadius.circular(1))),
+          if (plus) Container(width: 2, height: 15, decoration: BoxDecoration(color: kInk, borderRadius: BorderRadius.circular(1))),
         ]),
       ),
     );
