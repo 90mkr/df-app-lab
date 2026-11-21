@@ -533,7 +533,7 @@ class PlaceMarker extends StatelessWidget {
     final big = rank <= 3;
     final img = cardImg(rank);
     final inner = cardFullW(rank) - 12;
-    final line = big ? kCafeTint : kLine; // 1~3위는 짙은 갈색 테두리
+    const line = kCafeTint; // 모든 카드 테두리·꼬리는 짙은 갈색
     final thumb = thumbOf(place);
     return GestureDetector(
       onTap: onTap,
