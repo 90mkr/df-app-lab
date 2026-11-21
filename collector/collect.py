@@ -248,12 +248,23 @@ def main():
         rows = list(ex.map(one, places))
 
     rows.sort(key=lambda r: r["est"], reverse=True)
+    # 지난번 자료의 유튜브 영상은 그대로 이어 쓴다 (하루 사용량이 모자라 못 찾은 곳 대비)
+    prev = {}
+    try:
+        with open(OUT, encoding="utf-8") as f:
+            prev = {str(o["id"]): o.get("vids", []) for o in json.load(f).get("places", [])}
+    except Exception:
+        pass
+    for r in rows:
+        r["vids"] = prev.get(str(r["p"]["id"]), [])
     if YOUTUBE_KEY:
         for r in rows[:YOUTUBE_TOP]:
             if not r["posts"]:
                 break
             try:
-                r["vids"] = youtube_videos(r["p"])
+                found = youtube_videos(r["p"])
+                if found:
+                    r["vids"] = found
             except Exception as e:
                 print("유튜브 중단:", e)
                 break
