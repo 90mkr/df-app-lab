@@ -19,6 +19,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 # 송도 일대 범위 (서쪽 경도, 남쪽 위도, 동쪽 경도, 북쪽 위도)
 AREA = (126.600, 37.355, 126.700, 37.420)
@@ -125,7 +126,7 @@ def naver_blog(query):
 def kakao_blog(query):
     """다음(카카오) 블로그 검색 — 네이버 블로그·티스토리 글도 함께 잡힌다. 네이버 검색과 같은 모양으로 바꿔 돌려준다."""
     items = []
-    for page in (1, 2):
+    for page in (1,):
         q = urllib.parse.urlencode({"query": query, "sort": "recency", "size": 50, "page": page})
         res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
         for d in res.get("documents", []):
@@ -209,17 +210,21 @@ def main():
     places = collect_places()
     print(f"카카오 음식점 {len(places)}곳")
 
-    rows = []
-    for i, p in enumerate(places):
+    done = [0]
+
+    def one(p):
         try:
             posts, ads = blog_stats(p)
         except Exception as e:
-            print("블로그 실패", p["place_name"], e)
+            print("블로그 실패", p["place_name"], str(e)[:120])
             posts, ads = [], 0
-        rows.append({"p": p, "posts": posts, "ads": ads, "vids": []})
-        time.sleep(0.11)
-        if i % 100 == 0:
-            print(f"  블로그 {i}/{len(places)}")
+        done[0] += 1
+        if done[0] % 100 == 0:
+            print(f"  블로그 {done[0]}/{len(places)}")
+        return {"p": p, "posts": posts, "ads": ads, "vids": []}
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        rows = list(ex.map(one, places))
 
     rows.sort(key=lambda r: len(r["posts"]), reverse=True)
     if YOUTUBE_KEY:
