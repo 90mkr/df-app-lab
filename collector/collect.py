@@ -38,10 +38,25 @@ NAVER_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "").strip()
 YOUTUBE_KEY = os.environ.get("YOUTUBE_KEY", "").strip()
 # 구글 지도(별점·리뷰 수) 열쇠 — 따로 없으면 유튜브 열쇠를 같이 쓴다
 GOOGLE_KEY = (os.environ.get("GOOGLE_KEY", "") or YOUTUBE_KEY).strip()
-GOOGLE_MAX = int(os.environ.get("GOOGLE_MAX", "250"))   # 한 번 실행에 새로 조회하는 최대 수 (비용 상한)
+GOOGLE_MAX = int(os.environ.get("GOOGLE_MAX", "30"))   # 하루 새로 조회하는 최대 수 (무료 범위 유지)
 GOOGLE_DAYS = int(os.environ.get("GOOGLE_DAYS", "14"))  # 같은 가게는 이 기간 동안 다시 조회하지 않음
 MIN_REVIEWS = int(os.environ.get("MIN_REVIEWS", "30"))  # 구글 리뷰가 이보다 적으면 순위 제외
 CACHE = os.path.join(os.path.dirname(__file__), "..", "web", "data", "google_cache.json")
+PLACES_CACHE = os.path.join(os.path.dirname(__file__), "places_cache.json")  # 가게 목록 (7일마다 새로)
+BLOG_CACHE = os.path.join(os.path.dirname(__file__), "blog_cache.json")      # 1차 블로그 건수 (14일마다 새로)
+
+
+def load_json(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def get_json(url, headers=None, tries=3):
@@ -453,9 +468,16 @@ def main():
     # 후보 1: 카카오 검색 상위 + 꼭 확인할 가게
     pop = popular_candidates()
     by_id = {c["p"]["id"]: c for c in pop}
-    # 후보 2: 송도 전체 음식점·카페 (체인 제외)
+    # 후보 2: 송도 전체 음식점·카페 (체인 제외) — 목록은 7일마다만 새로 받는다
+    pc = load_json(PLACES_CACHE, {})
+    fresh = pc.get("d") and (dt.date.today() - dt.date.fromisoformat(pc["d"])).days < 7 and pc.get("area") == list(AREA)
+    if not fresh:
+        pc = {"d": dt.date.today().isoformat(), "area": list(AREA), "FD6": collect_places("FD6"), "CE7": collect_places("CE7")}
+        save_json(PLACES_CACHE, pc)
+    else:
+        print(f"가게 목록 재사용 ({pc['d']} 기준)")
     for code in ("FD6", "CE7"):
-        for p in collect_places(code):
+        for p in pc[code]:
             if is_chain(p.get("place_name")) or p["id"] in by_id:
                 continue
             by_id[p["id"]] = {"p": p, "pop": 0, "hits": 0}
@@ -464,6 +486,8 @@ def main():
     done = [0]
 
     today0 = dt.date.today()
+
+    bc = load_json(BLOG_CACHE, {})
 
     def known_small(pid):
         h = cache.get(str(pid))
@@ -475,8 +499,13 @@ def main():
         if known_small(p["id"]):  # 구글 리뷰가 적다고 이미 확인된 곳은 건너뛴다
             return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": 0,
                     "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
+        hit = bc.get(str(p["id"]))
+        if hit and (today0 - dt.date.fromisoformat(hit["d"])).days < GOOGLE_DAYS:
+            return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": hit["e"],
+                    "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
         try:
             posts, ads, est, home = blog_stats(p, pages=1)
+            bc[str(p["id"])] = {"e": est, "d": today0.isoformat()}
         except Exception as e:
             print("블로그 실패", p["place_name"], str(e)[:120])
             posts, ads, est, home = [], 0, 0, ""
@@ -489,6 +518,7 @@ def main():
 
     with ThreadPoolExecutor(max_workers=8) as ex:
         rows = list(ex.map(one, cands))
+    save_json(BLOG_CACHE, bc)
 
     # 구글 별점·리뷰: 카카오 인기 후보 + 블로그 상위 위주로, 저장해 둔 값은 2주간 재사용
     use_google = False

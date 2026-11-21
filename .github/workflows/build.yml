@@ -38,7 +38,7 @@ jobs:
         run: |
           git config user.name "df-app-lab"
           git config user.email "dfmail@naver.com"
-          git add web/data/songdo.json web/data/google_cache.json 2>/dev/null || git add web/data/songdo.json
+          git add -f web/data/songdo.json web/data/google_cache.json collector/places_cache.json collector/blog_cache.json 2>/dev/null || git add web/data/songdo.json
           git commit -m "송도 맛집 자료 갱신" || exit 0
           git pull --rebase origin main
           git push
