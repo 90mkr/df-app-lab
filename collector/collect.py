@@ -139,8 +139,8 @@ def naver_blog(query):
 
 def kakao_blog(query):
     """다음(카카오) 블로그 검색 — 네이버 블로그·티스토리 글도 함께 잡힌다. 네이버 검색과 같은 모양으로 바꿔 돌려준다."""
-    items = []
-    for page in (1,):
+    items, ended = [], False
+    for page in (1, 2):
         q = urllib.parse.urlencode({"query": query, "sort": "recency", "size": 50, "page": page})
         res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
         for d in res.get("documents", []):
@@ -152,9 +152,10 @@ def kakao_blog(query):
                 "postdate": (d.get("datetime") or "")[:10].replace("-", ""),
             })
         if res.get("meta", {}).get("is_end", True):
+            ended = True
             break
         time.sleep(0.05)
-    return {"items": items}
+    return {"items": items, "full": not ended}
 
 
 def blog_home(url):
@@ -220,7 +221,7 @@ def blog_stats(place, chain=False):
     # 검색 결과가 꽉 찼고(50건) 가장 오래된 글도 90일 안이면, 실제로는 더 많다는 뜻 → 기간 비율로 추정
     items = res.get("items", [])
     est = len(clean_posts)
-    if len(items) >= 50:
+    if res.get("full", len(items) >= 50):
         dates = [i.get("postdate") for i in items if (i.get("postdate") or "").isdigit()]
         if dates and min(dates) >= since:
             oldest = dt.datetime.strptime(min(dates), "%Y%m%d").date()
@@ -260,48 +261,70 @@ def short_category(cat):
     return parts[2] if len(parts) > 2 else (parts[-1] if parts else "")
 
 
-def rank_kind(kind, code, label, prev):
-    places = collect_places(code)
-    print(f"[{label}] 카카오 {len(places)}곳")
-    done = [0]
-    counts = {}
-    for p in places:
-        b = norm(base_name(p["place_name"]))
-        counts[b] = counts.get(b, 0) + 1
+# ---------- 4. 후보: 카카오 검색 인기 순위 ----------
 
-    def one(p):
-        try:
-            posts, ads, est, home = blog_stats(p, counts.get(norm(base_name(p["place_name"])), 0) > 1)
-        except Exception as e:
-            print("블로그 실패", p["place_name"], str(e)[:120])
-            posts, ads, est, home = [], 0, 0, ""
-        done[0] += 1
-        if done[0] % 200 == 0:
-            print(f"  [{label}] 블로그 {done[0]}/{len(places)}")
-        return {"p": p, "posts": posts, "ads": ads, "est": est, "home": home, "vids": prev.get(str(p["id"]), [])}
+QUERIES = [
+    "맛집", "맛집 추천", "현지인 맛집", "데이트 맛집", "가족 외식", "회식",
+    "한식", "고기집", "일식", "중식", "양식", "파스타", "브런치", "센트럴파크 맛집", "트리플스트리트 맛집",
+    "카페", "대형카페", "베이커리 카페", "브런치 카페", "디저트 카페", "뷰 카페", "분위기 좋은 카페", "빵집",
+]
 
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        rows = list(ex.map(one, places))
-    rows.sort(key=lambda r: r["est"], reverse=True)
+# 지점 안내가 될 뿐인 전국 체인은 뺀다
+CHAINS = [
+    "스타벅스", "투썸", "이디야", "메가엠지씨", "메가커피", "빽다방", "컴포즈", "할리스", "파스쿠찌", "커피빈", "폴바셋",
+    "탐앤탐스", "엔제리너스", "공차", "배스킨", "던킨", "파리바게뜨", "뚜레쥬르", "더벤티", "매머드", "백미당", "블루보틀",
+    "맥도날드", "롯데리아", "버거킹", "맘스터치", "kfc", "서브웨이", "교촌", "bbq", "bhc", "굽네", "네네", "처갓집", "푸라닭",
+    "도미노", "피자헛", "파파존스", "미스터피자", "김밥천국", "본죽", "홍콩반점", "빽보이", "새마을식당", "역전우동",
+]
 
-    if YOUTUBE_KEY:
-        for r in rows[:YOUTUBE_TOP]:
-            if not r["posts"]:
+
+def kakao_keyword(query, page):
+    x1, y1, x2, y2 = AREA
+    q = urllib.parse.urlencode({"query": query, "rect": f"{x1},{y1},{x2},{y2}", "page": page, "size": 15})
+    return get_json("https://dapi.kakao.com/v2/local/search/keyword.json?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
+
+
+def is_chain(name):
+    n = norm(name)
+    return any(norm(c) in n for c in CHAINS)
+
+
+def popular_candidates():
+    """여러 검색어로 카카오 검색 상위 45곳씩 모아, 자주·높게 나온 곳일수록 인기 점수를 준다."""
+    cands = {}
+    for q in QUERIES:
+        rank = 0
+        for page in (1, 2, 3):
+            res = kakao_keyword(f"{AREA_NAME} {q}", page)
+            for d in res.get("documents", []):
+                rank += 1
+                code = d.get("category_group_code")
+                if code not in ("FD6", "CE7") or is_chain(d.get("place_name")):
+                    continue
+                c = cands.setdefault(d["id"], {"p": d, "pop": 0, "hits": 0})
+                c["pop"] += (46 - rank)
+                c["hits"] += 1
+            if res.get("meta", {}).get("is_end", True):
                 break
-            try:
-                found = youtube_videos(r["p"])
-                if found:
-                    r["vids"] = found
-            except Exception as e:
-                print("유튜브 중단:", str(e)[:120])
-                break
+    print(f"인기 후보 {len(cands)}곳 (검색어 {len(QUERIES)}개)")
+    return list(cands.values())
 
+
+def build_list(kind, rows, top_n):
+    rows = [r for r in rows if r["kind"] == kind]
+    if not rows:
+        return []
+    max_pop = max(r["pop"] for r in rows) or 1
+    max_blog = max(r["est"] for r in rows) or 1
     for r in rows:
-        r["raw"] = 10 * math.log2(1 + r["est"]) + 6 * min(len(r["vids"]), 3)
+        p_ = r["pop"] / max_pop
+        b_ = math.log2(1 + r["est"]) / math.log2(1 + max_blog)
+        v_ = min(len(r["vids"]), 3) / 3
+        r["raw"] = 0.5 * p_ + 0.35 * b_ + 0.15 * v_
     rows.sort(key=lambda r: r["raw"], reverse=True)
-    top = max([r["raw"] for r in rows] + [1])
+    top = rows[0]["raw"] or 1
     out = []
-    for r in rows[:TOP_N]:
+    for r in rows[:top_n]:
         p = r["p"]
         out.append({
             "id": p["id"],
@@ -320,7 +343,7 @@ def rank_kind(kind, code, label, prev):
             "posts": r["posts"][:6],
             "vids": r["vids"],
         })
-    return out, len(places)
+    return out
 
 
 def main():
@@ -329,7 +352,6 @@ def main():
         sys.exit(1)
     print("블로그 검색:", "네이버" if (NAVER_ID and NAVER_SECRET) else "다음(카카오)")
 
-    # 지난번 자료의 유튜브 영상은 이어 쓴다 (하루 사용량이 모자라 못 찾은 곳 대비)
     prev = {}
     try:
         with open(OUT, encoding="utf-8") as f:
@@ -337,18 +359,49 @@ def main():
     except Exception:
         pass
 
-    all_out, scanned = [], {}
-    for kind, code, label in KINDS:
-        out, n = rank_kind(kind, code, label, prev)
+    cands = popular_candidates()
+
+    def one(c):
+        p = c["p"]
+        try:
+            posts, ads, est, home = blog_stats(p)
+        except Exception as e:
+            print("블로그 실패", p["place_name"], str(e)[:120])
+            posts, ads, est, home = [], 0, 0, ""
+        kind = "cafe" if p.get("category_group_code") == "CE7" else "food"
+        return {"p": p, "kind": kind, "pop": c["pop"], "posts": posts, "ads": ads, "est": est,
+                "home": home, "vids": prev.get(str(p["id"]), [])}
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        rows = list(ex.map(one, cands))
+
+    # 유튜브는 종류별 인기 상위 후보만 확인 (하루 사용량 한도)
+    if YOUTUBE_KEY:
+        stop = False
+        for kind in ("food", "cafe"):
+            ks = sorted([r for r in rows if r["kind"] == kind], key=lambda r: r["pop"], reverse=True)
+            for r in ks[:YOUTUBE_TOP]:
+                if stop:
+                    break
+                try:
+                    found = youtube_videos(r["p"])
+                    if found:
+                        r["vids"] = found
+                except Exception as e:
+                    print("유튜브 중단:", str(e)[:120])
+                    stop = True
+
+    all_out = []
+    for kind, label in (("food", "맛집"), ("cafe", "카페")):
+        out = build_list(kind, rows, TOP_N)
         all_out += out
-        scanned[kind] = n
-        print(f"[{label}] 상위 {len(out)}곳: " + ", ".join(o["name"] for o in out[:5]) + " …")
+        print(f"[{label}] " + " / ".join(f"{o['name']}({o['score']})" for o in out))
 
     data = {
         "area": AREA_NAME,
         "updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
         "recent_days": RECENT_DAYS,
-        "scanned": scanned,
+        "candidates": len(cands),
         "count": len(all_out),
         "places": all_out,
     }
