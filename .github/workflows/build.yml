@@ -3,6 +3,9 @@ name: 앱 제작
 on:
   push:
     branches: [ main ]
+  schedule:
+    # 매일 새벽 4시 37분(한국 시각)에 맛집 자료를 새로 모은다
+    - cron: '37 19 * * *'
   workflow_dispatch:
 
 permissions:
@@ -12,14 +15,41 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build:
+  collect:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - name: 저장소 받기
         uses: actions/checkout@v7
+
+      - name: 송도 맛집 자료 모으기
+        env:
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
+        run: python3 collector/collect.py
+
+      - name: 모은 자료 저장
+        run: |
+          git config user.name "df-app-lab"
+          git config user.email "dfmail@naver.com"
+          git add web/data/songdo.json
+          git commit -m "송도 맛집 자료 갱신" || exit 0
+          git push
+
+  build:
+    needs: collect
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 받기
+        uses: actions/checkout@v7
+        with:
+          ref: main
 
       - name: 자바 준비
         uses: actions/setup-java@v6
@@ -33,11 +63,11 @@ jobs:
           channel: stable
           cache: true
 
-      - name: 앱 코드가 없으면 시험용 예제 앱 만들기
+      - name: 빠진 기본 파일 채우기
         run: |
-          if [ ! -f pubspec.yaml ]; then
-            flutter create --org kr.designfeel --project-name df_app_lab --platforms android,web .
-          fi
+          flutter create --org kr.designfeel --project-name df_app_lab --platforms android,web .
+          python3 tool/patch_android.py "송도 맛집"
+          sed -i 's#<title>.*</title>#<title>송도 맛집 지도</title>#' web/index.html
 
       - name: 패키지 받기
         run: flutter pub get
@@ -61,7 +91,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest df-app-lab.apk --title "최신 시험 앱" --notes "제작 시각: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')" --target ${{ github.sha }}
+          gh release create latest df-app-lab.apk --title "최신 시험 앱" --notes "제작 시각: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')" --target $(git rev-parse HEAD)
 
       - name: 미리보기 게시 준비
         uses: actions/configure-pages@v6
@@ -73,6 +103,7 @@ jobs:
 
   deploy:
     needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
