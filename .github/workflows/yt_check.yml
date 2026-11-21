@@ -1,0 +1,23 @@
+name: 유튜버 채널 확인
+
+# 유명 유튜버 따라가기 — 채널 후보를 유튜브 공식 연동으로 한 번 확인해 본다 (구독자·주소 적힌 비율)
+on:
+  workflow_dispatch:
+    inputs:
+      max_search:
+        description: '이름 검색 최대 횟수 (한 번에 100씩 씀)'
+        required: false
+        default: '25'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 저장소 받기
+        uses: actions/checkout@v4
+      - name: 채널 확인
+        env:
+          YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
+          MAX_SEARCH: ${{ inputs.max_search }}
+        run: python3 -u collector/yt_check.py
