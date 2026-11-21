@@ -14,6 +14,7 @@ const kGray = Color(0xFF7A808C);
 const kLine = Color(0xFFE3E6EC);
 const kDataUrl = 'https://90mkr.github.io/df-app-lab/data/songdo.json';
 const kCenter = LatLng(37.3905, 126.6430);
+const kHot = 40; // 이 점수 이상만 기본으로 지도에 보인다
 
 void main() => runApp(const DfApp());
 
@@ -137,7 +138,7 @@ class _MapPageState extends State<MapPage> {
     final d = data;
     if (d == null) return ['전체'];
     final count = <String, int>{};
-    for (final p in d.places.where((p) => p.score > 0)) {
+    for (final p in d.places.where((p) => p.score >= kHot)) {
       if (p.cat.isEmpty) continue;
       count[p.cat] = (count[p.cat] ?? 0) + 1;
     }
@@ -149,7 +150,7 @@ class _MapPageState extends State<MapPage> {
     final d = data;
     if (d == null) return [];
     return d.places.where((p) {
-      if (!showAll && p.score <= 0) return false;
+      if (!showAll && p.score < kHot) return false;
       if (cat != '전체' && p.cat != cat) return false;
       return true;
     }).toList();
@@ -263,7 +264,7 @@ class _MapPageState extends State<MapPage> {
                       padding: const EdgeInsets.only(right: 6),
                       child: _Chip(label: c, on: c == cat, onTap: () => setState(() => cat = c)),
                     ),
-                  _Chip(label: showAll ? '화제 없는 곳 숨기기' : '전체 음식점 보기', on: showAll, onTap: () => setState(() => showAll = !showAll)),
+                  _Chip(label: showAll ? '화제 맛집만 보기' : '전체 음식점 보기', on: showAll, onTap: () => setState(() => showAll = !showAll)),
                 ]),
               ),
             ]),
@@ -317,7 +318,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hot = data?.places.where((p) => p.score > 0).length ?? 0;
+    final hot = data?.places.where((p) => p.score >= kHot).length ?? 0;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
       decoration: _card(),
