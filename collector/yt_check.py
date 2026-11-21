@@ -41,7 +41,7 @@ def get(path, cost=1, **q):
 # (구분, 이름, 핸들 후보, 검색어, 채널 id)
 CANDS = [
     ("전국", "성시경 (먹을텐데)", ["sungsikyung"], "성시경 먹을텐데", ""),
-    ("전국", "풍자 또간집 (스튜디오 수제)", ["ttoganzip", "ddoganzip", "studio_suje"], "스튜디오 수제 또간집", ""),
+    ("전국", "풍자 또간집 (스튜디오 수제)", ["studio_suze"], "스튜디오 수제 또간집", "UC4ZA57iJrf73bJlApKFeLRw"),
     ("전국", "최자로드", ["choiza_road", "choizaroadtv", "choiza11"], "최자로드", ""),
     ("전국", "정육왕", ["meatcreator"], "정육왕 MeatCreator", ""),
     ("전국", "맛상무", ["matsangmu"], "맛상무", ""),
@@ -57,9 +57,9 @@ CANDS = [
     ("전국", "히밥", ["heebab"], "히밥 heebab", ""),
     ("전국", "입짧은햇님", [], "입짧은햇님", ""),
     ("전국", "먹보스 쭈엽이", ["mukbossjjuyeobi", "mukboss_jjuyeobi"], "먹보스 쭈엽이", ""),
-    ("전국", "백종원 (님아 그 시장을 가오)", ["paikjongwon"], "백종원 PAIK JONG WON", ""),
+    ("전국", "백종원 (님아 그 시장을 가오)", ["paik_jongwon"], "백종원 PAIK JONG WON", ""),
     ("전국", "이태리 파브리", [], "", "UCza_sEjIhb1yhvVZEdEl6gA"),
-    ("전국", "윤코치 (씨름 윤정수)", ["yooncoach"], "윤코치 씨름 먹방", ""),
+    ("전국", "윤코치 (씨름 윤정수)", [], "윤코치 씨름 먹방", ""),
     ("전국", "육식맨", ["yooxicman"], "육식맨 YOOXICMAN", ""),
     ("길거리", "하이푸디", ["hifoodie", "hi_foodie"], "하이푸디", ""),
     ("길거리", "푸디랜드", ["foodieland", "foodie_land"], "푸디랜드", ""),
@@ -67,7 +67,7 @@ CANDS = [
     ("길거리", "푸디버디", [], "", "UCDF-aN5luFYAM9Fnx7imo3A"),
     ("인천", "인천_레전드푸드", [], "인천 레전드푸드", ""),
     ("인천", "인천맛집-먹보스", [], "인천맛집 먹보스", ""),
-    ("인천", "인천맛집 모푸디", ["mofoodie"], "인천맛집 모푸디", ""),
+    ("인천", "인천맛집 모푸디", [], "인천맛집 모푸디", ""),
     ("인천", "시소아빠 맛집탐방", [], "시소아빠 맛집탐방", ""),
 ]
 
@@ -177,6 +177,41 @@ def probe(handles):
             print(f"[확인] {h} → 오류 {str(e)[:120]}")
 
 
+MIN_SUBS = int(os.environ.get("MIN_SUBS", "100000"))
+
+
+def discover(words, known):
+    """검색어마다 채널 50개 → 구독자 MIN_SUBS 이상 → 최근 영상 50개 중 주소가 적힌 비율"""
+    ids = []
+    for w in words:
+        if searched[0] >= MAX_SEARCH:
+            break
+        searched[0] += 1
+        res = get("search", cost=100, part="snippet", q=w, type="channel", maxResults=50, regionCode="KR", relevanceLanguage="ko")
+        for it in res.get("items", []):
+            c = it["snippet"]["channelId"]
+            if c not in ids and c not in known:
+                ids.append(c)
+    found = []
+    for i in range(0, len(ids), 50):
+        for ch in get("channels", part=PARTS, id=",".join(ids[i:i + 50])).get("items", []):
+            if int(ch.get("statistics", {}).get("subscriberCount", 0) or 0) >= MIN_SUBS:
+                found.append(ch)
+    print(f"\n[찾아보기] 검색어 {len(words)}개 → 채널 {len(ids)}개 중 구독 {MIN_SUBS:,} 이상 {len(found)}개")
+    rows = []
+    for ch in found:
+        try:
+            info = look(ch, pages=1)
+        except RuntimeError:
+            continue
+        st, sn = ch["statistics"], ch["snippet"]
+        rows.append((info["addr"] / max(info["n"], 1), int(st.get("subscriberCount", 0)), sn.get("title", ""), sn.get("customUrl", ""), ch["id"], info))
+    rows.sort(key=lambda r: (r[0] >= 0.3, r[1]), reverse=True)
+    for ratio, subs, title, handle, cid, info in rows:
+        print(f"[찾아보기] {title} ({handle} {cid}) 구독 {subs:,} · 마지막 {info['last']} · 90일 {info['recent']}개 · 주소 {info['addr']}/{info['n']} · 상호표시 {info['store']}/{info['n']}"
+              + (f" · 예: {info['sample']}" if info["sample"] else ""))
+
+
 def main():
     if not KEY:
         print("유튜브 키가 없습니다")
@@ -216,6 +251,12 @@ def main():
                   + (f" · 예: {row['sample']}" if row["sample"] else ""))
     except Stop as e:
         print("중단:", e)
+    words = [x.strip() for x in os.environ.get("DISCOVER", "").split(",") if x.strip()]
+    if words:
+        try:
+            discover(words, {r["id"] for r in rows})
+        except Stop as e:
+            print("중단:", e)
     print(f"\n유튜브 사용량 약 {used[0]} (이름 검색 {searched[0]}번)")
     with open("yt_check.json", "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=1)
