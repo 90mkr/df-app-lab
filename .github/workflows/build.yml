@@ -40,6 +40,7 @@ jobs:
           git config user.email "dfmail@naver.com"
           git add web/data/songdo.json
           git commit -m "송도 맛집 자료 갱신" || exit 0
+          git pull --rebase origin main
           git push
 
   build:
