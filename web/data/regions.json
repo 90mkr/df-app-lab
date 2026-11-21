@@ -1,0 +1,182 @@
+{
+ "note": "지역 목록 — ready가 true인 동네만 자료가 있음. 동네를 늘리면 여기에 추가한다.",
+ "sido": [
+  {
+   "name": "서울",
+   "areas": []
+  },
+  {
+   "name": "부산",
+   "areas": []
+  },
+  {
+   "name": "대구",
+   "areas": []
+  },
+  {
+   "name": "인천",
+   "areas": [
+    {
+     "id": "songdo",
+     "name": "송도",
+     "gu": "연수구",
+     "lat": 37.3905,
+     "lng": 126.643,
+     "zoom": 13,
+     "ready": true
+    },
+    {
+     "id": "guwol",
+     "name": "구월동",
+     "gu": "남동구",
+     "lat": 37.4486,
+     "lng": 126.7052,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "bupyeong",
+     "name": "부평",
+     "gu": "부평구",
+     "lat": 37.4895,
+     "lng": 126.7245,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "cheongna",
+     "name": "청라",
+     "gu": "서구",
+     "lat": 37.5328,
+     "lng": 126.6447,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "geomdan",
+     "name": "검단",
+     "gu": "서구",
+     "lat": 37.5955,
+     "lng": 126.6735,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "yeongjong",
+     "name": "영종도",
+     "gu": "중구",
+     "lat": 37.4924,
+     "lng": 126.4937,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "sinpo",
+     "name": "신포·차이나타운",
+     "gu": "중구",
+     "lat": 37.4757,
+     "lng": 126.6213,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "juan",
+     "name": "주안",
+     "gu": "미추홀구",
+     "lat": 37.4648,
+     "lng": 126.6807,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "nonhyeon",
+     "name": "논현",
+     "gu": "남동구",
+     "lat": 37.4007,
+     "lng": 126.7316,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "gyeyang",
+     "name": "계양",
+     "gu": "계양구",
+     "lat": 37.5376,
+     "lng": 126.7376,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "yeonsu",
+     "name": "연수동",
+     "gu": "연수구",
+     "lat": 37.4183,
+     "lng": 126.6797,
+     "zoom": 13,
+     "ready": false
+    },
+    {
+     "id": "ganghwa",
+     "name": "강화",
+     "gu": "강화군",
+     "lat": 37.7466,
+     "lng": 126.488,
+     "zoom": 13,
+     "ready": false
+    }
+   ]
+  },
+  {
+   "name": "광주",
+   "areas": []
+  },
+  {
+   "name": "대전",
+   "areas": []
+  },
+  {
+   "name": "울산",
+   "areas": []
+  },
+  {
+   "name": "세종",
+   "areas": []
+  },
+  {
+   "name": "경기",
+   "areas": []
+  },
+  {
+   "name": "강원",
+   "areas": []
+  },
+  {
+   "name": "충북",
+   "areas": []
+  },
+  {
+   "name": "충남",
+   "areas": []
+  },
+  {
+   "name": "전북",
+   "areas": []
+  },
+  {
+   "name": "전남",
+   "areas": []
+  },
+  {
+   "name": "경북",
+   "areas": []
+  },
+  {
+   "name": "경남",
+   "areas": []
+  },
+  {
+   "name": "제주",
+   "areas": []
+  }
+ ]
+}

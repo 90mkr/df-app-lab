@@ -7,14 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const kBlue = Color(0xFF1F5BFF);
 const kInk = Color(0xFF1B1D22);
 const kGray = Color(0xFF7A808C);
 const kLine = Color(0xFFE3E6EC);
-const kDataUrl = 'https://90mkr.github.io/df-app-lab/data/songdo.json';
-const kCenter = LatLng(37.3905, 126.6430);
+const kDataBase = 'https://90mkr.github.io/df-app-lab/data/'; // 안드로이드 앱이 자료를 받아 오는 곳
 const kTop = 20; // 종류별로 지도에 보이는 수
 
 void main() => runApp(const DfApp());
@@ -147,6 +147,56 @@ OpenInfo? openInfo(Place p) {
   return OpenInfo(false, '영업 종료', '영업 종료 · $when ${hm(next[1])} 시작');
 }
 
+// ---------------- 지역 (전국 확장용: 시·도 → 동네) ----------------
+
+class Area {
+  final String id, name, gu, sido;
+  final double lat, lng, zoom;
+  final bool ready;
+  Area(Map<String, dynamic> j, this.sido)
+      : id = j['id'] ?? '',
+        name = j['name'] ?? '',
+        gu = j['gu'] ?? '',
+        lat = ((j['lat'] ?? 37.3905) as num).toDouble(),
+        lng = ((j['lng'] ?? 126.6430) as num).toDouble(),
+        zoom = ((j['zoom'] ?? 13) as num).toDouble(),
+        ready = j['ready'] == true;
+  LatLng get center => LatLng(lat, lng);
+}
+
+class Sido {
+  final String name;
+  final List<Area> areas;
+  Sido(Map<String, dynamic> j)
+      : name = j['name'] ?? '',
+        areas = [];
+  bool get ready => areas.any((a) => a.ready);
+}
+
+// 지역 목록을 못 받았을 때 쓰는 기본값 (송도만)
+final kDefaultArea = Area({'id': 'songdo', 'name': '송도', 'gu': '연수구', 'lat': 37.3905, 'lng': 126.6430, 'zoom': 13, 'ready': true}, '인천');
+
+String dataUrl(String file) => kIsWeb ? Uri.base.resolve('data/$file').toString() : '$kDataBase$file';
+
+Future<List<Sido>> loadRegions() async {
+  try {
+    final res = await http.get(Uri.parse('${dataUrl('regions.json')}?t=${DateTime.now().millisecondsSinceEpoch}'));
+    if (res.statusCode == 200) {
+      final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      final out = <Sido>[];
+      for (final sj in (j['sido'] ?? []) as List) {
+        final sd = Sido(sj);
+        sd.areas.addAll(((sj['areas'] ?? []) as List).map((a) => Area(a, sd.name)));
+        out.add(sd);
+      }
+      if (out.isNotEmpty) return out;
+    }
+  } catch (_) {}
+  final sd = Sido({'name': '인천'});
+  sd.areas.add(kDefaultArea);
+  return [sd];
+}
+
 class SongdoData {
   final String updated;
   final int recentDays;
@@ -154,8 +204,8 @@ class SongdoData {
   SongdoData(this.updated, this.recentDays, this.places);
 }
 
-Future<SongdoData> loadData() async {
-  final base = kIsWeb ? Uri.base.resolve('data/songdo.json').toString() : kDataUrl;
+Future<SongdoData> loadData(String areaId) async {
+  final base = dataUrl('$areaId.json');
   final res = await http.get(Uri.parse('$base?t=${DateTime.now().millisecondsSinceEpoch}'));
   if (res.statusCode != 200) throw Exception('자료를 아직 받지 못했습니다 (${res.statusCode})');
   final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
@@ -178,6 +228,8 @@ class MapPage extends StatefulWidget {
 
 class _MapPageState extends State<MapPage> {
   final map = MapController();
+  List<Sido> sidos = [];
+  Area area = kDefaultArea;
   SongdoData? data;
   String? error;
   String kind = 'all'; // all 전체, tv 방송탄, food 맛집, cafe 카페
@@ -187,17 +239,67 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
+    _start();
+  }
+
+  // 지역 목록을 받고, 지난번에 본 동네를 다시 연다
+  Future<void> _start() async {
+    final list = await loadRegions();
+    String? saved;
+    try {
+      saved = (await SharedPreferences.getInstance()).getString('area');
+    } catch (_) {}
+    final all = [for (final s in list) ...s.areas.where((a) => a.ready)];
+    final pick = all.where((a) => a.id == saved).firstOrNull ?? all.where((a) => a.id == 'songdo').firstOrNull ?? (all.isNotEmpty ? all.first : kDefaultArea);
+    setState(() {
+      sidos = list;
+      area = pick;
+    });
+    if (pick.id != kDefaultArea.id) {
+      try {
+        map.move(pick.center, pick.zoom);
+      } catch (_) {}
+    }
     _load();
   }
 
   Future<void> _load() async {
     setState(() => error = null);
     try {
-      final d = await loadData();
+      final d = await loadData(area.id);
       setState(() => data = d);
     } catch (e) {
       setState(() => error = '$e'.replaceFirst('Exception: ', ''));
     }
+  }
+
+  void setArea(Area a) {
+    if (a.id == area.id) return;
+    setState(() {
+      area = a;
+      data = null;
+    });
+    map.move(a.center, a.zoom);
+    SharedPreferences.getInstance().then((sp) => sp.setString('area', a.id)).catchError((_) => false);
+    _load();
+  }
+
+  void openRegion() {
+    if (sidos.isEmpty) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (ctx) => RegionSheet(
+        sidos: sidos,
+        current: area,
+        onPick: (a) {
+          Navigator.pop(ctx);
+          setArea(a);
+        },
+      ),
+    );
   }
 
   List<Place> get visible {
@@ -303,7 +405,7 @@ class _MapPageState extends State<MapPage> {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text.rich(TextSpan(children: [
-                  TextSpan(text: '송도 $kindLabel ', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: kInk)),
+                  TextSpan(text: '${area.name} $kindLabel ', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: kInk)),
                   TextSpan(text: '화제 순위', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
                   TextSpan(text: '  상위 ${list.length}곳', style: const TextStyle(fontSize: 13, color: kGray)),
                 ])),
@@ -380,7 +482,7 @@ class _MapPageState extends State<MapPage> {
         FlutterMap(
           mapController: map,
           options: MapOptions(
-            initialCenter: kCenter,
+            initialCenter: kDefaultArea.center,
             initialZoom: 13,
             minZoom: 11,
             maxZoom: 19,
@@ -403,7 +505,7 @@ class _MapPageState extends State<MapPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _Header(data: data, kindLabel: kindLabel, total: list.length, cards: cards, onRank: data == null ? null : openRank),
+              _Header(data: data, area: area, onRegion: openRegion, kindLabel: kindLabel, total: list.length, cards: cards, onRank: data == null ? null : openRank),
               const SizedBox(height: 8),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -474,10 +576,20 @@ BoxDecoration _card({double r = 14}) => BoxDecoration(
 
 class _Header extends StatelessWidget {
   final SongdoData? data;
+  final Area area;
+  final VoidCallback onRegion;
   final String kindLabel;
   final int total, cards;
   final VoidCallback? onRank;
-  const _Header({required this.data, required this.kindLabel, required this.total, required this.cards, required this.onRank});
+  const _Header({
+    required this.data,
+    required this.area,
+    required this.onRegion,
+    required this.kindLabel,
+    required this.total,
+    required this.cards,
+    required this.onRank,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -487,10 +599,17 @@ class _Header extends StatelessWidget {
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text.rich(TextSpan(children: [
-              TextSpan(text: '송도 ', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w400, color: kInk)),
-              TextSpan(text: '맛집·카페 지도', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: kInk)),
-            ])),
+            // 지역 선택: 누르면 시·도 → 동네 고르기
+            InkWell(
+              onTap: onRegion,
+              borderRadius: BorderRadius.circular(8),
+              child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
+                Text(area.name, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: kInk)),
+                const Icon(Icons.keyboard_arrow_down_rounded, size: 24, color: kInk),
+                const SizedBox(width: 4),
+                Text('${area.sido} ${area.gu}', style: const TextStyle(fontSize: 12, color: kGray)),
+              ]),
+            ),
             const SizedBox(height: 2),
             Text(
               data == null
@@ -515,6 +634,137 @@ class _Header extends StatelessWidget {
           child: const Text('순위', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
         ),
       ]),
+    );
+  }
+}
+
+// 지역 고르기: 왼쪽 시·도, 오른쪽 동네 (자료가 있는 동네만 누를 수 있음)
+class RegionSheet extends StatefulWidget {
+  final List<Sido> sidos;
+  final Area current;
+  final ValueChanged<Area> onPick;
+  const RegionSheet({super.key, required this.sidos, required this.current, required this.onPick});
+  @override
+  State<RegionSheet> createState() => _RegionSheetState();
+}
+
+class _RegionSheetState extends State<RegionSheet> {
+  late String sido = widget.current.sido;
+
+  @override
+  Widget build(BuildContext context) {
+    final cur = widget.sidos.where((s) => s.name == sido).firstOrNull ?? widget.sidos.first;
+    final h = MediaQuery.of(context).size.height * 0.72;
+    return Container(
+      height: h,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(children: [
+        const SizedBox(height: 10),
+        Container(width: 40, height: 4, decoration: BoxDecoration(color: kLine, borderRadius: BorderRadius.circular(2))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 8, 10),
+          child: Row(children: [
+            const Text.rich(TextSpan(children: [
+              TextSpan(text: '지역 ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: kInk)),
+              TextSpan(text: '선택', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
+            ])),
+            const SizedBox(width: 8),
+            Text('지금 ${widget.current.sido} ${widget.current.name}', style: const TextStyle(fontSize: 12, color: kGray)),
+            const Spacer(),
+            IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: kInk)),
+          ]),
+        ),
+        const Divider(height: 1, color: kLine),
+        Expanded(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            // 시·도
+            Container(
+              width: 92,
+              color: const Color(0xFFF5F6F8),
+              child: ListView(children: [
+                for (final s in widget.sidos)
+                  InkWell(
+                    onTap: () => setState(() => sido = s.name),
+                    child: Container(
+                      height: 46,
+                      color: s.name == cur.name ? Colors.white : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      alignment: Alignment.centerLeft,
+                      child: Row(children: [
+                        Text(
+                          s.name,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: s.name == cur.name ? FontWeight.w700 : FontWeight.w400,
+                            color: s.ready ? kInk : const Color(0xFFA9AEB8),
+                          ),
+                        ),
+                        if (s.ready) ...[
+                          const SizedBox(width: 5),
+                          Container(width: 5, height: 5, decoration: const BoxDecoration(color: kFoodTint, shape: BoxShape.circle)),
+                        ],
+                      ]),
+                    ),
+                  ),
+              ]),
+            ),
+            // 동네
+            Expanded(
+              child: cur.areas.isEmpty
+                  ? const Center(
+                      child: Text('준비 중입니다.\n인천부터 차례로 넓혀 갑니다.',
+                          textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: kGray, height: 1.5)),
+                    )
+                  : GridView.count(
+                      padding: const EdgeInsets.all(14),
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 2.3,
+                      children: [for (final a in cur.areas) _AreaTile(area: a, on: a.id == widget.current.id, onTap: () => widget.onPick(a))],
+                    ),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+class _AreaTile extends StatelessWidget {
+  final Area area;
+  final bool on;
+  final VoidCallback onTap;
+  const _AreaTile({required this.area, required this.on, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final ok = area.ready;
+    return GestureDetector(
+      onTap: ok ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: on ? kInk : kLine, width: 1),
+        ),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Flexible(
+              child: Text(area.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: ok ? kInk : const Color(0xFFA9AEB8))),
+            ),
+            if (on) ...[const SizedBox(width: 4), const Icon(Icons.check_rounded, size: 16, color: kInk)],
+          ]),
+          const SizedBox(height: 2),
+          Text(ok ? area.gu : '${area.gu} · 준비 중', style: TextStyle(fontSize: 11, color: ok ? kGray : const Color(0xFFB8BCC6))),
+        ]),
+      ),
     );
   }
 }

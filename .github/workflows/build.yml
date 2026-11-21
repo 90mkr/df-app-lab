@@ -79,7 +79,7 @@ jobs:
       - name: 최신 맛집 자료 넣기
         run: |
           mkdir -p build/web/data
-          cp web/data/songdo.json build/web/data/
+          cp web/data/*.json build/web/data/
 
       - name: 새 화면이 바로 보이게 (판 번호 찍기)
         run: python3 tool/stamp_web.py ${{ github.run_id }}
