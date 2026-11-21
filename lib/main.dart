@@ -546,7 +546,7 @@ class PlaceMarker extends StatelessWidget {
                         thumb,
                         fit: BoxFit.cover,
                         webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                        errorBuilder: (_, __, ___) => Container(color: const Color(0xFFF1F3F7)),
+                        errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.42),
                       ),
               ),
             ),
