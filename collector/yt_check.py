@@ -72,7 +72,8 @@ CANDS = [
 ]
 
 SIDO = r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|충청[남북]도|전라[남북]도|경상[남북]도)"
-ADDR_RE = re.compile(SIDO + r"[가-힣]*\s+[가-힣]{1,6}(시|군|구)\s")
+# 시도 + 시군구 (+ 구) + 길·로·동 이름 + 번지 — 이야기 속 지명("예산군 오가면에서")은 빼고 진짜 주소만
+ADDR_RE = re.compile(SIDO + r"[가-힣]*\s+[가-힣]{1,6}(시|군|구)(\s+[가-힣]{1,6}(구|읍|면))?\s+[가-힣0-9·.]{1,15}(로|길|동|가|리)\s*\d{1,4}(-\d{1,4})?")
 ROAD_RE = re.compile(r"[가-힣0-9]{1,12}(로|길)\s?\d{1,4}")
 STORE_RE = re.compile(r"(상호|가게|식당|매장|업체)\s*(명|이름|정보)?\s*[:：]|📍|주소\s*[:：]|위치\s*[:：]")
 PARTS = "snippet,statistics,contentDetails"
@@ -122,7 +123,7 @@ def look(ch, pages=3):
             if (today - dt.date.fromisoformat(day)).days <= 90:
                 recent += 1
         m = ADDR_RE.search(d)
-        if m or (ROAD_RE.search(d) and ("주소" in d or "위치" in d)):
+        if m:
             addr += 1
             if not sample and m:
                 sample = d[m.start(): m.start() + 40].replace("\n", " ")
