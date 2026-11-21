@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -43,7 +43,9 @@ jobs:
         run: flutter pub get
 
       - name: 안드로이드 설치 파일 만들기
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk df-app-lab.apk
 
       - name: 크롬 미리보기 만들기
         run: flutter build web --release --base-href /df-app-lab/
@@ -52,7 +54,14 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: df-app-lab.apk
+
+      - name: 설치 파일 고정 링크로 게시
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest df-app-lab.apk --title "최신 시험 앱" --notes "제작 시각: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')" --target ${{ github.sha }}
 
       - name: 미리보기 게시 준비
         uses: actions/configure-pages@v6
