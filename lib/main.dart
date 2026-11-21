@@ -68,6 +68,8 @@ class Place {
   final int blog, ads, score;
   final List<Post> posts;
   final List<Video> vids;
+  final List<List<int>> hours; // [여는 요일, 시각(hhmm), 닫는 요일, 시각] 요일 0=일, 닫는 시각 없으면 -1
+  final List<String> week; // "월요일: 오전 11:00~오후 9:00" 같은 7줄
   Place(Map<String, dynamic> j)
       : id = '${j['id']}',
         kind = j['kind'] ?? 'food',
@@ -86,8 +88,59 @@ class Place {
         ads = j['ads'] ?? 0,
         score = j['score'] ?? 0,
         posts = ((j['posts'] ?? []) as List).map((e) => Post(e)).toList(),
-        vids = ((j['vids'] ?? []) as List).map((e) => Video(e)).toList();
+        vids = ((j['vids'] ?? []) as List).map((e) => Video(e)).toList(),
+        hours = ((j['hours'] ?? []) as List).map((e) => (e as List).map((x) => (x as num).toInt()).toList()).toList(),
+        week = ((j['week'] ?? []) as List).map((e) => '$e').toList();
   LatLng get point => LatLng(lat, lng);
+}
+
+// ---------------- 영업시간 계산 (한국 시간 기준) ----------------
+
+const kDays = ['일', '월', '화', '수', '목', '금', '토'];
+
+class OpenInfo {
+  final bool open;
+  final String short, text;
+  const OpenInfo(this.open, this.short, this.text);
+}
+
+DateTime nowKst() => DateTime.now().toUtc().add(const Duration(hours: 9));
+
+String hm(int v) {
+  if (v == 0) return '자정';
+  return '${(v ~/ 100).toString().padLeft(2, '0')}:${(v % 100).toString().padLeft(2, '0')}';
+}
+
+OpenInfo? openInfo(Place p) {
+  if (p.hours.isEmpty) return null;
+  if (p.hours.any((h) => h[2] < 0)) return const OpenInfo(true, '24시간', '24시간 영업');
+  final t = nowKst();
+  final day = t.weekday % 7; // 0=일
+  const week = 7 * 1440;
+  final now = day * 1440 + t.hour * 60 + t.minute;
+  int mins(int d, int v) => d * 1440 + (v ~/ 100) * 60 + v % 100;
+  List<int>? next;
+  int nextIn = week + 1;
+  for (final h in p.hours) {
+    final o = mins(h[0], h[1]);
+    var c = mins(h[2], h[3]);
+    if (c <= o) c += week;
+    for (final n in [now, now + week]) {
+      if (n >= o && n < c) {
+        final left = c - n;
+        return OpenInfo(true, left <= 60 ? '곧 마감' : '영업 중', '${left <= 60 ? '곧 마감' : '영업 중'} · ${hm(h[3])}까지');
+      }
+    }
+    final until = (o - now) % week;
+    if (until < nextIn) {
+      nextIn = until;
+      next = h;
+    }
+  }
+  if (next == null) return null;
+  if (next[0] == day && nextIn < 1440) return OpenInfo(false, '준비 중', '준비 중 · ${hm(next[1])} 시작');
+  final when = (next[0] == (day + 1) % 7 && nextIn < 2 * 1440) ? '내일' : '${kDays[next[0]]}요일';
+  return OpenInfo(false, '영업 종료', '영업 종료 · $when ${hm(next[1])} 시작');
 }
 
 class SongdoData {
@@ -230,8 +283,19 @@ class _MapPageState extends State<MapPage> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: kInk)),
                       const SizedBox(height: 2),
-                      Text('${p.cat}${p.greviews > 0 ? '  ·  ★${p.grate.toStringAsFixed(1)} (${p.greviews})' : ''}  ·  블로그 ${p.blog}',
-                          style: const TextStyle(fontSize: 12, color: kGray)),
+                      Builder(builder: (_) {
+                        final o = openInfo(p);
+                        return Text.rich(
+                          TextSpan(children: [
+                            if (o != null)
+                              TextSpan(text: '${o.short}  ·  ', style: TextStyle(fontWeight: FontWeight.w600, color: o.open ? kBlue : kGray)),
+                            TextSpan(text: '${p.cat}${p.greviews > 0 ? '  ·  ★${p.grate.toStringAsFixed(1)} (${commas(p.greviews)})' : ''}  ·  블로그 ${p.blog}'),
+                          ]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12, color: kGray),
+                        );
+                      }),
                     ]),
                   ),
                   ScoreTag(score: p.score),
@@ -268,6 +332,15 @@ class _MapPageState extends State<MapPage> {
             ),
             MarkerLayer(
               markers: [
+                // 카드로 못 보인 순위(확대 전·겹침)는 작은 숫자 점으로 자리만 표시
+                for (var i = list.length - 1; i >= 0; i--)
+                  if (!shown.contains(i))
+                    Marker(
+                      point: list[i].point,
+                      width: 24,
+                      height: 24,
+                      child: RankDot(rank: i + 1, onTap: () => openPlace(list[i])),
+                    ),
                 for (final i in shown.reversed)
                   Marker(
                     point: list[i].point,
@@ -362,7 +435,9 @@ class _Header extends StatelessWidget {
             ])),
             const SizedBox(height: 2),
             Text(
-              data == null ? '블로그·유튜브 화제 순' : (shown < kTop ? '$kindLabel 상위 $kTop곳 중 $shown곳 표시 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $kTop곳  ·  ${data!.updated} 기준'),
+              data == null ? '블로그·유튜브 화제 순' : (shown < kTop ? '$kindLabel 상위 $kTop곳 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $kTop곳  ·  ${data!.updated} 기준'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11.5, color: kGray),
             ),
           ]),
@@ -481,6 +556,32 @@ class PlaceMarker extends StatelessWidget {
   }
 }
 
+class RankDot extends StatelessWidget {
+  final int rank;
+  final VoidCallback onTap;
+  const RankDot({super.key, required this.rank, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Center(
+        child: Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFF8C95A3), width: 1),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 6)],
+          ),
+          child: Text('$rank', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: kInk, height: 1)),
+        ),
+      ),
+    );
+  }
+}
+
 class _Tail extends CustomPainter {
   final Color line;
   _Tail(this.line);
@@ -562,6 +663,8 @@ class PlaceSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = place;
     final naver = 'https://map.naver.com/p/search/${Uri.encodeComponent(p.name)}';
+    final open = openInfo(p);
+    final today = '${kDays[nowKst().weekday % 7]}요일';
     return _Sheet(
       initial: 0.55,
       builder: (scroll) => ListView(
@@ -588,6 +691,11 @@ class PlaceSheet extends StatelessWidget {
                 TextSpan(text: '   리뷰 ${p.greviews}개', style: const TextStyle(fontSize: 12.5, color: kGray)),
               ])),
             ),
+          if (open != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(open.text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: open.open ? kBlue : kGray)),
+            ),
           if (p.addr.isNotEmpty) Text(p.addr, style: const TextStyle(fontSize: 13, color: kInk, height: 1.4)),
           const SizedBox(height: 14),
           Row(children: [
@@ -603,6 +711,33 @@ class PlaceSheet extends StatelessWidget {
               Expanded(child: _Btn(label: '전화', primary: true, onTap: () => openUrl('tel:${p.tel}'))),
             ],
           ]),
+          const SizedBox(height: 22),
+          const _Title(text: '영업시간'),
+          const SizedBox(height: 8),
+          if (p.week.isEmpty)
+            const Text('구글에 등록된 영업시간이 없습니다. 카카오맵이나 네이버 지도에서 확인해 주세요.',
+                style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4))
+          else
+            for (final line in p.week)
+              Builder(builder: (_) {
+                final cut = line.indexOf(':');
+                final d = cut > 0 ? line.substring(0, cut).replaceAll('요일', '') : '';
+                final v = cut > 0 ? line.substring(cut + 1).trim() : line;
+                final isToday = line.startsWith(today);
+                final st = TextStyle(fontSize: 12.5, height: 1.4, color: isToday ? kInk : kGray, fontWeight: isToday ? FontWeight.w700 : FontWeight.w400);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    SizedBox(width: 26, child: Text(d, style: st)),
+                    Expanded(child: Text(v, style: st)),
+                  ]),
+                );
+              }),
+          if (p.week.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text('구글 지도 기준이라 명절·임시 휴무는 반영되지 않을 수 있습니다.', style: TextStyle(fontSize: 11, color: kGray)),
+            ),
           const SizedBox(height: 22),
           if (p.vids.isNotEmpty) ...[
             const _Title(text: '유튜브 영상'),

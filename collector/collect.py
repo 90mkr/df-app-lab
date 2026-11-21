@@ -108,7 +108,9 @@ def google_lookup(p):
     }
     res = post_json("https://places.googleapis.com/v1/places:searchText", body, {
         "X-Goog-Api-Key": GOOGLE_KEY,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.rating,places.userRatingCount,places.location,places.googleMapsUri",
+        # 영업시간(regularOpeningHours)은 별점과 같은 요금 등급, 영업 상태(businessStatus)는 더 낮은 등급 → 추가 비용 없음
+        "X-Goog-FieldMask": "places.id,places.displayName,places.rating,places.userRatingCount,places.location,"
+                            "places.googleMapsUri,places.regularOpeningHours,places.businessStatus",
     })
     key = norm(base_name(p["place_name"]))
     for g in res.get("places", []):
@@ -118,8 +120,25 @@ def google_lookup(p):
         gname = norm((g.get("displayName") or {}).get("text", ""))
         if key[:3] not in gname and gname[:3] not in key:
             continue
-        return {"r": g.get("rating", 0), "n": g.get("userRatingCount", 0), "u": g.get("googleMapsUri", "")}
-    return {"r": 0, "n": 0, "u": ""}
+        out = {"r": g.get("rating", 0), "n": g.get("userRatingCount", 0), "u": g.get("googleMapsUri", ""), "v": 2}
+        bs = g.get("businessStatus", "")
+        if bs and bs != "OPERATIONAL":
+            out["bs"] = bs
+        oh = g.get("regularOpeningHours") or {}
+        per = []
+        for pr in oh.get("periods", []):
+            o, c = pr.get("open") or {}, pr.get("close")
+            if not o:
+                continue
+            row = [o.get("day", 0), o.get("hour", 0) * 100 + o.get("minute", 0)]
+            row += [c.get("day", 0), c.get("hour", 0) * 100 + c.get("minute", 0)] if c else [-1, -1]
+            per.append(row)
+        if per:
+            out["h"] = per                                  # [여는 요일, 시각, 닫는 요일, 시각] (요일 0=일)
+        if oh.get("weekdayDescriptions"):
+            out["w"] = oh["weekdayDescriptions"]            # "월요일: 오전 11:00~오후 9:00" 같은 한국어 7줄
+        return out
+    return {"r": 0, "n": 0, "u": "", "v": 2}
 
 
 # ---------- 1. 카카오: 음식점 목록 ----------
@@ -410,7 +429,7 @@ def popular_candidates():
 
 
 def build_list(kind, rows, top_n, use_google):
-    rows = [r for r in rows if r["kind"] == kind]
+    rows = [r for r in rows if r["kind"] == kind and not r["g"].get("bs")]  # 폐업·임시 휴업 제외
     if use_google:
         rows = [r for r in rows if r["g"]["n"] >= MIN_REVIEWS]
     if not rows:
@@ -450,6 +469,8 @@ def build_list(kind, rows, top_n, use_google):
             "score": round(100 * r["raw"] / top),
             "posts": r["posts"][:6],
             "vids": r["vids"],
+            "hours": r["g"].get("h", []),
+            "week": r["g"].get("w", []),
         })
     return out
 
@@ -460,10 +481,12 @@ def main():
         sys.exit(1)
     print("블로그 검색:", "네이버" if (NAVER_ID and NAVER_SECRET) else "다음(카카오)")
 
-    prev = {}
+    prev, rank_of = {}, {}
     try:
         with open(OUT, encoding="utf-8") as f:
-            prev = {str(o["id"]): o.get("vids", []) for o in json.load(f).get("places", [])}
+            _pl = json.load(f).get("places", [])
+            prev = {str(o["id"]): o.get("vids", []) for o in _pl}
+            rank_of = {str(o["id"]): i for i, o in enumerate(sorted(_pl, key=lambda o: -o.get("score", 0)))}
     except Exception:
         pass
     cache = {}
@@ -547,12 +570,15 @@ def main():
             if hit:
                 r["g"] = hit
                 age = (today - dt.date.fromisoformat(hit["d"])).days
+                if pid in ranked and hit.get("v", 1) < 2:
+                    need.append((0, rank_of.get(pid, 99), r))  # 순위권인데 영업시간이 없음: 맨 먼저
+                    continue
                 limit = GOOGLE_DAYS_TOP if pid in ranked else GOOGLE_DAYS
                 if age < limit:
                     continue
-                need.append((1, -age, r))   # 갱신: 오래된 것부터
+                need.append((2, -age, r))   # 갱신: 오래된 것부터
             else:
-                need.append((0, 0, r))      # 처음 보는 가게 먼저
+                need.append((1, 0, r))      # 그다음 처음 보는 가게
         need.sort(key=lambda t: (t[0], t[1]))
         new_calls, fails = 0, 0
         for _, _, r in need:
