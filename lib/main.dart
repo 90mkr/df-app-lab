@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -448,7 +449,7 @@ class _Tail extends CustomPainter {
   _Tail(this.line);
   @override
   void paint(Canvas c, Size s) {
-    final path = Path()
+    final path = ui.Path()
       ..moveTo(0, 0)
       ..lineTo(s.width / 2, s.height)
       ..lineTo(s.width, 0)
