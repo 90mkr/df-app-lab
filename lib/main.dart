@@ -234,8 +234,9 @@ class _MapPageState extends State<MapPage> {
                 for (var i = list.length - 1; i >= 0; i--)
                   Marker(
                     point: list[i].point,
-                    width: 150,
-                    height: 64,
+                    width: i < 3 ? 178 : 154,
+                    height: i < 3 ? 74 : 64,
+                    alignment: Alignment.topCenter,
                     child: PlaceMarker(place: list[i], rank: i + 1, onTap: () => openPlace(list[i])),
                   ),
               ],
@@ -367,6 +368,8 @@ class _Chip extends StatelessWidget {
   }
 }
 
+String commas(int n) => n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
+
 class PlaceMarker extends StatelessWidget {
   final Place place;
   final int rank;
@@ -375,47 +378,88 @@ class PlaceMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = place.score;
-    final size = rank <= 3 ? 18.0 : 14.0;
-    final color = rank <= 3 ? kBlue : Color.lerp(const Color(0xFF8FB0FF), kBlue, s / 100)!;
+    final big = rank <= 3;
+    final img = big ? 52.0 : 44.0;
+    final thumb = place.vids.isNotEmpty ? 'https://i.ytimg.com/vi/${place.vids.first.id}/mqdefault.jpg' : '';
     return GestureDetector(
       onTap: onTap,
-      behavior: HitTestBehavior.translucent,
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        const SizedBox(height: 22),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
-          width: size,
-          height: size,
+          padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 1.5),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 4)],
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: big ? kBlue : kLine, width: 1),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10)],
           ),
-        ),
-        SizedBox(
-          height: 22,
-          child: Container(
-                  margin: const EdgeInsets.only(top: 3),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: kLine, width: 1),
-                  ),
-                  child: Text.rich(
-                    TextSpan(children: [
-                      TextSpan(text: '$rank ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: rank <= 3 ? kBlue : kGray)),
-                      TextSpan(text: place.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: kInk)),
-                    ]),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: SizedBox(
+                width: img,
+                height: img,
+                child: thumb.isEmpty
+                    ? Container(
+                        color: const Color(0xFFF1F3F7),
+                        alignment: Alignment.center,
+                        child: Icon(place.kind == 'cafe' ? Icons.local_cafe_outlined : Icons.restaurant_outlined, size: img * 0.42, color: kGray),
+                      )
+                    : Image.network(
+                        thumb,
+                        fit: BoxFit.cover,
+                        webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                        errorBuilder: (_, __, ___) => Container(color: const Color(0xFFF1F3F7)),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+                Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kBlue : kGray)),
+                    TextSpan(text: place.name, style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: kInk)),
+                  ]),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 2),
+                if (place.greviews > 0)
+                  Text.rich(TextSpan(children: [
+                    const TextSpan(text: '★ ', style: TextStyle(fontSize: 10.5, color: Color(0xFFF5A623))),
+                    TextSpan(text: place.grate.toStringAsFixed(1), style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: kInk)),
+                    TextSpan(text: ' · 리뷰 ${commas(place.greviews)}', style: const TextStyle(fontSize: 10, color: kGray)),
+                  ]), maxLines: 1)
+                else
+                  Text(place.cat, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: kGray)),
+              ]),
+            ),
+          ]),
         ),
+        // 카드 아래 꼬리 (가게 위치를 가리킴)
+        CustomPaint(size: const Size(12, 6), painter: _Tail(big ? kBlue : kLine)),
       ]),
     );
   }
+}
+
+class _Tail extends CustomPainter {
+  final Color line;
+  _Tail(this.line);
+  @override
+  void paint(Canvas c, Size s) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(s.width / 2, s.height)
+      ..lineTo(s.width, 0)
+      ..close();
+    c.drawPath(path, Paint()..color = Colors.white);
+    c.drawLine(Offset(0, 0), Offset(s.width / 2, s.height), Paint()..color = line..strokeWidth = 1);
+    c.drawLine(Offset(s.width, 0), Offset(s.width / 2, s.height), Paint()..color = line..strokeWidth = 1);
+  }
+
+  @override
+  bool shouldRepaint(covariant _Tail old) => old.line != line;
 }
 
 class ScoreTag extends StatelessWidget {
