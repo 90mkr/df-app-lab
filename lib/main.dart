@@ -414,6 +414,55 @@ class _MapPageState extends State<MapPage> {
   }
 
   bool regionOpen = false; // 지역 메뉴(머리말 아래로 펼침)
+  bool searching = false; // 가게 이름 검색
+  String query = '';
+  final searchCtl = TextEditingController();
+
+  void openSearch() => setState(() {
+        searching = !searching;
+        regionOpen = false;
+        if (!searching) {
+          query = '';
+          searchCtl.clear();
+        }
+      });
+
+  // 검색 결과로 지도 맞추기 (한 곳이면 바로 그 가게 화면)
+  void fitResults() {
+    final l = visible;
+    if (l.isEmpty) return;
+    if (l.length == 1) {
+      openPlace(l.first);
+      return;
+    }
+    map.fitCamera(CameraFit.coordinates(
+      coordinates: [for (final p in l) p.point],
+      padding: const EdgeInsets.fromLTRB(60, 220, 60, 60),
+      maxZoom: 16,
+    ));
+  }
+
+  Widget chipsRow() => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (final k in const [
+            ['all', '전체'],
+            ['near', '내 주변'],
+            ['open', '영업 중'],
+            ['tv', '방송탄'],
+            ['food', '맛집'],
+            ['cafe', '카페'],
+            ['big', '대형 카페'],
+            ['view', '뷰 맛집'],
+            ['rise', '새로 뜨는 집'],
+          ])
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _Chip(label: k[1], on: kind == k[0], onTap: () => pickKind(k[0])),
+            ),
+          _Chip(label: feats.isEmpty ? '편의 필터' : '편의 필터 ${feats.length}', on: feats.isNotEmpty, onTap: openFeats),
+        ]),
+      );
 
   void openRegion() {
     if (sidos.isEmpty) return;
@@ -423,6 +472,11 @@ class _MapPageState extends State<MapPage> {
   List<Place> get visible {
     final d = data;
     if (d == null) return [];
+    if (query.isNotEmpty) {
+      final q = query.replaceAll(' ', '').toLowerCase();
+      return d.places.where((p) => (p.top || p.rise) && p.name.replaceAll(' ', '').toLowerCase().contains(q)).toList()
+        ..sort((a, b) => b.score.compareTo(a.score));
+    }
     var src = d.places.where((p) => kind == 'rise' ? p.rise : (p.top && p.score > 0));
     if (feats.isNotEmpty) src = src.where((p) => feats.every(p.feat.contains));
     if (kind == 'open') src = src.where((p) => openInfo(p)?.open == true);
@@ -486,6 +540,7 @@ class _MapPageState extends State<MapPage> {
   String subText(int total, int cards) {
     final d = data;
     if (d == null) return '맛집 자료를 불러오는 중';
+    if (query.isNotEmpty) return total == 0 ? '「$query」 찾는 집이 없습니다' : '「$query」 $total곳';
     if (kind == 'near') {
       if (locating || me == null) return '내 위치를 확인하는 중';
       if (total == 0) return '3km 안에 아직 자료가 있는 집이 없습니다';
@@ -627,6 +682,7 @@ class _MapPageState extends State<MapPage> {
   @override
   Widget build(BuildContext context) {
     final list = visible;
+    final wide = MediaQuery.of(context).size.width >= 760; // 넓은 화면: 분류 단추를 머리말 오른쪽에
     final place = layout(list);
     final cards = place.where((x) => x.$1 == 0).length;
     // 작은 것부터 깔고 큰 카드를 위에 (같은 단계는 높은 순위가 위)
@@ -689,8 +745,46 @@ class _MapPageState extends State<MapPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _Header(data: data, area: area, open: regionOpen, onRegion: openRegion, sub: subText(list.length, cards), onRank: data == null ? null : openRank),
+              _Header(
+                data: data,
+                area: area,
+                open: regionOpen,
+                onRegion: openRegion,
+                sub: subText(list.length, cards),
+                onRank: data == null ? null : openRank,
+                onSearch: openSearch,
+                searching: searching,
+                middle: (wide && !regionOpen && !searching) ? chipsRow() : null,
+              ),
               const SizedBox(height: 8),
+              if (searching)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(left: 14, right: 4),
+                  decoration: _card(),
+                  child: Row(children: [
+                    const Icon(Icons.search_rounded, size: 20, color: kGray),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: searchCtl,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        style: const TextStyle(fontSize: 14.5, color: kInk),
+                        decoration: const InputDecoration(
+                          hintText: '가게 이름으로 찾기',
+                          hintStyle: TextStyle(fontSize: 14.5, color: kGray),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onChanged: (v) => setState(() => query = v.trim()),
+                        onSubmitted: (_) => fitResults(),
+                      ),
+                    ),
+                    IconButton(onPressed: openSearch, icon: const Icon(Icons.close_rounded, color: kInk, size: 20)),
+                  ]),
+                ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOutCubic,
@@ -707,28 +801,7 @@ class _MapPageState extends State<MapPage> {
                         },
                       ),
               ),
-              if (!regionOpen)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  for (final k in const [
-                    ['all', '전체'],
-                    ['near', '내 주변'],
-                    ['open', '영업 중'],
-                    ['tv', '방송탄'],
-                    ['food', '맛집'],
-                    ['cafe', '카페'],
-                    ['big', '대형 카페'],
-                    ['view', '뷰 맛집'],
-                    ['rise', '새로 뜨는 집'],
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: _Chip(label: k[1], on: kind == k[0], onTap: () => pickKind(k[0])),
-                    ),
-                  _Chip(label: feats.isEmpty ? '편의 필터' : '편의 필터 ${feats.length}', on: feats.isNotEmpty, onTap: openFeats),
-                ]),
-              ),
+              if (!regionOpen && !searching && !wide) chipsRow(),
             ]),
           ),
         ),
@@ -800,7 +873,20 @@ class _Header extends StatelessWidget {
   final VoidCallback onRegion;
   final String sub;
   final VoidCallback? onRank;
-  const _Header({required this.data, required this.area, required this.open, required this.onRegion, required this.sub, required this.onRank});
+  final VoidCallback onSearch;
+  final bool searching;
+  final Widget? middle;
+  const _Header({
+    required this.data,
+    required this.area,
+    required this.open,
+    required this.onRegion,
+    required this.sub,
+    required this.onRank,
+    required this.onSearch,
+    required this.searching,
+    this.middle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -808,7 +894,9 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
       decoration: _card(),
       child: Row(children: [
-        Expanded(
+        Flexible(
+          flex: middle == null ? 1 : 0,
+          fit: middle == null ? FlexFit.tight : FlexFit.loose,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // 지역 메뉴: 눈에 띄는 「지역」 단추, 옆의 지금 지역을 눌러도 열린다
             GestureDetector(
@@ -839,6 +927,24 @@ class _Header extends StatelessWidget {
             ),
           ]),
         ),
+        if (middle != null) ...[const SizedBox(width: 18), Expanded(child: middle!)],
+        const SizedBox(width: 8),
+        // 가게 이름 검색
+        InkWell(
+          onTap: onSearch,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: searching ? kDark : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: searching ? kDark : kLine, width: 1),
+            ),
+            child: Icon(Icons.search_rounded, size: 21, color: searching ? Colors.white : kInk),
+          ),
+        ),
+        const SizedBox(width: 6),
         TextButton(
           onPressed: onRank,
           style: TextButton.styleFrom(
