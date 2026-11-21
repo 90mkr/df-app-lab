@@ -1079,6 +1079,7 @@ class _RegionPanelState extends State<RegionPanel> {
   Widget _panel(Sido s) {
     if (s.areas.isEmpty) {
       return Container(
+        width: double.infinity, // 가로 전체를 채운다
         color: kRegion,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         child: const Text('준비 중입니다. 인천부터 차례로 넓혀 갑니다.', style: TextStyle(fontSize: 13, color: Color(0xFFF3E9E1))),
@@ -1089,6 +1090,7 @@ class _RegionPanelState extends State<RegionPanel> {
       pairs.add(s.areas.sublist(i, math.min(i + 2, s.areas.length)));
     }
     return Container(
+      width: double.infinity,
       color: kRegion,
       padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
       child: Column(children: [
