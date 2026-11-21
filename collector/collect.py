@@ -36,6 +36,12 @@ KAKAO_KEY = os.environ.get("KAKAO_REST_KEY", "").strip()
 NAVER_ID = os.environ.get("NAVER_CLIENT_ID", "").strip()
 NAVER_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "").strip()
 YOUTUBE_KEY = os.environ.get("YOUTUBE_KEY", "").strip()
+# 구글 지도(별점·리뷰 수) 열쇠 — 따로 없으면 유튜브 열쇠를 같이 쓴다
+GOOGLE_KEY = (os.environ.get("GOOGLE_KEY", "") or YOUTUBE_KEY).strip()
+GOOGLE_MAX = int(os.environ.get("GOOGLE_MAX", "250"))   # 한 번 실행에 새로 조회하는 최대 수 (비용 상한)
+GOOGLE_DAYS = int(os.environ.get("GOOGLE_DAYS", "14"))  # 같은 가게는 이 기간 동안 다시 조회하지 않음
+MIN_REVIEWS = int(os.environ.get("MIN_REVIEWS", "30"))  # 구글 리뷰가 이보다 적으면 순위 제외
+CACHE = os.path.join(os.path.dirname(__file__), "..", "web", "data", "google_cache.json")
 
 
 def get_json(url, headers=None, tries=3):
@@ -55,6 +61,46 @@ def get_json(url, headers=None, tries=3):
                 time.sleep(2)
                 continue
             raise
+
+
+def post_json(url, body, headers):
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", **headers}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"{e.code} {e.read().decode('utf-8', 'ignore')[:300]}")
+
+
+def dist_m(lat1, lng1, lat2, lng2):
+    dy = (lat1 - lat2) * 111000
+    dx = (lng1 - lng2) * 88000
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def google_lookup(p):
+    """구글 지도에서 같은 가게를 찾아 별점·리뷰 수를 받는다 (300m 안, 이름 일부 일치)."""
+    lat, lng = float(p["y"]), float(p["x"])
+    body = {
+        "textQuery": f'{p["place_name"]} {p.get("road_address_name") or p.get("address_name") or ""}',
+        "languageCode": "ko", "regionCode": "KR", "maxResultCount": 3,
+        "locationBias": {"circle": {"center": {"latitude": lat, "longitude": lng}, "radius": 300.0}},
+    }
+    res = post_json("https://places.googleapis.com/v1/places:searchText", body, {
+        "X-Goog-Api-Key": GOOGLE_KEY,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.rating,places.userRatingCount,places.location,places.googleMapsUri",
+    })
+    key = norm(base_name(p["place_name"]))
+    for g in res.get("places", []):
+        loc = g.get("location", {})
+        if dist_m(lat, lng, loc.get("latitude", 0), loc.get("longitude", 0)) > 300:
+            continue
+        gname = norm((g.get("displayName") or {}).get("text", ""))
+        if key[:3] not in gname and gname[:3] not in key:
+            continue
+        return {"r": g.get("rating", 0), "n": g.get("userRatingCount", 0), "u": g.get("googleMapsUri", "")}
+    return {"r": 0, "n": 0, "u": ""}
 
 
 # ---------- 1. 카카오: 음식점 목록 ----------
@@ -340,17 +386,23 @@ def popular_candidates():
     return list(cands.values())
 
 
-def build_list(kind, rows, top_n):
+def build_list(kind, rows, top_n, use_google):
     rows = [r for r in rows if r["kind"] == kind]
+    if use_google:
+        rows = [r for r in rows if r["g"]["n"] >= MIN_REVIEWS]
     if not rows:
         return []
     max_pop = max(r["pop"] for r in rows) or 1
     max_blog = max(r["est"] for r in rows) or 1
+    max_g = max(r["g"]["r"] / 5 * math.log10(1 + r["g"]["n"]) for r in rows) or 1
     for r in rows:
-        p_ = r["pop"] / max_pop
         b_ = math.log2(1 + r["est"]) / math.log2(1 + max_blog)
         v_ = min(len(r["vids"]), 3) / 3
-        r["raw"] = 0.5 * p_ + 0.35 * b_ + 0.15 * v_
+        if use_google:
+            g_ = (r["g"]["r"] / 5 * math.log10(1 + r["g"]["n"])) / max_g
+            r["raw"] = 0.65 * g_ + 0.2 * b_ + 0.15 * v_
+        else:
+            r["raw"] = 0.5 * (r["pop"] / max_pop) + 0.35 * b_ + 0.15 * v_
     rows.sort(key=lambda r: r["raw"], reverse=True)
     top = rows[0]["raw"] or 1
     out = []
@@ -369,6 +421,9 @@ def build_list(kind, rows, top_n):
             "home": r["home"],
             "blog": r["est"],
             "ads": r["ads"],
+            "grate": r["g"]["r"],
+            "greviews": r["g"]["n"],
+            "gurl": r["g"]["u"],
             "score": round(100 * r["raw"] / top),
             "posts": r["posts"][:6],
             "vids": r["vids"],
@@ -388,8 +443,25 @@ def main():
             prev = {str(o["id"]): o.get("vids", []) for o in json.load(f).get("places", [])}
     except Exception:
         pass
+    cache = {}
+    try:
+        with open(CACHE, encoding="utf-8") as f:
+            cache = json.load(f)
+    except Exception:
+        pass
 
-    cands = popular_candidates()
+    # 후보 1: 카카오 검색 상위 + 꼭 확인할 가게
+    pop = popular_candidates()
+    by_id = {c["p"]["id"]: c for c in pop}
+    # 후보 2: 송도 전체 음식점·카페 (체인 제외)
+    for code in ("FD6", "CE7"):
+        for p in collect_places(code):
+            if is_chain(p.get("place_name")) or p["id"] in by_id:
+                continue
+            by_id[p["id"]] = {"p": p, "pop": 0, "hits": 0}
+    cands = list(by_id.values())
+    print(f"블로그 확인 대상 {len(cands)}곳")
+    done = [0]
 
     def one(c):
         p = c["p"]
@@ -398,21 +470,57 @@ def main():
         except Exception as e:
             print("블로그 실패", p["place_name"], str(e)[:120])
             posts, ads, est, home = [], 0, 0, ""
+        done[0] += 1
+        if done[0] % 300 == 0:
+            print(f"  블로그 {done[0]}/{len(cands)}")
         kind = "cafe" if p.get("category_group_code") == "CE7" else "food"
         return {"p": p, "kind": kind, "pop": c["pop"], "posts": posts, "ads": ads, "est": est,
-                "home": home, "vids": prev.get(str(p["id"]), [])}
+                "home": home, "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
 
     with ThreadPoolExecutor(max_workers=6) as ex:
         rows = list(ex.map(one, cands))
 
-    # 유튜브는 종류별 인기 상위 후보만 확인 (하루 사용량 한도)
+    # 구글 별점·리뷰: 카카오 인기 후보 + 블로그 상위 위주로, 저장해 둔 값은 2주간 재사용
+    use_google = False
+    if GOOGLE_KEY:
+        today = dt.date.today()
+        pri = sorted(rows, key=lambda r: (r["pop"] > 0, r["est"]), reverse=True)
+        pri = [r for r in pri if r["pop"] > 0 or r["est"] >= 3][:600]
+        new_calls, fails = 0, 0
+        for r in pri:
+            pid = str(r["p"]["id"])
+            hit = cache.get(pid)
+            if hit and (today - dt.date.fromisoformat(hit["d"])).days < GOOGLE_DAYS:
+                r["g"] = hit
+                continue
+            if new_calls >= GOOGLE_MAX:
+                continue
+            try:
+                g = google_lookup(r["p"])
+                new_calls += 1
+                g["d"] = today.isoformat()
+                cache[pid] = g
+                r["g"] = g
+            except Exception as e:
+                fails += 1
+                print("구글 실패:", str(e)[:200])
+                if fails >= 3:
+                    break
+        have = sum(1 for r in rows if r["g"]["n"] >= MIN_REVIEWS)
+        print(f"구글 새 조회 {new_calls}회, 리뷰 {MIN_REVIEWS}개 이상 {have}곳")
+        use_google = have >= 20
+        with open(CACHE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, separators=(",", ":"))
+
+    # 유튜브: 종류별 상위 후보만 (하루 사용량 한도)
     if YOUTUBE_KEY:
         stop = False
         for kind in ("food", "cafe"):
-            ks = sorted([r for r in rows if r["kind"] == kind], key=lambda r: r["pop"], reverse=True)
+            ks = sorted([r for r in rows if r["kind"] == kind],
+                        key=lambda r: (r["g"]["n"], r["est"]) if use_google else (r["pop"], r["est"]), reverse=True)
             for r in ks[:YOUTUBE_TOP]:
-                if stop:
-                    break
+                if stop or r["vids"]:
+                    continue
                 try:
                     found = youtube_videos(r["p"])
                     if found:
@@ -423,14 +531,15 @@ def main():
 
     all_out = []
     for kind, label in (("food", "맛집"), ("cafe", "카페")):
-        out = build_list(kind, rows, TOP_N)
+        out = build_list(kind, rows, TOP_N, use_google)
         all_out += out
-        print(f"[{label}] " + " / ".join(f"{o['name']}({o['score']})" for o in out))
+        print(f"[{label}] " + " / ".join(f"{o['name']}({o['score']}, 구글 {o['greviews']})" for o in out))
 
     data = {
         "area": AREA_NAME,
         "updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
         "recent_days": RECENT_DAYS,
+        "basis": "google" if use_google else "kakao",
         "candidates": len(cands),
         "count": len(all_out),
         "places": all_out,
@@ -438,7 +547,7 @@ def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"저장 완료: {len(all_out)}곳 ({os.path.getsize(OUT) // 1024}KB)")
+    print(f"저장 완료: {len(all_out)}곳 ({os.path.getsize(OUT) // 1024}KB), 기준: {data['basis']}")
 
 
 if __name__ == "__main__":

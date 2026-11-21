@@ -60,7 +60,9 @@ class Video {
 }
 
 class Place {
-  final String id, kind, name, cat, addr, tel, kakao, home;
+  final String id, kind, name, cat, addr, tel, kakao, home, gurl;
+  final double grate;
+  final int greviews;
   final double lat, lng;
   final int blog, ads, score;
   final List<Post> posts;
@@ -74,6 +76,9 @@ class Place {
         tel = j['tel'] ?? '',
         kakao = j['kakao'] ?? '',
         home = j['home'] ?? '',
+        gurl = j['gurl'] ?? '',
+        grate = ((j['grate'] ?? 0) as num).toDouble(),
+        greviews = j['greviews'] ?? 0,
         lat = (j['lat'] as num).toDouble(),
         lng = (j['lng'] as num).toDouble(),
         blog = j['blog'] ?? 0,
@@ -197,7 +202,7 @@ class _MapPageState extends State<MapPage> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: kInk)),
                       const SizedBox(height: 2),
-                      Text('${p.cat}  ·  블로그 ${p.blog}${p.vids.isNotEmpty ? '  ·  영상 ${p.vids.length}' : ''}',
+                      Text('${p.cat}${p.greviews > 0 ? '  ·  ★${p.grate.toStringAsFixed(1)} (${p.greviews})' : ''}  ·  블로그 ${p.blog}',
                           style: const TextStyle(fontSize: 12, color: kGray)),
                     ]),
                   ),
@@ -492,6 +497,15 @@ class PlaceSheet extends StatelessWidget {
             ScoreTag(score: p.score),
           ]),
           const SizedBox(height: 10),
+          if (p.greviews > 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text.rich(TextSpan(children: [
+                const TextSpan(text: '구글 별점 ', style: TextStyle(fontSize: 12.5, color: kGray)),
+                TextSpan(text: p.grate.toStringAsFixed(1), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
+                TextSpan(text: '   리뷰 ${p.greviews}개', style: const TextStyle(fontSize: 12.5, color: kGray)),
+              ])),
+            ),
           if (p.addr.isNotEmpty) Text(p.addr, style: const TextStyle(fontSize: 13, color: kInk, height: 1.4)),
           const SizedBox(height: 14),
           Row(children: [
