@@ -679,14 +679,12 @@ class FeatChip extends StatelessWidget {
 const kFoodTint = Color(0xFFE53935); // 맛집: 빨강
 const kCafeTint = Color(0xFF8A5A33); // 카페: 밝은 갈색 (커피색)
 const kLineBrown = Color(0xFF5C3A21); // 카페 카드 테두리·꼬리: 짙은 갈색
-const kFoodEdge = Color(0xFFB3261E); // 맛집 작은 아이콘 테두리: 짙은 빨강
 
 IconData kindIcon(String kind) => kind == 'cafe' ? Icons.local_cafe_outlined : Icons.restaurant_outlined;
 Color kindTint(String kind) => kind == 'cafe' ? kCafeTint : kFoodTint;
 // 카드 테두리: 맛집 빨강, 카페 짙은 갈색 (전체 보기에서 한눈에 구분)
 Color kindLine(String kind) => kind == 'cafe' ? kLineBrown : kFoodTint;
-// 작은 아이콘 테두리: 채운 색보다 한 단계 짙게
-Color kindEdge(String kind) => kind == 'cafe' ? kLineBrown : kFoodEdge;
+
 IconData kindIconFilled(String kind) => kind == 'cafe' ? Icons.local_cafe : Icons.restaurant;
 
 // 색을 채운 동그라미 + 흰 그림 (사진이 없을 때)
@@ -811,14 +809,13 @@ class IconMarker extends StatelessWidget {
           decoration: BoxDecoration(
             color: kindTint(place.kind),
             borderRadius: BorderRadius.circular(7),
-            border: Border.all(color: kindEdge(place.kind), width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 6)],
           ),
           child: KindGlyph(kind: place.kind, size: 18, bg: kindTint(place.kind)),
         ),
         Transform.translate(
           offset: const Offset(0, -1.5),
-          child: CustomPaint(size: const Size(8, 5), painter: _Tail(kindEdge(place.kind), fill: kindTint(place.kind))),
+          child: CustomPaint(size: const Size(8, 5), painter: _Tail(kindTint(place.kind), fill: kindTint(place.kind))),
         ),
       ]),
     );

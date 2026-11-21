@@ -81,14 +81,8 @@ jobs:
           mkdir -p build/web/data
           cp web/data/songdo.json build/web/data/
 
-      - name: 새 화면이 바로 보이게 (브라우저 저장본 대신 새 파일)
-        run: |
-          V=${{ github.run_id }}
-          sed -i -E "s#flutter_bootstrap\.js(\?v=[0-9]+)?#flutter_bootstrap.js?v=$V#g" build/web/index.html
-          sed -i -E "s#\"mainJsPath\":\"main\.dart\.js(\?v=[0-9]+)?\"#\"mainJsPath\":\"main.dart.js?v=$V\"#g" build/web/flutter_bootstrap.js
-          grep -o 'flutter_bootstrap\.js[^"]*' build/web/index.html | head -1
-          grep -o '"mainJsPath":"[^"]*"' build/web/flutter_bootstrap.js | head -1 || echo "mainJsPath 없음"
-          grep -c "serviceWorker" build/web/flutter_bootstrap.js || true
+      - name: 새 화면이 바로 보이게 (판 번호 찍기)
+        run: python3 tool/stamp_web.py ${{ github.run_id }}
 
       - name: 미리보기 게시 준비
         uses: actions/configure-pages@v6
