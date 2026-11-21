@@ -131,7 +131,7 @@ String cuisineOf(Place p) {
 // 대표 메뉴: 영상·블로그 제목에 두 번 넘게 나온 메뉴 (모범음식점 자료의 주된 음식이 있으면 그것을 먼저)
 const kMenus = [
   '묵은지김치찜', '김치찜', '김치찌개', '된장찌개', '부대찌개', '순두부', '청국장', '갈비찜', '갈비탕', '돼지갈비', '소갈비', '갈비', '삼겹살', '목살', '항정살',
-  '갈매기살', '차돌박이', '꽃등심', '등심', '안심', '한우', '육회', '불고기', '제육볶음', '닭갈비', '닭볶음탕', '백숙', '삼계탕', '찜닭', '치킨', '족발', '보쌈',
+  '갈매기살', '차돌박이', '꽃등심', '등심', '한우', '육회', '불고기', '제육볶음', '닭갈비', '닭볶음탕', '백숙', '삼계탕', '찜닭', '치킨', '족발', '보쌈',
   '곱창', '막창', '대창', '순대국', '순댓국', '돼지국밥', '국밥', '해장국', '뼈해장국', '감자탕', '곰탕', '설렁탕', '수육', '물냉면', '비빔냉면', '냉면', '막국수',
   '바지락칼국수', '해물칼국수', '칼국수', '수제비', '잔치국수', '콩국수', '비빔밥', '쌈밥', '한정식', '보리밥', '생선구이', '갈치조림', '아구찜', '해물찜', '해물탕',
   '매운탕', '조개구이', '조개찜', '낙지볶음', '연포탕', '쭈꾸미', '주꾸미', '장어구이', '장어', '물회', '회덮밥', '모둠회', '대게', '킹크랩', '간장게장', '양념게장',
@@ -143,11 +143,17 @@ const kMenus = [
   '푸딩', '아인슈페너', '핸드드립', '말차', '밀크티',
 ];
 
+// 메뉴 이름이 다른 낱말 속에 숨어 헛걸리는 것 (베이커리 → 커리, 안심식당 → 안심 …)은 먼저 지운다
+const kMenuMask = ['베이커리', '안심식당', '스토리', '타코야끼집'];
+
 List<String> menusOf(Place p) {
   final texts = [for (final v in p.vids) v.title, for (final b in p.posts) '${b.title} ${b.desc}'];
   final cnt = <String, int>{};
   for (final t in texts) {
-    final s = t.replaceAll(' ', '');
+    var s = t.replaceAll(' ', '');
+    for (final w in kMenuMask) {
+      s = s.replaceAll(w, '/');
+    }
     for (final m in kMenus) {
       if (s.contains(m)) cnt[m] = (cnt[m] ?? 0) + 1;
     }
@@ -1378,7 +1384,8 @@ class YtRow extends StatelessWidget {
               Text(place.name,
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.3)),
               const SizedBox(height: 2),
-              Text(metaOf(place), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
+              Text([if (myPos.value != null) distText(meters(myPos.value!, place.point)), metaOf(place)].join(' · '),
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
               if (oneLine(place).isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(oneLine(place), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: kInk)),
@@ -1573,7 +1580,13 @@ class SavedView extends StatelessWidget {
                               Text('${k['n'] ?? ''}',
                                   maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
                               const SizedBox(height: 2),
-                              Text('${k['an'] ?? ''} · ${k['c'] ?? ''}',
+                              Text(
+                                  [
+                                    if (myPos.value != null && k['la'] != null)
+                                      distText(meters(myPos.value!, LatLng(((k['la'] ?? 0) as num).toDouble(), ((k['ln'] ?? 0) as num).toDouble()))),
+                                    '${k['an'] ?? ''}',
+                                    '${k['c'] ?? ''}',
+                                  ].where((x) => x.isNotEmpty).join(' · '),
                                   maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w300, color: kSub)),
                             ]),
                           ),
@@ -1986,4 +1999,57 @@ class _ReportSheetState extends State<ReportSheet> {
       ),
     );
   }
+}
+
+// ---- 거리 (내 위치를 알면 「내 위치에서 1.2km」, 모르면 「거리 보기」를 눌러 위치 확인) ----
+class DistanceText extends StatefulWidget {
+  final Place place;
+  const DistanceText({super.key, required this.place});
+  @override
+  State<DistanceText> createState() => _DistanceTextState();
+}
+
+class _DistanceTextState extends State<DistanceText> {
+  bool busy = false;
+  String note = '';
+
+  Future<void> locate() async {
+    setState(() {
+      busy = true;
+      note = '';
+    });
+    final at = await myLocation();
+    if (!mounted) return;
+    setState(() {
+      busy = false;
+      if (at == null) note = '위치를 확인하지 못했습니다';
+    });
+    if (at != null) myPos.value = at;
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<LatLng?>(
+        valueListenable: myPos,
+        builder: (_, at, __) => Row(children: [
+          const Icon(Icons.near_me_outlined, size: 14, color: kInk),
+          const SizedBox(width: 5),
+          if (at != null)
+            Text.rich(TextSpan(children: [
+              const TextSpan(text: '내 위치에서 ', style: TextStyle(fontSize: 13, color: kGray)),
+              TextSpan(text: distText(meters(at, widget.place.point)), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
+            ]))
+          else
+            Semantics(
+              button: true,
+              label: '거리 보기',
+              onTap: busy ? null : locate,
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: busy ? null : locate,
+                child: Text(busy ? '내 위치 확인 중…' : (note.isNotEmpty ? note : '거리 보기 (내 위치 확인)'),
+                    style: const TextStyle(fontSize: 13, color: kGray, decoration: TextDecoration.underline, decorationColor: kGray)),
+              ),
+            ),
+        ]),
+      );
 }

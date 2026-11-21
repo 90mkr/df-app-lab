@@ -194,6 +194,24 @@ double meters(LatLng a, LatLng b) {
 String distText(double m) => m < 1000 ? '${(m / 10).round() * 10}m' : '${(m / 1000).toStringAsFixed(1)}km';
 
 // 내 위치 (거부·실패하면 null)
+// 내 위치 (거리 표시용) — 한 번 알면 가게 화면·목록·내 콕에 거리가 붙는다
+final myPos = ValueNotifier<LatLng?>(null);
+
+// 이미 위치 사용을 허락받았을 때만 조용히 (묻는 창을 띄우지 않음)
+Future<LatLng?> quietLocation() async {
+  try {
+    if (!kIsWeb && !await Geolocator.isLocationServiceEnabled()) return null;
+    final perm = await Geolocator.checkPermission();
+    if (perm != LocationPermission.always && perm != LocationPermission.whileInUse) return null;
+    final pos = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 12)),
+    );
+    return LatLng(pos.latitude, pos.longitude);
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<LatLng?> myLocation() async {
   try {
     if (!kIsWeb && !await Geolocator.isLocationServiceEnabled()) return null;
@@ -363,6 +381,31 @@ class _MapPageState extends State<MapPage> {
     return cuisine.isEmpty ? b : (kind == 'all' ? cuisine : '$cuisine $b');
   }
 
+  // 홈에서 음식 종류: 지도로 가서 지금 동네의 그 음식 집이 모두 보이게 맞춘다
+  void goCuisine(String c) {
+    setState(() {
+      tab = 2;
+      regionOpen = false;
+      kind = 'all';
+      cuisine = c;
+      course = null;
+    });
+    final d = data;
+    final pts = [
+      for (final p in d?.places ?? const <Place>[])
+        if (p.top && cuisineOf(p) == c) p.point
+    ];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (pts.length >= 2) {
+        map.fitCamera(CameraFit.coordinates(coordinates: pts, padding: const EdgeInsets.fromLTRB(70, 240, 70, 120), maxZoom: 15.5));
+      } else if (pts.length == 1) {
+        map.move(pts.first, 15.5);
+      } else {
+        map.move(area.center, area.zoom);
+      }
+    });
+  }
+
   // 음식 종류 고르기 (지도 분류 줄의 「음식 종류」 · 홈의 음식 알약)
   void pickCuisine(String c) => setState(() {
         cuisine = c;
@@ -416,7 +459,10 @@ class _MapPageState extends State<MapPage> {
     if (!mounted) return;
     setState(() {
       locating = false;
-      if (pos != null) me = pos;
+      if (pos != null) {
+        me = pos;
+        myPos.value = pos;
+      }
     });
     if (pos != null) await _ensureNear(pos);
     if (!mounted) return;
@@ -435,7 +481,16 @@ class _MapPageState extends State<MapPage> {
   }
 
   // 지역 목록을 받고, 지난번에 본 동네를 다시 연다
+  void _onPos() {
+    final v = myPos.value;
+    if (v != null && v != me && mounted) setState(() => me = v);
+  }
+
   Future<void> _start() async {
+    myPos.addListener(_onPos);
+    quietLocation().then((at) {
+      if (at != null) myPos.value = at;
+    });
     final list = await loadRegions();
     String? saved;
     var savedKoks = <String>[];
@@ -590,6 +645,7 @@ class _MapPageState extends State<MapPage> {
     final at = await myLocation();
     if (at == null || !mounted) return false;
     setState(() => me = at);
+    myPos.value = at;
     await _ensureNear(at);
     return true;
   }
@@ -1034,11 +1090,12 @@ class _MapPageState extends State<MapPage> {
     }
     if (total == 0) {
       if (feats.isNotEmpty) return '편의 필터에 맞는 집이 없습니다';
+      if (cuisine.isNotEmpty) return '이 범위에는 $cuisine 집이 없어요 · 지도를 넓혀 보세요';
       return switch (kind) {
-        'big' => '대형 카페는 매일 새벽에 확인합니다',
-        'tv' => '방송탄 집은 매일 새벽에 확인합니다',
-        'view' => '뷰 맛집은 매일 새벽에 확인합니다',
-        'rise' => '새로 뜨는 집은 매일 새벽에 확인합니다',
+        'big' => '대형 카페는 매일 저녁 새로 확인합니다',
+        'tv' => '방송탄 집은 매일 저녁 새로 확인합니다',
+        'view' => '뷰 맛집은 매일 저녁 새로 확인합니다',
+        'rise' => '새로 뜨는 집은 매일 저녁 새로 확인합니다',
         'open' => '지금 문 연 집이 없습니다',
         _ => '아직 자료가 없습니다',
       };
@@ -1196,13 +1253,7 @@ class _MapPageState extends State<MapPage> {
           onSearch: toMapSearch,
           onRetry: _load,
           onRoulette: openRoulette,
-          onCuisine: (c) {
-            setState(() {
-              tab = 2;
-              regionOpen = false;
-            });
-            pickCuisine(c);
-          },
+          onCuisine: goCuisine,
           onWhere: goWhere,
           onChannel: openChannel,
           onCourse: openCourse,
@@ -2194,6 +2245,7 @@ class PlaceSheet extends StatelessWidget {
                 TextSpan(text: '   리뷰 ${p.greviews}개', style: const TextStyle(fontSize: 12.5, color: kGray)),
               ])),
             ),
+          Padding(padding: const EdgeInsets.only(bottom: 4), child: DistanceText(place: p)),
           if (p.model.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
