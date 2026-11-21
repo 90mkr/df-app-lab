@@ -130,8 +130,14 @@ def run(pg):
         time.sleep(1.5)
     tap_text("내 콕")
     shot("내콕")
+    if tap_text("최근 본 집", 1.5, exact=False):
+        shot("내콕_최근")
+    if tap_text("콕한 집", 1.5, exact=False):
+        shot("내콕_콕한집")
     if tap_text("설정", 2):
         shot("설정")
+        wheel(195, 600, 900, 1.5)
+        shot("설정_아래")
         tap_text("뒤로", 1.5)
     # 지역 메뉴 → 영종도
     tap_text("홈")
@@ -178,6 +184,14 @@ with sync_playwright() as p:
         pg.screenshot(path=f"{OUT}/98_넓은화면.png")
     except Exception as e:
         log.append(f"[넓은 화면] {e}")
+    # 약관 페이지
+    try:
+        pg.set_viewport_size({"width": W, "height": H})
+        pg.goto(URL.rstrip("/") + "/policy/terms.html", wait_until="load", timeout=60000)
+        time.sleep(2)
+        pg.screenshot(path=f"{OUT}/97_이용약관.png", full_page=True)
+    except Exception as e:
+        log.append(f"[약관] {e}")
     br.close()
 
 with open(f"{OUT}/log.txt", "w", encoding="utf-8") as f:

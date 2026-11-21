@@ -1513,13 +1513,85 @@ class VideoView extends StatelessWidget {
 }
 
 // ---- 내 콕 (저장한 집) ----
-class SavedView extends StatelessWidget {
-  final List<Map<String, dynamic>> koks;
-  final ValueChanged<Map<String, dynamic>> onOpen, onRemove;
-  const SavedView({super.key, required this.koks, required this.onOpen, required this.onRemove});
+class SavedView extends StatefulWidget {
+  final List<Map<String, dynamic>> koks, recents;
+  final ValueChanged<Map<String, dynamic>> onOpen, onRemove, onRemoveRecent;
+  final VoidCallback onClearRecents;
+  const SavedView(
+      {super.key,
+      required this.koks,
+      required this.recents,
+      required this.onOpen,
+      required this.onRemove,
+      required this.onRemoveRecent,
+      required this.onClearRecents});
+  @override
+  State<SavedView> createState() => _SavedViewState();
+}
+
+class _SavedViewState extends State<SavedView> {
+  int? which; // 0 콕한 집 · 1 최근 본 집 (안 골랐으면 콕한 집이 없을 때 최근 본 집부터)
   void openSettings(BuildContext context) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+
+  // 언제 봤는지: 오늘 · 어제 · 3일 전 · 11월 2일
+  static String seen(Object? t) {
+    if (t is! num) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(t.toInt());
+    final now = DateTime.now();
+    final days = DateTime(now.year, now.month, now.day).difference(DateTime(d.year, d.month, d.day)).inDays;
+    if (days <= 0) return '오늘';
+    if (days == 1) return '어제';
+    if (days < 7) return '$days일 전';
+    return '${d.month}월 ${d.day}일';
+  }
+
+  Widget row(Map<String, dynamic> k, {required VoidCallback onRemove, required String removeTip, bool when = false}) {
+    final th = '${k['th'] ?? ''}';
+    final kd = '${k['k'] ?? 'food'}';
+    return InkWell(
+      onTap: () => widget.onOpen(k),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              width: 80,
+              height: 45,
+              child: th.isEmpty
+                  ? kindFill(kd, 24)
+                  : Image.network(th, fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => kindFill(kd, 24)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${k['n'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
+              const SizedBox(height: 2),
+              Text(
+                  [
+                    if (when) seen(k['t']),
+                    if (myPos.value != null && k['la'] != null)
+                      distText(meters(myPos.value!, LatLng(((k['la'] ?? 0) as num).toDouble(), ((k['ln'] ?? 0) as num).toDouble()))),
+                    '${k['an'] ?? ''}',
+                    '${k['c'] ?? ''}',
+                  ].where((x) => x.isNotEmpty).join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w300, color: kSub)),
+            ]),
+          ),
+          IconButton(onPressed: onRemove, tooltip: removeTip, icon: const Icon(Icons.close_rounded, size: 18, color: kSub)),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final koks = widget.koks, recents = widget.recents;
+    final w = which ?? (koks.isEmpty && recents.isNotEmpty ? 1 : 0);
+    final list = w == 0 ? koks : recents;
     return SafeArea(
       bottom: false,
       child: narrow(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1544,57 +1616,42 @@ class SavedView extends StatelessWidget {
             ),
           ]),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 12, 6),
+          child: Row(children: [
+            _SegChip(label: koks.isEmpty ? '콕한 집' : '콕한 집 ${koks.length}', on: w == 0, onTap: () => setState(() => which = 0)),
+            const SizedBox(width: 6),
+            _SegChip(label: recents.isEmpty ? '최근 본 집' : '최근 본 집 ${recents.length}', on: w == 1, onTap: () => setState(() => which = 1)),
+            const Spacer(),
+            if (w == 1 && recents.isNotEmpty)
+              Semantics(
+                button: true,
+                label: '모두 지우기',
+                onTap: widget.onClearRecents,
+                excludeSemantics: true,
+                child: TextButton(
+                  onPressed: widget.onClearRecents,
+                  style: TextButton.styleFrom(foregroundColor: kSub, padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: const Size(0, 30)),
+                  child: const Text('모두 지우기', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: kSub)),
+                ),
+              ),
+          ]),
+        ),
         Expanded(
-          child: koks.isEmpty
-              ? const Center(
-                  child: Text('마음에 드는 집을 「콕」 눌러 저장해 두세요.\n가게 화면 오른쪽 위에 있습니다.',
-                      textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: kSub, height: 1.5)),
+          child: list.isEmpty
+              ? Center(
+                  child: Text(
+                      w == 0 ? '마음에 드는 집을 「콕」 눌러 저장해 두세요.\n가게 화면 오른쪽 위에 있습니다.' : '가게 화면을 열어 본 집이 여기에 차례로 쌓여요.\n휴대폰 안에만 남습니다.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13, color: kSub, height: 1.5)),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                  itemCount: koks.length,
+                  itemCount: list.length,
                   separatorBuilder: (_, __) => const Divider(height: 1, thickness: 1, color: kHair),
-                  itemBuilder: (_, i) {
-                    final k = koks[i];
-                    final th = '${k['th'] ?? ''}';
-                    final kd = '${k['k'] ?? 'food'}';
-                    return InkWell(
-                      onTap: () => onOpen(k),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Row(children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: SizedBox(
-                              width: 80,
-                              height: 45,
-                              child: th.isEmpty
-                                  ? kindFill(kd, 24)
-                                  : Image.network(th,
-                                      fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => kindFill(kd, 24)),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('${k['n'] ?? ''}',
-                                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
-                              const SizedBox(height: 2),
-                              Text(
-                                  [
-                                    if (myPos.value != null && k['la'] != null)
-                                      distText(meters(myPos.value!, LatLng(((k['la'] ?? 0) as num).toDouble(), ((k['ln'] ?? 0) as num).toDouble()))),
-                                    '${k['an'] ?? ''}',
-                                    '${k['c'] ?? ''}',
-                                  ].where((x) => x.isNotEmpty).join(' · '),
-                                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w300, color: kSub)),
-                            ]),
-                          ),
-                          IconButton(onPressed: () => onRemove(k), tooltip: '콕 빼기', icon: const Icon(Icons.close_rounded, size: 18, color: kSub)),
-                        ]),
-                      ),
-                    );
-                  },
+                  itemBuilder: (_, i) => w == 0
+                      ? row(list[i], onRemove: () => widget.onRemove(list[i]), removeTip: '콕 빼기')
+                      : row(list[i], onRemove: () => widget.onRemoveRecent(list[i]), removeTip: '목록에서 지우기', when: true),
                 ),
         ),
       ])),
@@ -1725,6 +1782,7 @@ class SheetList extends StatelessWidget {
 const kContactMail = 'dfmail@naver.com';
 const kPrivacyUrl = 'https://90mkr.github.io/df-app-lab/policy/privacy.html';
 const kDeleteUrl = 'https://90mkr.github.io/df-app-lab/policy/delete.html';
+const kTermsUrl = 'https://90mkr.github.io/df-app-lab/policy/terms.html';
 const kAppVersion = '0.1 시험판';
 
 class SettingsPage extends StatelessWidget {
@@ -1839,11 +1897,19 @@ class SettingsPage extends StatelessWidget {
                 row('로그인', sub: '후기·별점 기능과 함께 열립니다', onTap: () => soon(context)),
               ]),
               const SizedBox(height: 24),
-              group('안내', [
+              group('문의', [
+                row('문의하기', sub: kContactMail, onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플] 문의')}')),
+                row('제휴 문의',
+                    sub: '광고·협업 제안',
+                    onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플 제휴 문의]')}'
+                        '&body=${Uri.encodeComponent('회사·가게 이름:\n담당자 연락처:\n제안 내용:\n')}')),
+              ]),
+              const SizedBox(height: 24),
+              group('약관·정책', [
+                row('서비스 이용약관', onTap: () => openUrl(kTermsUrl)),
                 row('개인정보처리방침', onTap: () => openUrl(kPrivacyUrl)),
                 row('회원 탈퇴 안내', sub: '계정과 쓴 후기를 지우는 방법', onTap: () => openUrl(kDeleteUrl)),
                 row('YouTube 서비스 약관', onTap: () => openUrl('https://www.youtube.com/t/terms')),
-                row('문의하기', sub: kContactMail, onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플] 문의')}')),
               ]),
               const SizedBox(height: 24),
               group('앱 정보', [

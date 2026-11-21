@@ -352,6 +352,7 @@ class _MapPageState extends State<MapPage> {
   SongdoData? get data => loaded[area.id];
   int tab = 0; // 0 홈, 1 영상, 2 지도, 3 내 콕
   List<Map<String, dynamic>> koks = []; // 내 콕 (저장한 집)
+  List<Map<String, dynamic>> recents = []; // 최근 본 집 (휴대폰 안에만, 최대 30곳)
   LatLngBounds? bounds; // 지금 지도에 보이는 범위
   Course? course; // 지도에서 보는 중인 테마 코스
   String cuisine = ''; // 음식 종류 고르기 (한식·중식 …, 비면 전체)
@@ -493,14 +494,19 @@ class _MapPageState extends State<MapPage> {
     });
     final list = await loadRegions();
     String? saved;
-    var savedKoks = <String>[];
+    var savedKoks = <String>[], savedRecents = <String>[];
     try {
       final sp = await SharedPreferences.getInstance();
       saved = sp.getString('area');
       savedKoks = sp.getStringList('koks') ?? [];
+      savedRecents = sp.getStringList('recents') ?? [];
     } catch (_) {}
     koks = [
       for (final k in savedKoks)
+        if (k.startsWith('{')) jsonDecode(k) as Map<String, dynamic>
+    ];
+    recents = [
+      for (final k in savedRecents)
         if (k.startsWith('{')) jsonDecode(k) as Map<String, dynamic>
     ];
     final all = [for (final s in list) ...s.areas.where((a) => a.ready)];
@@ -725,25 +731,37 @@ class _MapPageState extends State<MapPage> {
 
   // 내 콕
   bool isKok(Place p) => koks.any((k) => k['id'] == p.id);
+  // 내 콕·최근 본 집에 남기는 한 줄 (지역 자료를 다시 받지 않아도 목록을 그릴 수 있게)
+  Map<String, dynamic> placeRec(Place p) => {
+        'id': p.id,
+        'n': p.name,
+        'k': p.kind,
+        'c': p.cat,
+        'la': p.lat,
+        'ln': p.lng,
+        'a': p.areaId,
+        'an': readyAreas.where((a) => a.id == p.areaId).firstOrNull?.name ?? area.name,
+        'th': p.vids.isEmpty ? '' : 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg',
+      };
+  void _saveList(String key, List<Map<String, dynamic>> list) =>
+      SharedPreferences.getInstance().then((sp) => sp.setStringList(key, [for (final k in list) jsonEncode(k)])).catchError((_) => false);
   void toggleKok(Place p, bool on) {
-    final an = readyAreas.where((a) => a.id == p.areaId).firstOrNull?.name ?? area.name;
     setState(() {
       koks.removeWhere((k) => k['id'] == p.id);
-      if (on) {
-        koks.insert(0, {
-          'id': p.id,
-          'n': p.name,
-          'k': p.kind,
-          'c': p.cat,
-          'la': p.lat,
-          'ln': p.lng,
-          'a': p.areaId,
-          'an': an,
-          'th': p.vids.isEmpty ? '' : 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg',
-        });
-      }
+      if (on) koks.insert(0, placeRec(p));
     });
-    SharedPreferences.getInstance().then((sp) => sp.setStringList('koks', [for (final k in koks) jsonEncode(k)])).catchError((_) => false);
+    _saveList('koks', koks);
+  }
+
+  // 최근 본 집: 가게 화면을 열 때마다 맨 위로 (같은 집은 한 번만, 30곳까지)
+  void noteRecent(Place p) {
+    final r = placeRec(p)..['t'] = DateTime.now().millisecondsSinceEpoch;
+    setState(() {
+      recents.removeWhere((k) => k['id'] == p.id);
+      recents.insert(0, r);
+      if (recents.length > 30) recents.removeRange(30, recents.length);
+    });
+    _saveList('recents', recents);
   }
 
   void openKok(Map<String, dynamic> k) {
@@ -1128,6 +1146,7 @@ class _MapPageState extends State<MapPage> {
   }
 
   void openPlace(Place p) {
+    noteRecent(p);
     map.move(p.point, math.max(map.camera.zoom, 16));
     showModalBottomSheet(
       context: context,
@@ -1270,10 +1289,23 @@ class _MapPageState extends State<MapPage> {
           onWhere: goWhere,
         ),
         _mapTab(context),
-        SavedView(koks: koks, onOpen: openKok, onRemove: (k) {
-          setState(() => koks.removeWhere((x) => x['id'] == k['id']));
-          SharedPreferences.getInstance().then((sp) => sp.setStringList('koks', [for (final x in koks) jsonEncode(x)])).catchError((_) => false);
-        }),
+        SavedView(
+          koks: koks,
+          recents: recents,
+          onOpen: openKok,
+          onRemove: (k) {
+            setState(() => koks.removeWhere((x) => x['id'] == k['id']));
+            _saveList('koks', koks);
+          },
+          onRemoveRecent: (k) {
+            setState(() => recents.removeWhere((x) => x['id'] == k['id']));
+            _saveList('recents', recents);
+          },
+          onClearRecents: () {
+            setState(() => recents.clear());
+            _saveList('recents', recents);
+          },
+        ),
       ]),
       bottomNavigationBar: KokNav(
         tab: tab,
