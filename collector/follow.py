@@ -9,11 +9,15 @@
 """
 import datetime as dt
 import hashlib
+import http.client
+import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import collect as C  # noqa: E402  get_json·clean·norm·load_json·save_json·키
@@ -26,6 +30,7 @@ YT = "https://www.googleapis.com/youtube/v3/"
 MAX_PAGES = int(os.environ.get("FOLLOW_PAGES", "60"))     # 처음 한 번, 채널당 최대 3,000개
 KAKAO_MAX = int(os.environ.get("FOLLOW_KAKAO", "5000"))   # 한 번에 카카오에 묻는 최대 수
 SIDO_ONLY = [x.strip() for x in os.environ.get("FOLLOW_SIDO", "").split(",") if x.strip()]  # 시범: "서울"
+VER = 2      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
 BOILER = 8   # 한 채널의 영상 8개 이상에 같은 주소 → 가게가 아니라 회사·문의 주소로 본다
 
 SIDO = r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|충청[남북]도|전라[남북]도|경상[남북]도)"
@@ -45,25 +50,57 @@ def yt(path, **q):
 
 
 kakao_calls = [0]
+_local = threading.local()
+DEADLINE = time.time() + float(os.environ.get("FOLLOW_MIN", "25")) * 60   # 이 시간이 지나면 남은 것은 다음 번에
 
 
 def kakao(path, **q):
+    """카카오 지역 검색 — 스레드마다 연결 하나를 계속 이어 쓴다 (매번 새로 잇는 것보다 3배쯤 빠름)"""
     kakao_calls[0] += 1
-    time.sleep(0.05)
-    return C.get_json(f"https://dapi.kakao.com/v2/local/{path}?" + urllib.parse.urlencode(q),
-                      {"Authorization": f"KakaoAK {C.KAKAO_KEY}"})
+    url = f"/v2/local/{path}?" + urllib.parse.urlencode(q)
+    for i in range(3):
+        conn = getattr(_local, "conn", None)
+        if conn is None:
+            conn = _local.conn = http.client.HTTPSConnection("dapi.kakao.com", timeout=12)
+        try:
+            conn.request("GET", url, headers={"Authorization": f"KakaoAK {C.KAKAO_KEY}"})
+            r = conn.getresponse()
+            body = r.read()
+            if r.status == 200:
+                return json.loads(body.decode("utf-8"))
+            if r.status in (429, 500, 502, 503) and i < 2:
+                time.sleep(1 + i * 2)
+                continue
+            raise RuntimeError(f"{r.status} {body[:160]!r}")
+        except (http.client.HTTPException, OSError) as e:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _local.conn = None
+            if i == 2:
+                raise RuntimeError(f"연결 실패 {e}")
+            time.sleep(1)
 
 
 # ---------- 설명란에서 가게 이름·주소 뽑기 ----------
 
+PRICE = re.compile(r"(KRW|USD|\$|₩|가격|\d{1,3}(,\d{3})+|\d+\s*원(\s|$)|영업|휴무|매주|시간|주차|예약|택배)", re.I)
+LABEL = re.compile(r"^(상호\s*명?|가게\s*(명|이름)?|식당\s*(명|이름)?|매장\s*명?|업체\s*명?|장소)\s*[:：]\s*")
+
+
 def clean_name(t):
     t = re.sub(r"https?://\S+", "", t or "")
+    t = re.sub(r"^\s*[0-9#*]\ufe0f?\u20e3\s*", "", t)   # 1️⃣ 같은 번호 글자
+    t = EMOJI.sub("", t).strip()
     t = NUMBERED.sub("", t)
-    t = EMOJI.sub("", t)
+    t = LABEL.sub("", t.strip())
     t = re.sub(r"\(?\s*(location|위치|주소)\s*\)?", "", t, flags=re.I)
     t = t.strip(" \t[]【】<>()-–—:：·|*#~")
-    t = re.sub(r"\s{2,}", " ", t)
-    if not t or len(t) > 30 or GENERIC.match(t) or ADDR_RE.search(t) or SKIP_LINE.search(t):
+    if t.count("(") != t.count(")"):
+        t = t.split("(")[0]
+    t = re.sub(r"\s{2,}", " ", t).strip(" -–:：·|")
+    if not t or len(t) > 30 or len(C.norm(t)) < 2 or GENERIC.match(t) or ADDR_RE.search(t) or SKIP_LINE.search(t) or PRICE.search(t):
         return ""
     if re.search(r"(다|요|죠|니다|습니다)[.!~ ]*$", t) or t.endswith((".", "!", "?")):
         return ""   # 설명 문장
@@ -159,6 +196,11 @@ def geocode(addr, cache):
     return g
 
 
+def foodish(d):
+    c = d.get("category_name", "")
+    return d.get("category_group_code") in ("FD6", "CE7") or any(x in c for x in ("음식점", "카페", "식품", "간식", "시장", "제과", "떡", "반찬", "정육"))
+
+
 def place_doc(d, g, name):
     cat = d.get("category_name", "")
     return {
@@ -175,7 +217,7 @@ def resolve(name, addr, cache):
     k = f"{name}|{addr}"
     if k in cache["r"]:
         return cache["r"][k] or None
-    if kakao_calls[0] >= KAKAO_MAX:
+    if kakao_calls[0] >= KAKAO_MAX or time.time() > DEADLINE:
         return "later"
     g = geocode(addr, cache)
     if not g:
@@ -187,7 +229,7 @@ def resolve(name, addr, cache):
             docs = kakao("search/keyword.json", query=name, x=g["x"], y=g["y"], radius=250, sort="distance", size=10).get("documents", [])
             for d in docs:
                 s = sim(d.get("place_name", ""), name)
-                if s > score and int(d.get("distance") or 9999) <= 250:
+                if s > score and int(d.get("distance") or 9999) <= 250 and foodish(d):
                     best, score = d, s
         if score < 0.5:
             # 이름이 없거나 안 맞으면 그 주소 자리(30m 안)의 음식점·카페
@@ -264,6 +306,7 @@ def scan(cid, up, cache):
         res = yt("playlistItems", **q)
         pages += 1
         known = 0
+        todo = []
         for it in res.get("items", []):
             sn = it["snippet"]
             vid = sn.get("resourceId", {}).get("videoId", "")
@@ -274,6 +317,12 @@ def scan(cid, up, cache):
             if not found:
                 vids[vid] = {"c": cid, "x": 1}
                 continue
+            todo.append((vid, sn, found))
+        pairs = list({(n, a) for _, _, f in todo for n, a in f if f"{n}|{a}" not in cache["r"]})
+        if pairs:
+            with ThreadPoolExecutor(6) as ex:
+                list(ex.map(lambda na: resolve(na[0], na[1], cache), pairs))
+        for vid, sn, found in todo:
             keys, later = [], False
             for name, addr in found:
                 r = resolve(name, addr, cache)
@@ -354,6 +403,8 @@ def main():
         return
     chs = C.load_json(CHANNELS, [])
     cache = C.load_json(CACHE, {})
+    if cache.get("ver") != VER:
+        cache = {"ver": VER, "g": cache.get("g", {})}
     for k in ("v", "g", "r", "pl", "ch"):
         cache.setdefault(k, {})
     info = channel_info(chs, cache)

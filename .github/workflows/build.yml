@@ -36,11 +36,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: 유튜버 따라가기 모으기
-        timeout-minutes: 30
+        timeout-minutes: 40
         continue-on-error: true
         env:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
+          FOLLOW_MIN: '30'
         run: python3 -u collector/follow.py
 
       - name: 맛집 자료 모으기
