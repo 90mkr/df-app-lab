@@ -702,32 +702,67 @@ class _MapPageState extends State<MapPage> {
     return [for (final a in readyAreas) bubble(a.id, a.center, a.name, n(a), () => map.move(a.center, a.zoom))];
   }
 
-  // 따라가기 축소 화면: 화면 약 100px 칸마다 묶어 숫자로 — 넓게 보면 시·도 이름, 가까이 보면 시·군·구 이름
+  // 따라가기 축소 화면: 화면 칸(가로 130·세로 60px)마다 묶고, 겹치는 풍선은 큰 쪽에 합친다
+  // 이름: 넓게 보면 시·도, 가까이 보면 시·군·구 — 한 지역이 60% 넘으면 그 이름, 아니면 「○○ 일대」
   List<Marker> followClusters() {
-    final cell = (zoom < kSidoZoom ? 120.0 : 100.0) * 360 / (256 * math.pow(2, zoom));
-    final groups = <String, List<Place>>{};
-    for (final p in followPlaces) {
-      groups.putIfAbsent('${(p.lng / cell).floor()}_${(p.lat / (cell * 0.8)).floor()}', () => []).add(p);
+    final scale = 256 * math.pow(2, zoom).toDouble();
+    Offset px(LatLng p) {
+      final x = (p.longitude + 180) / 360 * scale;
+      final r = p.latitude * math.pi / 180;
+      final y = (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * scale;
+      return Offset(x, y);
     }
-    String most(List<Place> ps, String Function(Place) f) {
+
+    final cells = <String, List<Place>>{};
+    for (final p in followPlaces) {
+      final o = px(p.point);
+      cells.putIfAbsent('${(o.dx / 130).floor()}_${(o.dy / 60).floor()}', () => []).add(p);
+    }
+    final groups = cells.values.toList()..sort((a, b) => b.length.compareTo(a.length));
+    final rects = <Rect>[];
+    final members = <List<Place>>[];
+    final centers = <LatLng>[];
+    for (final g in groups) {
+      final c = LatLng(g.map((p) => p.lat).reduce((x, y) => x + y) / g.length, g.map((p) => p.lng).reduce((x, y) => x + y) / g.length);
+      final r = Rect.fromCenter(center: px(c), width: 128, height: 44);
+      final hit = rects.indexWhere((k) => k.overlaps(r));
+      if (hit >= 0) {
+        members[hit].addAll(g);
+        continue;
+      }
+      rects.add(r);
+      members.add([...g]);
+      centers.add(c);
+    }
+    String label(List<Place> ps) {
       final m = <String, int>{};
       for (final p in ps) {
-        final k = f(p);
+        final k = zoom < kSidoZoom ? sidoShort(p.sido) : p.gu.split(' ').first;
         if (k.isNotEmpty) m[k] = (m[k] ?? 0) + 1;
       }
       if (m.isEmpty) return '';
-      return (m.entries.toList()..sort((x, y) => y.value.compareTo(x.value))).first.key;
+      final top = (m.entries.toList()..sort((x, y) => y.value.compareTo(x.value))).first;
+      return top.value >= ps.length * 0.6 ? top.key : '${top.key} 일대';
     }
 
     return [
-      for (final e in groups.entries)
-        () {
-          final ps = e.value;
-          final c = LatLng(ps.map((p) => p.lat).reduce((x, y) => x + y) / ps.length, ps.map((p) => p.lng).reduce((x, y) => x + y) / ps.length);
-          final name = zoom < kSidoZoom ? sidoShort(most(ps, (p) => p.sido)) : most(ps, (p) => p.gu.split(' ').first);
-          return bubble('f${e.key}', c, name, ps.length, () => map.move(c, math.min(zoom + 2, kClusterZoom + 0.5)));
-        }(),
+      for (var i = 0; i < members.length; i++)
+        bubble('f${members[i].first.id}', centers[i], label(members[i]), members[i].length, () => zoomInto(members[i], centers[i])),
     ];
+  }
+
+  // 묶음 풍선을 누르면 그 묶음 가게들이 다 보이게 (넓게 퍼져 있으면 한 단계 반만 확대)
+  void zoomInto(List<Place> ps, LatLng c) {
+    final cam = CameraFit.coordinates(
+      coordinates: [for (final p in ps) p.point],
+      padding: const EdgeInsets.fromLTRB(50, 230, 50, 100),
+      maxZoom: 14,
+    ).fit(map.camera);
+    if (cam.zoom <= zoom + 0.5) {
+      map.move(c, zoom + 1.5);
+    } else {
+      map.move(cam.center, cam.zoom);
+    }
   }
 
   // 유튜버 따라 먹기: 지도에서 전국 가게 (한 채널만 고를 수도)

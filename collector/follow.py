@@ -30,7 +30,7 @@ YT = "https://www.googleapis.com/youtube/v3/"
 MAX_PAGES = int(os.environ.get("FOLLOW_PAGES", "60"))     # 처음 한 번, 채널당 최대 3,000개
 KAKAO_MAX = int(os.environ.get("FOLLOW_KAKAO", "9000"))   # 한 번에 카카오에 묻는 최대 수
 SIDO_ONLY = [x.strip() for x in os.environ.get("FOLLOW_SIDO", "").split(",") if x.strip()]  # 시범: "서울"
-VER = 4      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
+VER = 5      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
 BOILER = 8   # 한 채널의 영상 8개 이상에 같은 주소 → 가게가 아니라 회사·문의 주소로 본다
 
 SIDO = r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|충청[남북]도|전라[남북]도|경상[남북]도)"
@@ -88,7 +88,7 @@ def kakao(path, **q):
 # ---------- 설명란에서 가게 이름·주소 뽑기 ----------
 
 PRICE = re.compile(r"(KRW|USD|\$|₩|가격|\d{1,3}(,\d{3})+|\d+\s*원(\s|$)|영업|운영|휴무|매주|시간|주차|예약|택배|구매|주문|배송|판매처|온라인|\d+시|\d{2,4}-\d{3,4}-\d{4})", re.I)
-LABEL = re.compile(r"^(상호\s*명?|가게\s*(명|이름)?|식당\s*(명|이름)?|매장\s*명?|업체\s*명?|장소)\s*[:：]\s*")
+LABEL = re.compile(r"^(상\s*호\s*명?|업소\s*명?|점포\s*명?|가게\s*(명|이름|상호)?|식당\s*(명|이름)?|매장\s*명?|업체\s*명?|장소)\s*[:：\-–]\s*")
 
 
 def clean_name(t):
