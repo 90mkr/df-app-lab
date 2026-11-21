@@ -15,6 +15,7 @@ const kBlue = Color(0xFF1F5BFF);
 const kInk = Color(0xFF1B1D22);
 const kGray = Color(0xFF7A808C);
 const kLine = Color(0xFFE3E6EC);
+const kDark = Color(0xFF262A31); // 지역 메뉴 단추·펼친 동네 바탕
 const kDataBase = 'https://90mkr.github.io/df-app-lab/data/'; // 안드로이드 앱이 자료를 받아 오는 곳
 const kTop = 20; // 종류별로 지도에 보이는 수
 
@@ -809,18 +810,24 @@ class _Header extends StatelessWidget {
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // 지역 선택: 누르면 바로 아래로 전국 지역 메뉴가 펼쳐진다
-            InkWell(
+            // 지역 메뉴: 눈에 띄는 「지역」 단추, 옆의 지금 지역을 눌러도 열린다
+            GestureDetector(
               onTap: onRegion,
-              borderRadius: BorderRadius.circular(8),
+              behavior: HitTestBehavior.opaque,
               child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
-                const Icon(Icons.place_rounded, size: 17, color: kFoodTint),
-                const SizedBox(width: 3),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(8, 5, 10, 5),
+                  decoration: BoxDecoration(color: kDark, borderRadius: BorderRadius.circular(8)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(open ? Icons.close_rounded : Icons.menu_rounded, size: 16, color: Colors.white),
+                    const SizedBox(width: 4),
+                    const Text('지역', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white, height: 1.2)),
+                  ]),
+                ),
+                const SizedBox(width: 8),
                 Text('${area.sido} ', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: kInk)),
                 Text(area.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kInk)),
                 Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 22, color: kInk),
-                const SizedBox(width: 2),
-                Text(open ? '닫기' : '지역 바꾸기', style: const TextStyle(fontSize: 11.5, color: kGray)),
               ]),
             ),
             const SizedBox(height: 2),
@@ -911,10 +918,7 @@ class _RegionPanelState extends State<RegionPanel> {
                     ],
                   ]),
                 ),
-                if (rows[r].any((s) => s.name == open)) ...[
-                  const Divider(height: 1, thickness: 1, color: kLine),
-                  _panel(rows[r].firstWhere((s) => s.name == open)),
-                ],
+                if (rows[r].any((s) => s.name == open)) _panel(rows[r].firstWhere((s) => s.name == open)),
               ],
             ]),
           ),
@@ -929,16 +933,20 @@ class _RegionPanelState extends State<RegionPanel> {
       onTap: () => setState(() => open = isOpen ? null : s.name),
       child: Container(
         height: 46,
-        color: isOpen ? kPanel : Colors.white,
+        color: isOpen ? kDark : Colors.white,
         padding: const EdgeInsets.only(left: 16, right: 10),
         child: Row(children: [
-          Text(s.name, style: TextStyle(fontSize: 15, fontWeight: isOpen ? FontWeight.w700 : FontWeight.w400, color: s.ready ? kInk : kOff)),
+          Text(s.name,
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: isOpen ? FontWeight.w700 : FontWeight.w400,
+                  color: isOpen ? Colors.white : (s.ready ? kInk : kOff))),
           if (s.ready) ...[
             const SizedBox(width: 5),
             Container(width: 5, height: 5, decoration: const BoxDecoration(color: kFoodTint, shape: BoxShape.circle)),
           ],
           const Spacer(),
-          Icon(isOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 20, color: kGray),
+          Icon(isOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 20, color: isOpen ? Colors.white : kGray),
         ]),
       ),
     );
@@ -947,9 +955,9 @@ class _RegionPanelState extends State<RegionPanel> {
   Widget _panel(Sido s) {
     if (s.areas.isEmpty) {
       return Container(
-        color: kPanel,
+        color: kDark,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        child: const Text('준비 중입니다. 인천부터 차례로 넓혀 갑니다.', style: TextStyle(fontSize: 13, color: kGray)),
+        child: const Text('준비 중입니다. 인천부터 차례로 넓혀 갑니다.', style: TextStyle(fontSize: 13, color: Color(0xFFB9BEC8))),
       );
     }
     final pairs = <List<Area>>[];
@@ -957,7 +965,7 @@ class _RegionPanelState extends State<RegionPanel> {
       pairs.add(s.areas.sublist(i, math.min(i + 2, s.areas.length)));
     }
     return Container(
-      color: kPanel,
+      color: kDark,
       padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
       child: Column(children: [
         for (final pr in pairs)
@@ -980,12 +988,12 @@ class _RegionPanelState extends State<RegionPanel> {
             child: Text(a.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 14, fontWeight: on ? FontWeight.w700 : FontWeight.w400, color: ok ? kInk : kOff)),
+                style: TextStyle(fontSize: 14, fontWeight: on ? FontWeight.w700 : FontWeight.w400, color: ok ? Colors.white : const Color(0xFF7E8592))),
           ),
-          if (on) ...[const SizedBox(width: 4), const Icon(Icons.check_rounded, size: 16, color: kInk)],
-          if (!ok) ...[const SizedBox(width: 6), const Text('준비 중', style: TextStyle(fontSize: 11, color: kOff))],
+          if (on) ...[const SizedBox(width: 4), const Icon(Icons.check_rounded, size: 16, color: Colors.white)],
+          if (!ok) ...[const SizedBox(width: 6), const Text('준비 중', style: TextStyle(fontSize: 11, color: Color(0xFF7E8592)))],
           const Spacer(),
-          Icon(Icons.chevron_right_rounded, size: 18, color: ok ? kGray : const Color(0xFFD0D3D9)),
+          Icon(Icons.chevron_right_rounded, size: 18, color: ok ? const Color(0xFFC9CDD5) : const Color(0xFF5A606B)),
           const SizedBox(width: 6),
         ]),
       ),
