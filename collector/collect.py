@@ -2,11 +2,11 @@
 
 매일 새벽 깃허브 자동 실행으로 돌아간다.
 1) 카카오 지도 검색으로 송도 일대 음식점 목록을 모은다.
-2) 가게마다 네이버 블로그를 검색해 최근 90일 언급 수를 센다 (광고 의심 글은 따로 센다).
+2) 가게마다 블로그(네이버 열쇠가 있으면 네이버, 없으면 다음)를 검색해 최근 90일 언급 수를 센다 (광고 의심 글은 따로 센다).
 3) 블로그 화제 상위 가게만 유튜브 영상을 찾는다 (하루 사용량 한도 때문).
 4) 화제 점수를 매겨 web/data/songdo.json 으로 저장한다.
 
-필요한 열쇠(깃허브 비밀값): KAKAO_REST_KEY, NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, YOUTUBE_KEY(없어도 됨)
+필요한 열쇠(깃허브 비밀값): KAKAO_REST_KEY (필수), YOUTUBE_KEY·NAVER_CLIENT_ID·NAVER_CLIENT_SECRET (없어도 됨)
 """
 
 import datetime as dt
@@ -122,10 +122,31 @@ def naver_blog(query):
     })
 
 
+def kakao_blog(query):
+    """다음(카카오) 블로그 검색 — 네이버 블로그·티스토리 글도 함께 잡힌다. 네이버 검색과 같은 모양으로 바꿔 돌려준다."""
+    items = []
+    for page in (1, 2):
+        q = urllib.parse.urlencode({"query": query, "sort": "recency", "size": 50, "page": page})
+        res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
+        for d in res.get("documents", []):
+            items.append({
+                "title": d.get("title"),
+                "description": d.get("contents"),
+                "link": d.get("url"),
+                "bloggername": d.get("blogname"),
+                "postdate": (d.get("datetime") or "")[:10].replace("-", ""),
+            })
+        if res.get("meta", {}).get("is_end", True):
+            break
+        time.sleep(0.05)
+    return {"items": items}
+
+
 def blog_stats(place):
     base = base_name(place["place_name"])
     key = norm(base)
-    res = naver_blog(f"{AREA_NAME} {base}")
+    query = f"{AREA_NAME} {base}"
+    res = naver_blog(query) if (NAVER_ID and NAVER_SECRET) else kakao_blog(query)
     since = (dt.date.today() - dt.timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
     clean_posts, ad_count = [], 0
     for it in res.get("items", []):
@@ -180,9 +201,10 @@ def short_category(cat):
 
 
 def main():
-    if not (KAKAO_KEY and NAVER_ID and NAVER_SECRET):
-        print("열쇠가 없습니다: KAKAO_REST_KEY / NAVER_CLIENT_ID / NAVER_CLIENT_SECRET")
+    if not KAKAO_KEY:
+        print("열쇠가 없습니다: KAKAO_REST_KEY")
         sys.exit(1)
+    print("블로그 검색:", "네이버" if (NAVER_ID and NAVER_SECRET) else "다음(카카오)")
 
     places = collect_places()
     print(f"카카오 음식점 {len(places)}곳")
