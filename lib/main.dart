@@ -541,11 +541,7 @@ class PlaceMarker extends StatelessWidget {
                 width: img,
                 height: img,
                 child: thumb.isEmpty
-                    ? Container(
-                        color: const Color(0xFFFBF7F3),
-                        alignment: Alignment.center,
-                        child: Icon(kindIcon(place.kind), size: img * 0.42, color: kindTint(place.kind)),
-                      )
+                    ? kindFill(place.kind, img * 0.42)
                     : Image.network(
                         thumb,
                         fit: BoxFit.cover,
@@ -625,11 +621,19 @@ class FeatChip extends StatelessWidget {
   }
 }
 
-const kFoodTint = Color(0xFFE0703C); // 맛집 아이콘 (따뜻한 주황)
-const kCafeTint = Color(0xFF8A5A3B); // 카페 아이콘 (커피색)
+const kFoodTint = Color(0xFFF5822A); // 맛집: 주황
+const kCafeTint = Color(0xFF5C3A21); // 카페: 짙은 갈색
 
 IconData kindIcon(String kind) => kind == 'cafe' ? Icons.local_cafe_outlined : Icons.restaurant_outlined;
 Color kindTint(String kind) => kind == 'cafe' ? kCafeTint : kFoodTint;
+IconData kindIconFilled(String kind) => kind == 'cafe' ? Icons.local_cafe : Icons.restaurant;
+
+// 색을 채운 동그라미 + 흰 그림 (사진이 없을 때)
+Widget kindFill(String kind, double size) => Container(
+      color: kindTint(kind),
+      alignment: Alignment.center,
+      child: Icon(kindIconFilled(kind), size: size, color: Colors.white),
+    );
 String thumbOf(Place p) => p.vids.isNotEmpty ? 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg' : '';
 
 // 방송 출연 표시 (진한 회색, 작게)
@@ -676,20 +680,12 @@ class PhotoMarker extends StatelessWidget {
             ),
             child: ClipOval(
               child: thumb.isEmpty
-                  ? Container(
-                      color: const Color(0xFFFBF7F3),
-                      alignment: Alignment.center,
-                      child: Icon(kindIcon(place.kind), size: 22, color: kindTint(place.kind)),
-                    )
+                  ? kindFill(place.kind, 22)
                   : Image.network(
                       thumb,
                       fit: BoxFit.cover,
                       webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: const Color(0xFFFBF7F3),
-                        alignment: Alignment.center,
-                        child: Icon(kindIcon(place.kind), size: 22, color: kindTint(place.kind)),
-                      ),
+                      errorBuilder: (_, __, ___) => kindFill(place.kind, 22),
                     ),
             ),
           ),
@@ -716,22 +712,25 @@ class IconMarker extends StatelessWidget {
           height: 26,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: kindTint(place.kind),
             shape: BoxShape.circle,
-            border: Border.all(color: kLine, width: 1),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.13), blurRadius: 6)],
+            border: Border.all(color: Colors.white, width: 1),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 6)],
           ),
-          child: Icon(kindIcon(place.kind), size: 14, color: kindTint(place.kind)),
+          child: Icon(kindIconFilled(place.kind), size: 14, color: Colors.white),
         ),
-        Transform.translate(offset: const Offset(0, -1), child: CustomPaint(size: const Size(8, 5), painter: _Tail(kLine))),
+        Transform.translate(
+          offset: const Offset(0, -1.5),
+          child: CustomPaint(size: const Size(8, 5), painter: _Tail(kindTint(place.kind), fill: kindTint(place.kind))),
+        ),
       ]),
     );
   }
 }
 
 class _Tail extends CustomPainter {
-  final Color line;
-  _Tail(this.line);
+  final Color line, fill;
+  _Tail(this.line, {this.fill = Colors.white});
   @override
   void paint(Canvas c, Size s) {
     final path = ui.Path()
@@ -739,13 +738,13 @@ class _Tail extends CustomPainter {
       ..lineTo(s.width / 2, s.height)
       ..lineTo(s.width, 0)
       ..close();
-    c.drawPath(path, Paint()..color = Colors.white);
+    c.drawPath(path, Paint()..color = fill);
     c.drawLine(Offset(0, 0), Offset(s.width / 2, s.height), Paint()..color = line..strokeWidth = 1);
     c.drawLine(Offset(s.width, 0), Offset(s.width / 2, s.height), Paint()..color = line..strokeWidth = 1);
   }
 
   @override
-  bool shouldRepaint(covariant _Tail old) => old.line != line;
+  bool shouldRepaint(covariant _Tail old) => old.line != line || old.fill != fill;
 }
 
 class ScoreTag extends StatelessWidget {
