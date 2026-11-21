@@ -131,9 +131,63 @@ def look(ch, pages=3):
     return {"n": len(items), "last": max(dates) if dates else "", "recent": recent, "addr": addr, "store": store, "sample": sample}
 
 
+def probe(handles):
+    """제목만 있는 채널: 채널 주인이 단 댓글(고정 댓글)에 가게 정보가 있는지 최근 영상 12개로 확인"""
+    for h in handles:
+        try:
+            it = get("channels", part=PARTS, forHandle=h).get("items", [])
+            if not it:
+                print(f"[확인] {h} → 못 찾음")
+                continue
+            ch = it[0]
+            cid, title = ch["id"], ch["snippet"]["title"]
+            up = ch["contentDetails"]["relatedPlaylists"]["uploads"]
+            items = get("playlistItems", part="snippet", playlistId=up, maxResults=50).get("items", [])
+            # 쇼츠는 빼고 보려고 영상 길이를 함께 본다
+            ids = [x["snippet"]["resourceId"]["videoId"] for x in items]
+            durs = {}
+            for v in get("videos", part="contentDetails", id=",".join(ids)).get("items", []):
+                durs[v["id"]] = v["contentDetails"].get("duration", "")
+            longs = [x for x in items if not re.fullmatch(r"PT(\d+S|[0-2]M(\d+S)?|3M)", durs.get(x["snippet"]["resourceId"]["videoId"], "PT0S"))][:12]
+            own = addr = 0
+            sample = ""
+            for x in longs:
+                vid = x["snippet"]["resourceId"]["videoId"]
+                try:
+                    cs = get("commentThreads", part="snippet", videoId=vid, maxResults=5, order="relevance").get("items", [])
+                except RuntimeError:
+                    continue
+                for c in cs:
+                    top = c["snippet"]["topLevelComment"]["snippet"]
+                    if top.get("authorChannelId", {}).get("value") == cid:
+                        own += 1
+                        txt = re.sub(r"<[^>]+>", " ", top.get("textDisplay", ""))
+                        m = ADDR_RE.search(txt) or (STORE_RE.search(txt))
+                        if m:
+                            addr += 1
+                            if not sample:
+                                sample = txt[max(0, m.start() - 30): m.start() + 50].replace("\n", " ")
+                        break
+            print(f"[확인] {title} (@{h}) 긴 영상 {len(longs)}개 중 주인 댓글 {own}개 · 가게 정보 {addr}개"
+                  + (f" · 예: {sample}" if sample else "")
+                  + " · 제목 예: " + " / ".join(x["snippet"]["title"][:40] for x in longs[:3]))
+        except Stop:
+            raise
+        except Exception as e:
+            print(f"[확인] {h} → 오류 {str(e)[:120]}")
+
+
 def main():
     if not KEY:
         print("유튜브 키가 없습니다")
+        return
+    pr = [x.strip() for x in os.environ.get("PROBE", "").split(",") if x.strip()]
+    if pr:
+        try:
+            probe(pr)
+        except Stop as e:
+            print("중단:", e)
+        print(f"\n유튜브 사용량 약 {used[0]}")
         return
     rows = []
     try:
