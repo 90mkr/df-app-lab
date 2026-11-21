@@ -70,6 +70,7 @@ class KakaoDown(Exception):
 
 
 KAKAO_FAILS = [0]   # 카카오 연속 실패 수
+BLOG_UP = [True]    # 블로그 검색이 되는지 (안 되면 지난 글을 그대로 씀)
 KAKAO_LIMIT = 4     # 연속 4번 실패하면 카카오가 멈춘 것으로 본다
 
 
@@ -554,12 +555,18 @@ def main():
         print("열쇠가 없습니다: KAKAO_REST_KEY")
         sys.exit(1)
     print("블로그 검색:", "네이버" if (NAVER_ID and NAVER_SECRET) else "다음(카카오)")
+    try:  # 블로그 검색 점검: 막혀 있으면 블로그 단계를 건너뛰고 지난 글을 그대로 쓴다
+        kakao_blog(f"{AREA_NAME} 맛집", pages=1)
+    except Exception as e:
+        BLOG_UP[0] = False
+        print("블로그 검색이 막혀 있어 지난 글을 그대로 씁니다:", str(e)[:600])
 
-    prev, rank_of = {}, {}
+    prev, rank_of, prev_full = {}, {}, {}
     try:
         with open(OUT, encoding="utf-8") as f:
             _pl = json.load(f).get("places", [])
             prev = {str(o["id"]): o.get("vids", []) for o in _pl}
+            prev_full = {str(o["id"]): o for o in _pl}
             rank_of = {str(o["id"]): i for i, o in enumerate(sorted(_pl, key=lambda o: -o.get("score", 0)))}
     except Exception:
         pass
@@ -609,6 +616,9 @@ def main():
         hit = bc.get(str(p["id"]))
         if hit and (today0 - dt.date.fromisoformat(hit["d"])).days < BLOG_DAYS:
             return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": hit["e"],
+                    "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
+        if not BLOG_UP[0]:
+            return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": (hit or {}).get("e", 0),
                     "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
         try:
             posts, ads, est, home = blog_stats(p, pages=1)
@@ -683,7 +693,12 @@ def main():
             json.dump(cache, f, ensure_ascii=False, separators=(",", ":"))
 
     # 2단계: 순위 후보(구글 리뷰 충분한 곳)만 블로그를 자세히(2쪽) 다시 본다
-    if use_google:
+    if not BLOG_UP[0]:  # 블로그가 막힌 날은 지난번 블로그 수를 그대로 써서 순위가 흔들리지 않게
+        for r in rows:
+            old = prev_full.get(str(r["p"]["id"]))
+            if old:
+                r["est"] = old.get("blog", r["est"])
+    if use_google and BLOG_UP[0]:
         detail = [r for r in rows if r["g"]["n"] >= MIN_REVIEWS]
 
         def deep(r):
@@ -718,6 +733,11 @@ def main():
     all_out = []
     for kind, label in (("food", "맛집"), ("cafe", "카페")):
         out = build_list(kind, rows, TOP_N, use_google)
+        for o in out:  # 블로그 검색이 실패해 글이 비었으면 지난번 글을 그대로 둔다
+            old = prev_full.get(str(o["id"]))
+            if old and not o["posts"] and old.get("posts"):
+                o["posts"], o["ads"] = old["posts"], old.get("ads", 0)
+                o["home"] = o["home"] or old.get("home", "")
         all_out += out
         print(f"[{label}] " + " / ".join(f"{o['name']}({o['score']}, 구글 {o['greviews']})" for o in out))
 
@@ -727,7 +747,7 @@ def main():
     for o in all_out:
         pid = str(o["id"])
         h = tvc.get(pid)
-        if not (h and (dt.date.today() - dt.date.fromisoformat(h["d"])).days < TV_DAYS):
+        if BLOG_UP[0] and not (h and (dt.date.today() - dt.date.fromisoformat(h["d"])).days < TV_DAYS):
             try:
                 h = {"t": tv_check(o["name"]), "d": dt.date.today().isoformat()}
                 tvc[pid] = h
