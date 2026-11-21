@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -10,6 +11,8 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+part 'home.dart';
 
 const kBlue = Color(0xFF1F5BFF);
 const kInk = Color(0xFF1B1D22);
@@ -55,16 +58,19 @@ class Post {
 }
 
 class Video {
-  final String id, title, channel, date;
+  final String id, title, channel, date, cid;
   Video(Map<String, dynamic> j)
       : id = j['id'] ?? '',
         title = j['t'] ?? '',
         channel = j['ch'] ?? '',
-        date = j['date'] ?? '';
+        date = j['date'] ?? '',
+        cid = j['cid'] ?? '';
 }
 
 class Place {
   final String id, kind, name, cat, addr, tel, kakao, home, gurl;
+  final String dong; // 송도동 같은 동 이름
+  final String areaId; // 어느 동네 자료에서 왔는지
   final double grate;
   final int greviews;
   final double lat, lng;
@@ -81,11 +87,12 @@ class Place {
   final int r30; // 최근 30일 블로그 글 수
   final double rr; // 그 전보다 몇 배
   final List<String> feat; // 편의 정보 (주차·애견 동반 등, 구글 기준)
-  Place(Map<String, dynamic> j)
+  Place(Map<String, dynamic> j, [this.areaId = ''])
       : id = '${j['id']}',
         kind = j['kind'] ?? 'food',
         name = j['name'] ?? '',
         cat = j['cat'] ?? '',
+        dong = j['dong'] ?? '',
         addr = j['addr'] ?? '',
         tel = j['tel'] ?? '',
         kakao = j['kakao'] ?? '',
@@ -192,18 +199,29 @@ Future<LatLng?> myLocation() async {
 // ---------------- 지역 (전국 확장용: 시·도 → 동네) ----------------
 
 class Area {
-  final String id, name, gu, sido;
+  final String id, name, gu, sido, updated;
   final double lat, lng, zoom;
   final bool ready;
+  final List<double>? bbox; // 서쪽 경도, 남쪽 위도, 동쪽 경도, 북쪽 위도
+  final int count, food, cafe; // 수집할 때 미리 센 가게 수 (축소 화면 숫자 묶음용)
   Area(Map<String, dynamic> j, this.sido)
       : id = j['id'] ?? '',
         name = j['name'] ?? '',
         gu = j['gu'] ?? '',
+        updated = '${j['updated'] ?? ''}',
         lat = ((j['lat'] ?? 37.3905) as num).toDouble(),
         lng = ((j['lng'] ?? 126.6430) as num).toDouble(),
         zoom = ((j['zoom'] ?? 13) as num).toDouble(),
-        ready = j['ready'] == true;
+        ready = j['ready'] == true,
+        bbox = j['bbox'] is List ? (j['bbox'] as List).map((e) => (e as num).toDouble()).toList() : null,
+        count = (j['count'] ?? 0) as int,
+        food = (j['food'] ?? 0) as int,
+        cafe = (j['cafe'] ?? 0) as int;
   LatLng get center => LatLng(lat, lng);
+  List<double> get box => bbox ?? [lng - 0.05, lat - 0.04, lng + 0.05, lat + 0.04];
+  bool contains(LatLng p) => p.longitude >= box[0] && p.longitude <= box[2] && p.latitude >= box[1] && p.latitude <= box[3];
+  bool hits(LatLngBounds b) => !(box[2] < b.west || box[0] > b.east || box[3] < b.south || box[1] > b.north);
+  int countFor(String kind) => kind == 'food' ? food : (kind == 'cafe' ? cafe : count);
 }
 
 class Sido {
@@ -243,16 +261,40 @@ class SongdoData {
   final String updated;
   final int recentDays;
   final List<Place> places;
-  SongdoData(this.updated, this.recentDays, this.places);
+  final List<Chan> channels; // 이 동네에 다녀간 유튜버
+  SongdoData(this.updated, this.recentDays, this.places, [this.channels = const []]);
 }
 
-Future<SongdoData> loadData(String areaId) async {
-  final base = dataUrl('$areaId.json');
-  final res = await http.get(Uri.parse('$base?t=${DateTime.now().millisecondsSinceEpoch}'));
-  if (res.statusCode != 200) throw Exception('자료를 아직 받지 못했습니다 (${res.statusCode})');
-  final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-  final list = ((j['places'] ?? []) as List).map((e) => Place(e)).toList();
-  return SongdoData(j['updated'] ?? '', j['recent_days'] ?? 90, list);
+// 동네 자료 받기: 한 번 받은 동네는 휴대폰에 저장해 두고, 새 판(지역 목록의 updated)이 나올 때까지 다시 받지 않는다
+Future<SongdoData> loadData(String areaId, {String version = ''}) async {
+  SharedPreferences? sp;
+  try {
+    sp = await SharedPreferences.getInstance();
+  } catch (_) {}
+  final key = 'area_$areaId';
+  String? body;
+  try {
+    final savedVer = sp?.getString('${key}_v') ?? '';
+    final savedAt = sp?.getInt('${key}_at') ?? 0;
+    final fresh = version.isNotEmpty ? savedVer == version : DateTime.now().millisecondsSinceEpoch - savedAt < 3 * 3600 * 1000;
+    if (fresh) body = sp?.getString(key);
+  } catch (_) {}
+  if (body == null) {
+    final res = await http.get(Uri.parse('${dataUrl('$areaId.json')}?t=${DateTime.now().millisecondsSinceEpoch}'));
+    if (res.statusCode != 200) throw Exception('자료를 아직 받지 못했습니다 (${res.statusCode})');
+    body = utf8.decode(res.bodyBytes);
+    try {
+      if (body.length < 1500000) {
+        await sp?.setString(key, body);
+        await sp?.setString('${key}_v', version);
+        await sp?.setInt('${key}_at', DateTime.now().millisecondsSinceEpoch);
+      }
+    } catch (_) {}
+  }
+  final j = jsonDecode(body) as Map<String, dynamic>;
+  final list = ((j['places'] ?? []) as List).map((e) => Place(e, areaId)).toList();
+  final chans = ((j['channels'] ?? []) as List).map((e) => Chan.fromJson(e as Map<String, dynamic>)).toList();
+  return SongdoData(j['updated'] ?? '', j['recent_days'] ?? 90, list, chans);
 }
 
 Future<void> openUrl(String url) async {
@@ -271,8 +313,17 @@ class MapPage extends StatefulWidget {
 class _MapPageState extends State<MapPage> {
   final map = MapController();
   List<Sido> sidos = [];
-  Area area = kDefaultArea;
-  SongdoData? data;
+  Area area = kDefaultArea; // 초점 동네 (머리말·홈·순위)
+  final Map<String, SongdoData> loaded = {}; // 불러온 동네 자료 (다시 부르지 않음)
+  final Set<String> loadingIds = {};
+  SongdoData? get data => loaded[area.id];
+  int tab = 0; // 0 홈, 1 영상, 2 지도, 3 내 콕
+  List<Map<String, dynamic>> koks = []; // 내 콕 (저장한 집)
+  LatLngBounds? bounds; // 지금 지도에 보이는 범위
+  Timer? _sync;
+  static const kClusterZoom = 11.5; // 이보다 넓게 보면 동네별 숫자 묶음
+  static const kSidoZoom = 9.0; // 이보다 넓게 보면 시·도별 숫자 묶음
+  List<Area> get readyAreas => [for (final s in sidos) ...s.areas.where((a) => a.ready)];
   String? error;
   String kind = 'all'; // all 전체, near 내 주변, open 영업 중, tv 방송탄, food 맛집, cafe 카페, big 대형 카페, view 뷰 맛집, rise 새로 뜨는 집
   final Set<String> feats = {}; // 편의 필터 (주차·아이 동반 등, 모두 갖춘 집만)
@@ -326,9 +377,16 @@ class _MapPageState extends State<MapPage> {
   Future<void> _start() async {
     final list = await loadRegions();
     String? saved;
+    var savedKoks = <String>[];
     try {
-      saved = (await SharedPreferences.getInstance()).getString('area');
+      final sp = await SharedPreferences.getInstance();
+      saved = sp.getString('area');
+      savedKoks = sp.getStringList('koks') ?? [];
     } catch (_) {}
+    koks = [
+      for (final k in savedKoks)
+        if (k.startsWith('{')) jsonDecode(k) as Map<String, dynamic>
+    ];
     final all = [for (final s in list) ...s.areas.where((a) => a.ready)];
     final pick = all.where((a) => a.id == saved).firstOrNull ?? all.where((a) => a.id == 'songdo').firstOrNull ?? (all.isNotEmpty ? all.first : kDefaultArea);
     setState(() {
@@ -343,31 +401,257 @@ class _MapPageState extends State<MapPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() => error = null);
+  Future<void> _load() => _ensure(area.id);
+
+  // 동네 자료가 없으면 받는다 (받아 둔 동네는 다시 받지 않음)
+  Future<void> _ensure(String id) async {
+    if (loaded.containsKey(id) || loadingIds.contains(id)) return;
+    final a = readyAreas.where((x) => x.id == id).firstOrNull;
+    loadingIds.add(id);
+    if (id == area.id) setState(() => error = null);
     try {
-      final d = await loadData(area.id);
-      setState(() => data = d);
+      final d = await loadData(id, version: a?.updated ?? '');
+      if (mounted) setState(() => loaded[id] = d);
     } catch (e) {
-      setState(() => error = '$e'.replaceFirst('Exception: ', ''));
+      if (mounted && id == area.id) setState(() => error = '$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      loadingIds.remove(id);
     }
   }
 
+  // 지역 고르기 = 지도를 그 동네로 옮기기만 (가게는 보이는 범위를 따라 불러온다)
   void setArea(Area a) {
-    setState(() => regionOpen = false);
-    if (a.id == area.id) return;
     setState(() {
+      regionOpen = false;
       area = a;
-      data = null;
     });
     map.move(a.center, a.zoom);
     SharedPreferences.getInstance().then((sp) => sp.setString('area', a.id)).catchError((_) => false);
-    _load();
+    _ensure(a.id);
+  }
+
+  // 지도가 멈추면: 보이는 범위에 걸친 동네 자료를 불러오고, 머리말 동네를 지도 가운데 동네로
+  void _syncView(MapCamera cam) {
+    if (!mounted) return;
+    setState(() {
+      bounds = cam.visibleBounds;
+      zoom = cam.zoom;
+    });
+    if (cam.zoom >= kClusterZoom) {
+      for (final a in readyAreas) {
+        if (a.hits(cam.visibleBounds)) _ensure(a.id);
+      }
+    }
+    final inside = readyAreas.where((a) => a.contains(cam.center)).firstOrNull;
+    if (inside != null && inside.id != area.id) {
+      setState(() => area = inside);
+      _ensure(inside.id);
+    }
+  }
+
+  // 축소 화면: 동네별(더 넓으면 시·도별) 숫자 묶음 — 수집할 때 세어 둔 숫자만 쓴다
+  List<Marker> clusterMarkers() {
+    Marker bubble(String key, LatLng c, String name, int n, VoidCallback onTap) => Marker(
+          key: ValueKey('bubble$key'),
+          point: c,
+          width: 200,
+          height: 44,
+          child: Center(
+            child: GestureDetector(
+              onTap: onTap,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                decoration: BoxDecoration(
+                  color: kRegion,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.white, width: 1),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 10)],
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white)),
+                  if (n > 0) ...[
+                    const SizedBox(width: 6),
+                    Text('$n', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
+                  ],
+                ]),
+              ),
+            ),
+          ),
+        );
+    int n(Area a) {
+      final c = a.countFor(kind);
+      if (c > 0) return c;
+      final d = loaded[a.id];
+      return d == null ? 0 : d.places.where((p) => p.top && (kind != 'food' && kind != 'cafe' || p.kind == kind)).length;
+    }
+
+    if (zoom < kSidoZoom) {
+      return [
+        for (final s in sidos)
+          if (s.ready)
+            () {
+              final ra = s.areas.where((a) => a.ready).toList();
+              final c = LatLng(ra.map((a) => a.lat).reduce((x, y) => x + y) / ra.length, ra.map((a) => a.lng).reduce((x, y) => x + y) / ra.length);
+              return bubble(s.name, c, s.name, ra.fold<int>(0, (t, a) => t + n(a)), () => map.move(c, kSidoZoom + 1.5));
+            }(),
+      ];
+    }
+    return [for (final a in readyAreas) bubble(a.id, a.center, a.name, n(a), () => map.move(a.center, a.zoom))];
+  }
+
+  // 「이 집 어디야」: 지도 탭으로 가서 그 집을 연다
+  void goWhere(Place p) {
+    setState(() {
+      tab = 2;
+      regionOpen = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => openPlace(p));
+  }
+
+  // 내 콕
+  bool isKok(Place p) => koks.any((k) => k['id'] == p.id);
+  void toggleKok(Place p, bool on) {
+    final an = readyAreas.where((a) => a.id == p.areaId).firstOrNull?.name ?? area.name;
+    setState(() {
+      koks.removeWhere((k) => k['id'] == p.id);
+      if (on) {
+        koks.insert(0, {
+          'id': p.id,
+          'n': p.name,
+          'k': p.kind,
+          'c': p.cat,
+          'la': p.lat,
+          'ln': p.lng,
+          'a': p.areaId,
+          'an': an,
+          'th': p.vids.isEmpty ? '' : 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg',
+        });
+      }
+    });
+    SharedPreferences.getInstance().then((sp) => sp.setStringList('koks', [for (final k in koks) jsonEncode(k)])).catchError((_) => false);
+  }
+
+  void openKok(Map<String, dynamic> k) {
+    final a = readyAreas.where((x) => x.id == k['a']).firstOrNull;
+    final at = LatLng(((k['la'] ?? 0) as num).toDouble(), ((k['ln'] ?? 0) as num).toDouble());
+    setState(() {
+      tab = 2;
+      if (a != null) area = a;
+    });
+    if (a != null) _ensure(a.id);
+    final p = loaded.values.expand((d) => d.places).where((x) => x.id == k['id']).firstOrNull;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (p != null) {
+        openPlace(p);
+      } else {
+        map.move(at, 16);
+      }
+    });
+  }
+
+  void openChannel(Chan c) {
+    final d = data;
+    if (d == null) return;
+    final ps = [for (final id in c.places) ...d.places.where((p) => p.id == id)];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (ctx) => SheetList(
+        head: Row(children: [
+          SizedBox(width: 62, height: 84, child: ChanAvatar(c, ring: kAccent)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.4)),
+              const SizedBox(height: 3),
+              Text([if (c.subs > 0) subsText(c.subs), '${area.name}에서 다녀간 집 ${ps.length}곳'].join(' · '),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w300, color: kSub)),
+            ]),
+          ),
+        ]),
+        rows: [
+          for (var i = 0; i < ps.length; i++)
+            YtRow(
+              place: ps[i],
+              rank: i + 1,
+              onTap: () {
+                Navigator.pop(ctx);
+                goWhere(ps[i]);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  void openAllChannels() {
+    final d = data;
+    if (d == null) return;
+    final list = channelsOf(d);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (ctx) => SheetList(
+        head: Align(alignment: Alignment.centerLeft, child: mixTitle('${area.name} ', '유튜버 ${list.length}명', size: 18)),
+        rows: [
+          for (final c in list)
+            InkWell(
+              onTap: () {
+                Navigator.pop(ctx);
+                openChannel(c);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(children: [
+                  SizedBox(width: 62, height: 84, child: ChanAvatar(c)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text([if (c.subs > 0) subsText(c.subs), '다녀간 집 ${c.places.length}곳'].join(' · '),
+                        style: const TextStyle(fontSize: 12.5, color: kSub)),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, color: kSub),
+                ]),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void openYtRank() {
+    final d = data;
+    if (d == null) return;
+    final list = ytRank(d);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (ctx) => SheetList(
+        head: Align(alignment: Alignment.centerLeft, child: mixTitle('유튜버가 ', '많이 찾은 집', size: 18)),
+        rows: [
+          for (var i = 0; i < list.length; i++)
+            YtRow(
+              place: list[i],
+              rank: i + 1,
+              onTap: () {
+                Navigator.pop(ctx);
+                goWhere(list[i]);
+              },
+            ),
+        ],
+      ),
+    );
   }
 
   void zoomBy(double d) {
     final cam = map.camera;
-    map.move(cam.center, (cam.zoom + d).clamp(11.0, 19.0));
+    map.move(cam.center, (cam.zoom + d).clamp(6.0, 19.0));
   }
 
   void openFeats() {
@@ -475,15 +759,23 @@ class _MapPageState extends State<MapPage> {
     setState(() => regionOpen = !regionOpen);
   }
 
+  Iterable<Place> get pool {
+    final b = bounds;
+    if (b == null) return data?.places ?? const <Place>[];
+    final pLat = (b.north - b.south) * 0.25, pLng = (b.east - b.west) * 0.25;
+    return loaded.values.expand((d) => d.places).where(
+        (p) => p.lat >= b.south - pLat && p.lat <= b.north + pLat && p.lng >= b.west - pLng && p.lng <= b.east + pLng);
+  }
+
   List<Place> get visible {
-    final d = data;
-    if (d == null) return [];
+    if (loaded.isEmpty) return [];
+    final all = loaded.values.expand((d) => d.places);
     if (query.isNotEmpty) {
       final q = query.replaceAll(' ', '').toLowerCase();
-      return d.places.where((p) => (p.top || p.rise) && p.name.replaceAll(' ', '').toLowerCase().contains(q)).toList()
+      return all.where((p) => (p.top || p.rise) && p.name.replaceAll(' ', '').toLowerCase().contains(q)).toList()
         ..sort((a, b) => b.score.compareTo(a.score));
     }
-    var src = d.places.where((p) => kind == 'rise' ? p.rise : (p.top && p.score > 0));
+    var src = (kind == 'near' ? all : pool).where((p) => kind == 'rise' ? p.rise : (p.top && p.score > 0));
     if (feats.isNotEmpty) src = src.where((p) => feats.every(p.feat.contains));
     if (kind == 'open') src = src.where((p) => openInfo(p)?.open == true);
     if (kind == 'view') src = src.where((p) => p.view);
@@ -500,8 +792,8 @@ class _MapPageState extends State<MapPage> {
         ..sort((a, b) => meters(at, a.point).compareTo(meters(at, b.point)));
       return near.take(kTop).toList();
     }
-    final list = src.toList()..sort((a, b) => b.score.compareTo(a.score));
-    return (kind == 'food' || kind == 'cafe') ? list.take(kTop).toList() : list;
+    // 보이는 범위의 가게는 모두 (동네마다 이미 종류별 상위만 모아 둔 자료)
+    return src.toList()..sort((a, b) => b.score.compareTo(a.score));
   }
 
   // 지도 표시 3단계: 0 = 펼친 카드, 1 = 접힌 카드(사진만), 2 = 작은 아이콘
@@ -545,6 +837,7 @@ class _MapPageState extends State<MapPage> {
 
   String subText(int total, int cards) {
     final d = data;
+    if (zoom < kClusterZoom) return '동네별 가게 수  ·  확대하면 가게가 보여요';
     if (d == null) return '맛집 자료를 불러오는 중';
     if (query.isNotEmpty) return total == 0 ? '「$query」 찾는 집이 없습니다' : '「$query」 $total곳';
     if (kind == 'near') {
@@ -597,7 +890,7 @@ class _MapPageState extends State<MapPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.08),
-      builder: (_) => PlaceSheet(place: p, recentDays: data?.recentDays ?? 90),
+      builder: (_) => PlaceSheet(place: p, recentDays: data?.recentDays ?? 90, kok: isKok(p), onKok: (v) => toggleKok(p, v)),
     );
   }
 
@@ -687,6 +980,65 @@ class _MapPageState extends State<MapPage> {
 
   @override
   Widget build(BuildContext context) {
+    final panel = RegionPanel(
+      sidos: sidos,
+      current: area,
+      onPick: setArea,
+      onNear: () {
+        setState(() {
+          regionOpen = false;
+          tab = 2;
+        });
+        pickKind('near');
+      },
+    );
+    void toMapSearch() => setState(() {
+          tab = 2;
+          regionOpen = false;
+          searching = true;
+        });
+    return Scaffold(
+      body: IndexedStack(index: tab, children: [
+        HomeView(
+          data: data,
+          error: error,
+          area: area,
+          regionOpen: regionOpen && tab == 0,
+          regionPanel: panel,
+          onRegion: openRegion,
+          onSearch: toMapSearch,
+          onRetry: _load,
+          onWhere: goWhere,
+          onChannel: openChannel,
+          onAllChannels: openAllChannels,
+          onRankAll: openYtRank,
+        ),
+        VideoView(
+          data: data,
+          area: area,
+          regionOpen: regionOpen && tab == 1,
+          regionPanel: panel,
+          onRegion: openRegion,
+          onSearch: toMapSearch,
+          onWhere: goWhere,
+        ),
+        _mapTab(context),
+        SavedView(koks: koks, onOpen: openKok, onRemove: (k) {
+          setState(() => koks.removeWhere((x) => x['id'] == k['id']));
+          SharedPreferences.getInstance().then((sp) => sp.setStringList('koks', [for (final x in koks) jsonEncode(x)])).catchError((_) => false);
+        }),
+      ]),
+      bottomNavigationBar: KokNav(
+        tab: tab,
+        onTap: (i) => setState(() {
+          tab = i;
+          regionOpen = false;
+        }),
+      ),
+    );
+  }
+
+  Widget _mapTab(BuildContext context) {
     final list = visible;
     final wide = MediaQuery.of(context).size.width >= 760; // 넓은 화면: 분류 단추를 머리말 오른쪽에
     final place = layout(list);
@@ -697,17 +1049,18 @@ class _MapPageState extends State<MapPage> {
         for (var i = list.length - 1; i >= 0; i--)
           if (place[i].$1 == t) i
     ];
-    return Scaffold(
-      body: Stack(children: [
+    return Stack(children: [
         FlutterMap(
           mapController: map,
           options: MapOptions(
             initialCenter: kDefaultArea.center,
             initialZoom: 13,
-            minZoom: 11,
+            minZoom: 6,
             maxZoom: 19,
             onPositionChanged: (camera, hasGesture) {
               if ((camera.zoom - zoom).abs() >= 0.05) setState(() => zoom = camera.zoom);
+              _sync?.cancel();
+              _sync = Timer(const Duration(milliseconds: 250), () => _syncView(camera));
             },
           ),
           children: [
@@ -717,7 +1070,11 @@ class _MapPageState extends State<MapPage> {
             ),
             MarkerLayer(
               markers: [
-                for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2),
+                // 넓게 보면 동네별 숫자 묶음, 확대하면 가게 하나하나
+                if (zoom < kClusterZoom)
+                  ...clusterMarkers()
+                else
+                  for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2),
                 if (me != null)
                   Marker(
                     key: const ValueKey('me'),
@@ -811,7 +1168,7 @@ class _MapPageState extends State<MapPage> {
             ]),
           ),
         ),
-        if (data == null)
+        if (data == null && zoom >= kClusterZoom)
           Center(
             child: Container(
               margin: const EdgeInsets.all(30),
@@ -872,8 +1229,7 @@ class _MapPageState extends State<MapPage> {
             child: const Text('© OpenStreetMap', style: TextStyle(fontSize: 10, color: kGray)),
           ),
         ),
-      ]),
-    );
+      ]);
   }
 }
 
@@ -1585,7 +1941,9 @@ class _Sheet extends StatelessWidget {
 class PlaceSheet extends StatelessWidget {
   final Place place;
   final int recentDays;
-  const PlaceSheet({super.key, required this.place, required this.recentDays});
+  final bool kok;
+  final ValueChanged<bool>? onKok;
+  const PlaceSheet({super.key, required this.place, required this.recentDays, this.kok = false, this.onKok});
 
   @override
   Widget build(BuildContext context) {
@@ -1610,6 +1968,7 @@ class PlaceSheet extends StatelessWidget {
               ]),
             ),
             ScoreTag(score: p.score),
+            if (onKok != null) ...[const SizedBox(width: 8), KokButton(on: kok, onChanged: onKok!)],
           ]),
           const SizedBox(height: 10),
           if (p.greviews > 0)

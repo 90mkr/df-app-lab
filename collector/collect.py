@@ -490,6 +490,57 @@ def youtube_videos(place):
     return vids[:4]
 
 
+CHANNELS = os.path.join(os.path.dirname(__file__), "channels_cache.json")
+
+
+def yt_channels(all_out):
+    """영상마다 채널 id를 붙이고, 이 동네에 다녀간 유튜버 목록(사진·구독자·다녀간 집)을 만든다. 실패하면 있는 만큼만."""
+    vids = {}
+    for o in all_out:
+        for v in o.get("vids", []):
+            vids.setdefault(v["id"], []).append(v)
+    cc = load_json(CHANNELS, {})
+    if YOUTUBE_KEY:
+        try:
+            need = [vid for vid, vs in vids.items() if not vs[0].get("cid")]
+            for i in range(0, len(need), 50):
+                q = urllib.parse.urlencode({"part": "snippet", "id": ",".join(need[i:i + 50]), "key": YOUTUBE_KEY})
+                for it in get_json("https://www.googleapis.com/youtube/v3/videos?" + q).get("items", []):
+                    for v in vids.get(it["id"], []):
+                        v["cid"] = it["snippet"].get("channelId", "")
+            today = dt.date.today()
+            cids = {v["cid"] for vs in vids.values() for v in vs if v.get("cid")}
+            stale = [c for c in cids if c not in cc or (today - dt.date.fromisoformat(cc[c].get("d", "2000-01-01"))).days > 30]
+            for i in range(0, len(stale), 50):
+                q = urllib.parse.urlencode({"part": "snippet,statistics", "id": ",".join(stale[i:i + 50]), "key": YOUTUBE_KEY})
+                for it in get_json("https://www.googleapis.com/youtube/v3/channels?" + q).get("items", []):
+                    th = it["snippet"].get("thumbnails", {})
+                    cc[it["id"]] = {
+                        "n": clean(it["snippet"].get("title"))[:30],
+                        "th": (th.get("medium") or th.get("default") or {}).get("url", ""),
+                        "s": int(it.get("statistics", {}).get("subscriberCount", 0) or 0),
+                        "d": today.isoformat(),
+                    }
+            save_json(CHANNELS, cc)
+        except Exception as e:
+            print("유튜버 정보 중단:", str(e)[:120])
+    per = {}
+    for o in all_out:
+        seen = set()
+        for v in o.get("vids", []):
+            c = v.get("cid")
+            if c and c not in seen:
+                seen.add(c)
+                per.setdefault(c, {"name": v.get("ch", ""), "places": []})["places"].append(o["id"])
+    out = []
+    for c, x in per.items():
+        info = cc.get(c, {})
+        out.append({"id": c, "name": info.get("n") or x["name"], "thumb": info.get("th", ""), "subs": info.get("s", 0), "places": x["places"]})
+    out.sort(key=lambda x: (len(x["places"]), x["subs"]), reverse=True)
+    print("유튜버: " + ", ".join(f"{x['name']}({len(x['places'])}곳)" for x in out[:8]))
+    return out[:40]
+
+
 # ---------- 4. 점수 ----------
 
 def short_category(cat):
@@ -606,6 +657,15 @@ def build_list(kind, rows, top_n, use_google):
     return [to_out(r) for r in rows[:top_n]]
 
 
+def dong_of(p):
+    """지번 주소에서 동·읍·면 이름 (예: 인천 연수구 송도동 24-5 → 송도동)."""
+    toks = (p.get("address_name") or "").split()
+    for t in toks[1:]:
+        if re.search(r"(동|읍|면|리|\d가)$", t) and not re.search(r"(시|구|군)$", t):
+            return t
+    return ""
+
+
 def to_out(r):
     p = r["p"]
     return {
@@ -613,6 +673,7 @@ def to_out(r):
         "kind": r["kind"],
         "name": p["place_name"],
         "cat": short_category(p.get("category_name")),
+        "dong": dong_of(p),
         "lat": float(p["y"]),
         "lng": float(p["x"]),
         "addr": p.get("road_address_name") or p.get("address_name"),
@@ -896,7 +957,10 @@ def main():
           + " / 대형 카페: " + ", ".join(o["name"] for o in all_out if o.get("big"))
           + " / 뷰: " + ", ".join(o["name"] for o in all_out if o.get("view")))
 
+    channels = yt_channels(all_out)
+
     data = {
+        "channels": channels,
         "area": AREA_LABEL,
         "area_id": AREA_ID,
         "updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
@@ -947,7 +1011,13 @@ def run_all():
             continue
         try:
             with open(OUT, encoding="utf-8") as f:
-                n = len(json.load(f).get("places", []))
+                js = json.load(f)
+            pl = js.get("places", [])
+            a["updated"] = js.get("updated", "")  # 앱이 휴대폰에 저장한 자료가 새 판인지 보는 표
+            n = len(pl)
+            a["count"] = sum(1 for x in pl if x.get("top", True))
+            a["food"] = sum(1 for x in pl if x.get("top", True) and x["kind"] == "food")
+            a["cafe"] = sum(1 for x in pl if x.get("top", True) and x["kind"] == "cafe")
         except Exception:
             n = 0
         if n >= 10 and not a.get("ready"):
