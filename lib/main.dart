@@ -352,6 +352,7 @@ class _MapPageState extends State<MapPage> {
   }
 
   void setArea(Area a) {
+    setState(() => regionOpen = false);
     if (a.id == area.id) return;
     setState(() {
       area = a;
@@ -411,26 +412,11 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
+  bool regionOpen = false; // 지역 메뉴(머리말 아래로 펼침)
+
   void openRegion() {
     if (sidos.isEmpty) return;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.08),
-      builder: (ctx) => RegionSheet(
-        sidos: sidos,
-        current: area,
-        onPick: (a) {
-          Navigator.pop(ctx);
-          setArea(a);
-        },
-        onNear: () {
-          Navigator.pop(ctx);
-          pickKind('near');
-        },
-      ),
-    );
+    setState(() => regionOpen = !regionOpen);
   }
 
   List<Place> get visible {
@@ -689,13 +675,38 @@ class _MapPageState extends State<MapPage> {
             ),
           ],
         ),
+        if (regionOpen)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => regionOpen = false),
+              child: const SizedBox.expand(),
+            ),
+          ),
         // 위쪽 머리말
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _Header(data: data, area: area, onRegion: openRegion, sub: subText(list.length, cards), onRank: data == null ? null : openRank),
+              _Header(data: data, area: area, open: regionOpen, onRegion: openRegion, sub: subText(list.length, cards), onRank: data == null ? null : openRank),
               const SizedBox(height: 8),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: !regionOpen
+                    ? const SizedBox(width: double.infinity)
+                    : RegionPanel(
+                        sidos: sidos,
+                        current: area,
+                        onPick: setArea,
+                        onNear: () {
+                          setState(() => regionOpen = false);
+                          pickKind('near');
+                        },
+                      ),
+              ),
+              if (!regionOpen)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(children: [
@@ -784,10 +795,11 @@ BoxDecoration _card({double r = 14}) => BoxDecoration(
 class _Header extends StatelessWidget {
   final SongdoData? data;
   final Area area;
+  final bool open;
   final VoidCallback onRegion;
   final String sub;
   final VoidCallback? onRank;
-  const _Header({required this.data, required this.area, required this.onRegion, required this.sub, required this.onRank});
+  const _Header({required this.data, required this.area, required this.open, required this.onRegion, required this.sub, required this.onRank});
 
   @override
   Widget build(BuildContext context) {
@@ -797,15 +809,18 @@ class _Header extends StatelessWidget {
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // 지역 선택: 누르면 시·도 → 동네 고르기
+            // 지역 선택: 누르면 바로 아래로 전국 지역 메뉴가 펼쳐진다
             InkWell(
               onTap: onRegion,
               borderRadius: BorderRadius.circular(8),
               child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
-                Text(area.name, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: kInk)),
-                const Icon(Icons.keyboard_arrow_down_rounded, size: 24, color: kInk),
-                const SizedBox(width: 4),
-                Text(area.sido, style: const TextStyle(fontSize: 12, color: kGray)),
+                const Icon(Icons.place_rounded, size: 17, color: kFoodTint),
+                const SizedBox(width: 3),
+                Text('${area.sido} ', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: kInk)),
+                Text(area.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kInk)),
+                Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 22, color: kInk),
+                const SizedBox(width: 2),
+                Text(open ? '닫기' : '지역 바꾸기', style: const TextStyle(fontSize: 11.5, color: kGray)),
               ]),
             ),
             const SizedBox(height: 2),
@@ -833,17 +848,17 @@ class _Header extends StatelessWidget {
 }
 
 // 지역 고르기: 시·도 3칸 격자, 누르면 그 줄 바로 아래에 구 단위 동네가 2칸으로 펼쳐진다
-class RegionSheet extends StatefulWidget {
+class RegionPanel extends StatefulWidget {
   final List<Sido> sidos;
   final Area current;
   final ValueChanged<Area> onPick;
   final VoidCallback onNear;
-  const RegionSheet({super.key, required this.sidos, required this.current, required this.onPick, required this.onNear});
+  const RegionPanel({super.key, required this.sidos, required this.current, required this.onPick, required this.onNear});
   @override
-  State<RegionSheet> createState() => _RegionSheetState();
+  State<RegionPanel> createState() => _RegionPanelState();
 }
 
-class _RegionSheetState extends State<RegionSheet> {
+class _RegionPanelState extends State<RegionPanel> {
   late String? open = widget.current.sido;
   static const kPanel = Color(0xFFF5F6F8);
   static const kOff = Color(0xFFA9AEB8);
@@ -855,62 +870,56 @@ class _RegionSheetState extends State<RegionSheet> {
       rows.add(widget.sidos.sublist(i, math.min(i + 3, widget.sidos.length)));
     }
     return Container(
-      height: MediaQuery.of(context).size.height * 0.86,
-      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      child: Column(children: [
-        const SizedBox(height: 10),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: kLine, borderRadius: BorderRadius.circular(2))),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 8, 4),
-          child: Row(children: [
-            const Text('어디 맛집을 볼까요?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk)),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.64),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: _card(),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Text.rich(TextSpan(children: [
+              TextSpan(text: '전국 ', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w400, color: kInk)),
+              TextSpan(text: '지역', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kInk)),
+            ])),
             const Spacer(),
-            IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: kInk)),
-          ]),
-        ),
-        Expanded(
-          child: ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 30), children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: InkWell(
-                onTap: widget.onNear,
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(12, 9, 16, 9),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: kLine, width: 1)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.near_me_rounded, size: 18, color: kBlue),
-                    SizedBox(width: 6),
-                    Text('내 주변으로 찾기', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kInk)),
-                  ]),
-                ),
+            InkWell(
+              onTap: widget.onNear,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(9, 6, 12, 6),
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: kLine, width: 1)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.near_me_rounded, size: 15, color: kBlue),
+                  SizedBox(width: 4),
+                  Text('내 주변으로', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kInk)),
+                ]),
               ),
             ),
-            const SizedBox(height: 14),
-            Container(
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: kLine, width: 1)),
-              child: Column(children: [
-                for (var r = 0; r < rows.length; r++) ...[
-                  if (r > 0) const Divider(height: 1, thickness: 1, color: kLine),
-                  IntrinsicHeight(
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      for (var c = 0; c < 3; c++) ...[
-                        if (c > 0) const VerticalDivider(width: 1, thickness: 1, color: kLine),
-                        Expanded(child: c < rows[r].length ? _sidoCell(rows[r][c]) : const SizedBox(height: 52)),
-                      ],
-                    ]),
-                  ),
-                  if (rows[r].any((s) => s.name == open)) ...[
-                    const Divider(height: 1, thickness: 1, color: kLine),
-                    _panel(rows[r].firstWhere((s) => s.name == open)),
-                  ],
-                ],
-              ]),
-            ),
           ]),
-        ),
-      ]),
+          const SizedBox(height: 10),
+          Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: kLine, width: 1)),
+            child: Column(children: [
+              for (var r = 0; r < rows.length; r++) ...[
+                if (r > 0) const Divider(height: 1, thickness: 1, color: kLine),
+                IntrinsicHeight(
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    for (var c = 0; c < 3; c++) ...[
+                      if (c > 0) const VerticalDivider(width: 1, thickness: 1, color: kLine),
+                      Expanded(child: c < rows[r].length ? _sidoCell(rows[r][c]) : const SizedBox(height: 46)),
+                    ],
+                  ]),
+                ),
+                if (rows[r].any((s) => s.name == open)) ...[
+                  const Divider(height: 1, thickness: 1, color: kLine),
+                  _panel(rows[r].firstWhere((s) => s.name == open)),
+                ],
+              ],
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -919,7 +928,7 @@ class _RegionSheetState extends State<RegionSheet> {
     return InkWell(
       onTap: () => setState(() => open = isOpen ? null : s.name),
       child: Container(
-        height: 52,
+        height: 46,
         color: isOpen ? kPanel : Colors.white,
         padding: const EdgeInsets.only(left: 16, right: 10),
         child: Row(children: [
@@ -965,7 +974,7 @@ class _RegionSheetState extends State<RegionSheet> {
     return InkWell(
       onTap: ok ? () => widget.onPick(a) : null,
       child: SizedBox(
-        height: 46,
+        height: 42,
         child: Row(children: [
           Flexible(
             child: Text(a.name,
