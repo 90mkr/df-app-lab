@@ -180,9 +180,9 @@ class _MapPageState extends State<MapPage> {
   final map = MapController();
   SongdoData? data;
   String? error;
-  String kind = 'food';
+  String kind = 'all'; // all 전체, tv 방송탄, food 맛집, cafe 카페
   double zoom = 13;
-  String get kindLabel => kind == 'cafe' ? '카페' : '맛집';
+  String get kindLabel => switch (kind) { 'cafe' => '카페', 'food' => '맛집', 'tv' => '방송탄 집', _ => '맛집·카페' };
 
   @override
   void initState() {
@@ -203,9 +203,11 @@ class _MapPageState extends State<MapPage> {
   List<Place> get visible {
     final d = data;
     if (d == null) return [];
-    final list = d.places.where((p) => p.kind == kind && p.score > 0).toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
-    return list.take(kTop).toList();
+    var src = d.places.where((p) => p.score > 0);
+    if (kind == 'food' || kind == 'cafe') src = src.where((p) => p.kind == kind);
+    if (kind == 'tv') src = src.where((p) => p.tv.isNotEmpty);
+    final list = src.toList()..sort((a, b) => b.score.compareTo(a.score));
+    return (kind == 'food' || kind == 'cafe') ? list.take(kTop).toList() : list;
   }
 
   // 지도 표시 3단계: 0 = 펼친 카드, 1 = 접힌 카드(사진만), 2 = 작은 아이콘
@@ -329,6 +331,11 @@ class _MapPageState extends State<MapPage> {
                         final o = openInfo(p);
                         return Text.rich(
                           TextSpan(children: [
+                            if (kind == 'all' || kind == 'tv')
+                              TextSpan(
+                                text: p.kind == 'cafe' ? '카페  ·  ' : '맛집  ·  ',
+                                style: TextStyle(fontWeight: FontWeight.w600, color: kindTint(p.kind)),
+                              ),
                             if (o != null)
                               TextSpan(text: '${o.short}  ·  ', style: TextStyle(fontWeight: FontWeight.w600, color: o.open ? kBlue : kGray)),
                             TextSpan(text: '${p.cat}${p.greviews > 0 ? '  ·  ★${p.grate.toStringAsFixed(1)} (${commas(p.greviews)})' : ''}  ·  블로그 ${p.blog}'),
@@ -389,12 +396,12 @@ class _MapPageState extends State<MapPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _Header(data: data, kindLabel: kindLabel, shown: cards < list.length ? cards : kTop, onRank: data == null ? null : openRank),
+              _Header(data: data, kindLabel: kindLabel, total: list.length, cards: cards, onRank: data == null ? null : openRank),
               const SizedBox(height: 8),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(children: [
-                  for (final k in const [['food', '맛집'], ['cafe', '카페']])
+                  for (final k in const [['all', '전체'], ['tv', '방송탄'], ['food', '맛집'], ['cafe', '카페']])
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: _Chip(label: k[1], on: kind == k[0], onTap: () => setState(() => kind = k[0])),
@@ -425,6 +432,19 @@ class _MapPageState extends State<MapPage> {
                     ]),
             ),
           ),
+        if (data != null && kind == 'tv' && list.isEmpty)
+          Center(
+            child: Container(
+              margin: const EdgeInsets.all(30),
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+              decoration: _card(),
+              child: const Column(mainAxisSize: MainAxisSize.min, children: [
+                Text('방송 나온 집을 확인하고 있습니다', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: kInk)),
+                SizedBox(height: 4),
+                Text('매일 새벽 블로그 글로 자동 확인합니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4)),
+              ]),
+            ),
+          ),
         Positioned(
           right: 6,
           bottom: 4,
@@ -448,9 +468,9 @@ BoxDecoration _card({double r = 14}) => BoxDecoration(
 class _Header extends StatelessWidget {
   final SongdoData? data;
   final String kindLabel;
-  final int shown;
+  final int total, cards;
   final VoidCallback? onRank;
-  const _Header({required this.data, required this.kindLabel, required this.shown, required this.onRank});
+  const _Header({required this.data, required this.kindLabel, required this.total, required this.cards, required this.onRank});
 
   @override
   Widget build(BuildContext context) {
@@ -466,7 +486,11 @@ class _Header extends StatelessWidget {
             ])),
             const SizedBox(height: 2),
             Text(
-              data == null ? '블로그·유튜브 화제 순' : (shown < kTop ? '$kindLabel 상위 $kTop곳 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $kTop곳  ·  ${data!.updated} 기준'),
+              data == null
+                  ? '블로그·유튜브 화제 순'
+                  : total == 0
+                      ? '$kindLabel 확인 중  ·  매일 새벽에 확인합니다'
+                      : (cards < total ? '$kindLabel 상위 $total곳 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $total곳  ·  ${data!.updated} 기준'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11.5, color: kGray),
@@ -652,7 +676,7 @@ class FeatChip extends StatelessWidget {
   }
 }
 
-const kFoodTint = Color(0xFFF5822A); // 맛집: 주황
+const kFoodTint = Color(0xFFE53935); // 맛집: 빨강
 const kCafeTint = Color(0xFF8A5A33); // 카페: 밝은 갈색 (커피색)
 const kLineBrown = Color(0xFF5C3A21); // 카드 테두리·꼬리·1~3위 숫자: 짙은 갈색
 
@@ -705,14 +729,14 @@ class IconMarker extends StatelessWidget {
           decoration: BoxDecoration(
             color: kindTint(place.kind),
             borderRadius: BorderRadius.circular(7),
-            border: Border.all(color: Colors.white, width: 1),
+            border: Border.all(color: kLineBrown, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 6)],
           ),
           child: Icon(kindIconFilled(place.kind), size: 14, color: Colors.white),
         ),
         Transform.translate(
           offset: const Offset(0, -1.5),
-          child: CustomPaint(size: const Size(8, 5), painter: _Tail(kindTint(place.kind), fill: kindTint(place.kind))),
+          child: CustomPaint(size: const Size(8, 5), painter: _Tail(kLineBrown, fill: kindTint(place.kind))),
         ),
       ]),
     );

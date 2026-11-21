@@ -59,7 +59,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: build/web
-          key: web-${{ hashFiles('lib/**', 'pubspec.yaml', 'assets/**', 'tool/**', '.github/workflows/build.yml') }}
+          key: web-${{ hashFiles('lib/**', 'pubspec.yaml', 'assets/**', 'tool/**', 'web/flutter_bootstrap.js', '.github/workflows/build.yml') }}
 
       - name: 플러터 준비
         if: steps.webcache.outputs.cache-hit != 'true'
@@ -80,6 +80,15 @@ jobs:
         run: |
           mkdir -p build/web/data
           cp web/data/songdo.json build/web/data/
+
+      - name: 새 화면이 바로 보이게 (브라우저 저장본 대신 새 파일)
+        run: |
+          V=${{ github.run_id }}
+          sed -i -E "s#flutter_bootstrap\.js(\?v=[0-9]+)?#flutter_bootstrap.js?v=$V#g" build/web/index.html
+          sed -i -E "s#\"mainJsPath\":\"main\.dart\.js(\?v=[0-9]+)?\"#\"mainJsPath\":\"main.dart.js?v=$V\"#g" build/web/flutter_bootstrap.js
+          grep -o 'flutter_bootstrap\.js[^"]*' build/web/index.html | head -1
+          grep -o '"mainJsPath":"[^"]*"' build/web/flutter_bootstrap.js | head -1 || echo "mainJsPath 없음"
+          grep -c "serviceWorker" build/web/flutter_bootstrap.js || true
 
       - name: 미리보기 게시 준비
         uses: actions/configure-pages@v6
