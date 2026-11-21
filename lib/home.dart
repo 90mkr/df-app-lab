@@ -459,13 +459,16 @@ class _SegChip extends StatelessWidget {
           child: Container(
             height: 30,
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            alignment: Alignment.center,
             decoration: BoxDecoration(
               color: on ? kInk : Colors.white,
               borderRadius: BorderRadius.circular(15),
               border: Border.all(color: on ? kInk : kPillLine, width: 1),
             ),
-            child: Text(label, style: TextStyle(fontSize: 12, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : kInk)),
+            // 글자 폭만큼만 (줄바꿈 칸에서도 가로로 늘어나지 않게)
+            child: Center(
+              widthFactor: 1,
+              child: Text(label, style: TextStyle(fontSize: 12, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : kInk)),
+            ),
           ),
         ),
       );
