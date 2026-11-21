@@ -26,7 +26,7 @@ AREA = (126.590, 37.355, 126.705, 37.445)  # 송도국제도시 + 송도유원�
 AREA_NAME = "송도"
 RECENT_DAYS = 90
 YOUTUBE_TOP = int(os.environ.get("YOUTUBE_TOP", "25"))  # 종류별 유튜브 확인 수
-TOP_N = int(os.environ.get("TOP_N", "10"))  # 종류별로 앱에 남기는 수
+TOP_N = int(os.environ.get("TOP_N", "20"))  # 종류별로 앱에 남기는 수
 KINDS = [("food", "FD6", "맛집"), ("cafe", "CE7", "카페")]
 OUT = os.path.join(os.path.dirname(__file__), "..", "web", "data", "songdo.json")
 
@@ -39,7 +39,11 @@ YOUTUBE_KEY = os.environ.get("YOUTUBE_KEY", "").strip()
 # 구글 지도(별점·리뷰 수) 열쇠 — 따로 없으면 유튜브 열쇠를 같이 쓴다
 GOOGLE_KEY = (os.environ.get("GOOGLE_KEY", "") or YOUTUBE_KEY).strip()
 GOOGLE_MAX = int(os.environ.get("GOOGLE_MAX", "30"))   # 하루 새로 조회하는 최대 수 (무료 범위 유지)
-GOOGLE_DAYS = int(os.environ.get("GOOGLE_DAYS", "90"))  # 같은 가게는 석 달 동안 다시 조회하지 않음 (순위는 자주 안 바뀜)
+GOOGLE_DAYS = int(os.environ.get("GOOGLE_DAYS", "90"))  # 순위 밖 가게: 석 달마다 갱신
+GOOGLE_DAYS_TOP = 30   # 순위권 가게: 한 달마다 갱신
+BLOG_DAYS = 14         # 1차 블로그 건수는 2주마다 새로 (무료)
+GOOGLE_MONTH = 900     # 한 달 구글 조회 상한 (무료 1,000회 안쪽)
+USAGE = os.path.join(os.path.dirname(__file__), "google_usage.json")
 MIN_REVIEWS = int(os.environ.get("MIN_REVIEWS", "30"))  # 구글 리뷰가 이보다 적으면 순위 제외
 CACHE = os.path.join(os.path.dirname(__file__), "..", "web", "data", "google_cache.json")
 PLACES_CACHE = os.path.join(os.path.dirname(__file__), "places_cache.json")  # 가게 목록 (7일마다 새로)
@@ -504,7 +508,7 @@ def main():
             return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": 0,
                     "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
         hit = bc.get(str(p["id"]))
-        if hit and (today0 - dt.date.fromisoformat(hit["d"])).days < GOOGLE_DAYS:
+        if hit and (today0 - dt.date.fromisoformat(hit["d"])).days < BLOG_DAYS:
             return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": hit["e"],
                     "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
         try:
@@ -524,21 +528,37 @@ def main():
         rows = list(ex.map(one, cands))
     save_json(BLOG_CACHE, bc)
 
-    # 구글 별점·리뷰: 카카오 인기 후보 + 블로그 상위 위주로, 저장해 둔 값은 2주간 재사용
+    # 구글 별점·리뷰: 무료 범위(월 1,000회) 안에서만 조회한다.
+    #  - 한 달 최대 GOOGLE_MONTH회, 하루 최대 GOOGLE_MAX회 (넘으면 저장값 그대로 씀)
+    #  - 순위권(지난 순위 상위) 가게는 한 달, 나머지는 석 달 지나면 오래된 순서로 새로 받음
     use_google = False
     if GOOGLE_KEY:
         today = dt.date.today()
+        month = today.strftime("%Y-%m")
+        usage = load_json(USAGE, {})
+        used = usage.get(month, 0)
+        ranked = set(prev.keys())
         pri = sorted(rows, key=lambda r: (r["pop"] > 0, r["est"]), reverse=True)
-        pri = [r for r in pri if r["pop"] > 0 or r["est"] >= 3][:600]
-        new_calls, fails = 0, 0
+        pri = [r for r in pri if r["pop"] > 0 or r["est"] >= 3 or str(r["p"]["id"]) in ranked][:600]
+        need = []
         for r in pri:
             pid = str(r["p"]["id"])
             hit = cache.get(pid)
-            if hit and (today - dt.date.fromisoformat(hit["d"])).days < GOOGLE_DAYS:
+            if hit:
                 r["g"] = hit
-                continue
-            if new_calls >= GOOGLE_MAX:
-                continue
+                age = (today - dt.date.fromisoformat(hit["d"])).days
+                limit = GOOGLE_DAYS_TOP if pid in ranked else GOOGLE_DAYS
+                if age < limit:
+                    continue
+                need.append((1, -age, r))   # 갱신: 오래된 것부터
+            else:
+                need.append((0, 0, r))      # 처음 보는 가게 먼저
+        need.sort(key=lambda t: (t[0], t[1]))
+        new_calls, fails = 0, 0
+        for _, _, r in need:
+            if new_calls >= GOOGLE_MAX or used + new_calls >= GOOGLE_MONTH:
+                break
+            pid = str(r["p"]["id"])
             try:
                 g = google_lookup(r["p"])
                 new_calls += 1
@@ -550,6 +570,9 @@ def main():
                 print("구글 실패:", str(e)[:200])
                 if fails >= 3:
                     break
+        usage[month] = used + new_calls
+        save_json(USAGE, {k: usage[k] for k in sorted(usage)[-6:]})
+        print(f"이번 달 구글 조회 {usage[month]}/{GOOGLE_MONTH}회, 남은 갱신 대기 {max(0, len(need) - new_calls)}곳")
         have = sum(1 for r in rows if r["g"]["n"] >= MIN_REVIEWS)
         print(f"구글 새 조회 {new_calls}회, 리뷰 {MIN_REVIEWS}개 이상 {have}곳")
         use_google = have >= 20
