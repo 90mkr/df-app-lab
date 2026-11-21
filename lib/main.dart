@@ -61,13 +61,15 @@ class Post {
 class Video {
   final String id, title, channel, date, cid;
   final bool hd; // 고화질 표지(maxres)가 있다고 확인된 영상
+  final bool short; // 세로 영상(쇼츠) — 표지를 자르지 않고 통째로
   Video(Map<String, dynamic> j)
       : id = j['id'] ?? '',
         title = j['t'] ?? '',
         channel = j['ch'] ?? '',
         date = j['date'] ?? '',
         cid = j['cid'] ?? '',
-        hd = j['mx'] == 1;
+        hd = j['mx'] == 1,
+        short = j['sh'] == 1;
 }
 
 class Place {
@@ -1662,9 +1664,11 @@ class _Chip extends StatelessWidget {
 String commas(int n) => n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
 
 // 카드 크기 (지도 겹침 계산에도 씀)
-double cardImg(int rank) => rank <= 3 ? 52.0 : 44.0;
-double cardFullW(int rank) => rank <= 3 ? 178.0 : 154.0;
-double cardShutW(int rank) => cardImg(rank) + 12; // 사진 + 안쪽 여백 5×2 + 테두리 1×2
+// 카드 사진은 유튜브 표지 비율(16:9) 그대로 — 자르지 않는다
+double cardImg(int rank) => rank <= 3 ? 43.0 : 36.0; // 사진 높이
+double cardImgW(int rank) => rank <= 3 ? 76.0 : 64.0; // 사진 너비
+double cardFullW(int rank) => rank <= 3 ? 196.0 : 170.0;
+double cardShutW(int rank) => cardImgW(rank) + 12; // 사진 + 안쪽 여백 5×2 + 테두리 1×2
 double cardH(int rank) => cardImg(rank) + 12 + 6; // 카드 + 꼬리
 
 // 자리(d): 0 가게 위, 1 가게 아래, 2 가게 오른쪽, 3 가게 왼쪽
@@ -1717,17 +1721,17 @@ class PlaceMarker extends StatelessWidget {
               maxWidth: inner,
               child: Row(children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(7),
+                  borderRadius: BorderRadius.circular(6),
                   child: SizedBox(
-                    width: img,
+                    width: cardImgW(rank),
                     height: img,
                     child: thumb.isEmpty
-                        ? kindFill(place.kind, img * 0.58)
+                        ? kindFill(place.kind, img * 0.66)
                         : Image.network(
                             thumb,
                             fit: BoxFit.cover,
                             webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                            errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.58),
+                            errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.66),
                           ),
                   ),
                 ),

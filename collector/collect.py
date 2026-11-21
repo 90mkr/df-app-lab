@@ -493,10 +493,56 @@ def youtube_videos(place):
 
 
 CHANNELS = os.path.join(os.path.dirname(__file__), "channels_cache.json")
+SHORTS = os.path.join(os.path.dirname(__file__), "shorts_cache.json")  # 영상 id → 쇼츠(세로)인지 (바뀌지 않으니 한 번만)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_noredir = urllib.request.build_opener(_NoRedirect)
+
+
+def is_short(vid):
+    """youtube.com/shorts/영상 이 그대로 열리면 쇼츠, 일반 영상 주소로 넘기면 아님 (유튜브 사용량 안 씀). 모르면 None."""
+    try:
+        req = urllib.request.Request(f"https://www.youtube.com/shorts/{vid}", method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+        with _noredir.open(req, timeout=8) as r:
+            return r.status == 200
+    except urllib.error.HTTPError as e:
+        return False if 300 <= e.code < 400 else None
+    except Exception:
+        return None
+
+
+def mark_shorts(all_out):
+    """쇼츠(세로 영상)에 sh=1 — 앱은 쇼츠 표지를 자르지 않고 통째로 보여 준다."""
+    sc = load_json(SHORTS, {})
+    n = 0
+    for o in all_out:
+        for v in o.get("vids", []):
+            vid = v["id"]
+            if vid not in sc and n < 300:
+                r = is_short(vid)
+                n += 1
+                if r is not None:
+                    sc[vid] = 1 if r else 0
+                time.sleep(0.1)
+            if sc.get(vid) == 1:
+                v["sh"] = 1
+            else:
+                v.pop("sh", None)
+    save_json(SHORTS, sc)
+    print(f"쇼츠 확인: 새로 {n}개, 쇼츠 {sum(1 for x in sc.values() if x == 1)}개 / {len(sc)}개")
 
 
 def yt_channels(all_out):
     """영상마다 채널 id를 붙이고, 이 동네에 다녀간 유튜버 목록(사진·구독자·다녀간 집)을 만든다. 실패하면 있는 만큼만."""
+    try:
+        mark_shorts(all_out)
+    except Exception as e:
+        print("쇼츠 확인 중단:", str(e)[:120])
     vids = {}
     for o in all_out:
         for v in o.get("vids", []):

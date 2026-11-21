@@ -294,9 +294,25 @@ Widget _hqCrop(String id, Widget fb) => LayoutBuilder(builder: (_, c) {
       );
     });
 
-// 유튜브 큰 사진: 고화질(maxres)이 있다고 확인된 영상은 그것으로, 아니면 띠를 자른 hqdefault
+// 쇼츠(세로 영상): 표지를 자르지 않고 어두운 바탕 가운데에 통째로
+Widget _shortFit(String id, Widget fb) => Container(
+      color: const Color(0xFF16171B),
+      alignment: Alignment.center,
+      child: AspectRatio(
+        aspectRatio: 4 / 3,
+        child: Image.network(
+          'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+          fit: BoxFit.fill,
+          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+          errorBuilder: (_, __, ___) => fb,
+        ),
+      ),
+    );
+
+// 유튜브 큰 사진 (16:9 칸): 쇼츠는 통째로, 고화질(maxres)이 있다고 확인된 영상은 그것으로, 아니면 띠만 뺀 hqdefault
 Widget ytWide(Video v, {Widget? fallback}) {
   final fb = fallback ?? Container(color: const Color(0xFFE9E9EC));
+  if (v.short) return _shortFit(v.id, fb);
   if (!v.hd) return _hqCrop(v.id, fb);
   return Image.network(
     'https://i.ytimg.com/vi/${v.id}/maxresdefault.jpg',
@@ -308,18 +324,19 @@ Widget ytWide(Video v, {Widget? fallback}) {
   );
 }
 
-Widget ytSmall(Place p, double size, {double r = 8}) => ClipRRect(
+// 작은 표지: 유튜브 표지 비율(16:9) 그대로 — mqdefault는 16:9에 띠가 없고, 쇼츠도 통째로 담긴다
+Widget ytSmall(Place p, double w, {double r = 6}) => ClipRRect(
       borderRadius: BorderRadius.circular(r),
       child: SizedBox(
-        width: size,
-        height: size,
+        width: w,
+        height: w * 9 / 16,
         child: p.vids.isEmpty
-            ? kindFill(p.kind, size * 0.5)
+            ? kindFill(p.kind, w * 0.3)
             : Image.network(
                 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg',
                 fit: BoxFit.cover,
                 webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                errorBuilder: (_, __, ___) => kindFill(p.kind, size * 0.5),
+                errorBuilder: (_, __, ___) => kindFill(p.kind, w * 0.3),
               ),
       ),
     );
@@ -503,7 +520,9 @@ class HomeView extends StatelessWidget {
   Widget _hero(SongdoData d) {
     final p = todaysPlace(d);
     if (p == null) return const SizedBox();
-    final v = p.vids.isEmpty ? null : p.vids.first;
+    final v = p.vids.isEmpty
+        ? null
+        : p.vids.firstWhere((x) => x.hd && !x.short, orElse: () => p.vids.firstWhere((x) => !x.short, orElse: () => p.vids.first));
     final n = ytCount(p);
     final o = openInfo(p);
     final tint = kindTint(p.kind);
@@ -526,7 +545,7 @@ class HomeView extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: AspectRatio(
-              aspectRatio: 16 / 9.6,
+              aspectRatio: 16 / 9,
               child: Stack(fit: StackFit.expand, children: [
                 if (v == null) plain else ytWide(v, fallback: plain),
                 if (n > 0)
@@ -729,22 +748,12 @@ class CourseCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text('${s.length}곳 · ${c.trip}', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
             const SizedBox(height: 10),
-            SizedBox(
-              height: 40,
-              child: Stack(children: [
-                for (var i = 0; i < s.length; i++)
-                  Positioned(
-                    left: i * 30.0,
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      padding: const EdgeInsets.all(2),
-                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                      child: ClipOval(child: ytSmall(s[i], 36, r: 18)),
-                    ),
-                  ),
-              ]),
-            ),
+            Row(children: [
+              for (var i = 0; i < s.length; i++) ...[
+                if (i > 0) const SizedBox(width: 4),
+                ytSmall(s[i], 48, r: 4),
+              ],
+            ]),
             const SizedBox(height: 9),
             Text([for (var i = 0; i < s.length; i++) '${i + 1} ${s[i].name}'].join('  '),
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: kInk, height: 1.3)),
@@ -981,11 +990,11 @@ class _RouletteSheetState extends State<RouletteSheet> with SingleTickerProvider
                     )
                   : Container(
                       key: ValueKey(p.id),
-                      height: 76,
+                      height: 72,
                       padding: const EdgeInsets.all(12),
                       decoration: kokCard(),
                       child: Row(children: [
-                        ytSmall(p, 52),
+                        ytSmall(p, 80),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1059,8 +1068,15 @@ class _WheelPainter extends CustomPainter {
         maxLines: 1,
       )..layout(maxWidth: r * 0.64);
       c.save();
-      c.rotate(start + seg / 2);
-      tp.paint(c, Offset(r * 0.3 + (r * 0.64 - tp.width) / 2, -tp.height / 2));
+      final mid = start + seg / 2;
+      if (math.cos(mid + angle) < 0) {
+        // 왼쪽 반: 글자가 거꾸로 보이지 않게 반 바퀴 돌려 바깥→안쪽으로
+        c.rotate(mid + math.pi);
+        tp.paint(c, Offset(-r * 0.94 + (r * 0.64 - tp.width) / 2, -tp.height / 2));
+      } else {
+        c.rotate(mid);
+        tp.paint(c, Offset(r * 0.3 + (r * 0.64 - tp.width) / 2, -tp.height / 2));
+      }
       c.restore();
     }
     c.restore();
@@ -1167,7 +1183,7 @@ class YtRow extends StatelessWidget {
             child: Text('$rank', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: rank == 1 ? kAccent : kInk)),
           ),
           const SizedBox(width: 10),
-          ytSmall(place, 52),
+          ytSmall(place, 80),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1312,14 +1328,14 @@ class SavedView extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         child: Row(children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                             child: SizedBox(
-                              width: 52,
-                              height: 52,
+                              width: 80,
+                              height: 45,
                               child: th.isEmpty
-                                  ? kindFill(kd, 26)
+                                  ? kindFill(kd, 24)
                                   : Image.network(th,
-                                      fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => kindFill(kd, 26)),
+                                      fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => kindFill(kd, 24)),
                             ),
                           ),
                           const SizedBox(width: 12),

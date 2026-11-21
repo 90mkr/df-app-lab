@@ -89,11 +89,11 @@ def run(pg):
         tap_text("코스 닫기", 2)
     # 지도 축소 (− 단추)
     tap_text("지도", 3)
-    for _ in range(3):
+    for _ in range(4):
         tap(356, 732, 1.2)
     time.sleep(3)
     shot("지도_축소_동네")
-    for _ in range(2):
+    for _ in range(3):
         tap(356, 732, 1.2)
     time.sleep(3)
     shot("지도_축소_시도")
