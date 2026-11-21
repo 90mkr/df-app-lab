@@ -15,7 +15,8 @@ const kBlue = Color(0xFF1F5BFF);
 const kInk = Color(0xFF1B1D22);
 const kGray = Color(0xFF7A808C);
 const kLine = Color(0xFFE3E6EC);
-const kDark = Color(0xFF262A31); // 지역 메뉴 단추·펼친 동네 바탕
+const kDark = Color(0xFF262A31); // 검색 켜짐 등 진한 바탕
+const kRegion = Color(0xFFA9805F); // 지역 단추·펼친 시·도·동네 바탕 (파스텔 브라운)
 const kDataBase = 'https://90mkr.github.io/df-app-lab/data/'; // 안드로이드 앱이 자료를 받아 오는 곳
 const kTop = 20; // 종류별로 지도에 보이는 수
 
@@ -904,12 +905,12 @@ class _Header extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
                 Container(
-                  padding: const EdgeInsets.fromLTRB(8, 5, 10, 5),
-                  decoration: BoxDecoration(color: kDark, borderRadius: BorderRadius.circular(8)),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(open ? Icons.close_rounded : Icons.menu_rounded, size: 16, color: Colors.white),
-                    const SizedBox(width: 4),
-                    const Text('지역', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white, height: 1.2)),
+                  padding: const EdgeInsets.fromLTRB(7, 5, 10, 5),
+                  decoration: BoxDecoration(color: kRegion, borderRadius: BorderRadius.circular(8)),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    PinGlyph(size: 17, color: Colors.white, bg: kRegion),
+                    SizedBox(width: 3),
+                    Text('지역', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white, height: 1.2)),
                   ]),
                 ),
                 const SizedBox(width: 8),
@@ -1039,7 +1040,7 @@ class _RegionPanelState extends State<RegionPanel> {
       onTap: () => setState(() => open = isOpen ? null : s.name),
       child: Container(
         height: 46,
-        color: isOpen ? kDark : Colors.white,
+        color: isOpen ? kRegion : Colors.white,
         padding: const EdgeInsets.only(left: 16, right: 10),
         child: Row(children: [
           Text(s.name,
@@ -1061,9 +1062,9 @@ class _RegionPanelState extends State<RegionPanel> {
   Widget _panel(Sido s) {
     if (s.areas.isEmpty) {
       return Container(
-        color: kDark,
+        color: kRegion,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        child: const Text('준비 중입니다. 인천부터 차례로 넓혀 갑니다.', style: TextStyle(fontSize: 13, color: Color(0xFFB9BEC8))),
+        child: const Text('준비 중입니다. 인천부터 차례로 넓혀 갑니다.', style: TextStyle(fontSize: 13, color: Color(0xFFF3E9E1))),
       );
     }
     final pairs = <List<Area>>[];
@@ -1071,7 +1072,7 @@ class _RegionPanelState extends State<RegionPanel> {
       pairs.add(s.areas.sublist(i, math.min(i + 2, s.areas.length)));
     }
     return Container(
-      color: kDark,
+      color: kRegion,
       padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
       child: Column(children: [
         for (final pr in pairs)
@@ -1094,12 +1095,12 @@ class _RegionPanelState extends State<RegionPanel> {
             child: Text(a.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 14, fontWeight: on ? FontWeight.w700 : FontWeight.w400, color: ok ? Colors.white : const Color(0xFF7E8592))),
+                style: TextStyle(fontSize: 14, fontWeight: on ? FontWeight.w700 : FontWeight.w400, color: ok ? Colors.white : const Color(0xFFE2D2C4))),
           ),
           if (on) ...[const SizedBox(width: 4), const Icon(Icons.check_rounded, size: 16, color: Colors.white)],
-          if (!ok) ...[const SizedBox(width: 6), const Text('준비 중', style: TextStyle(fontSize: 11, color: Color(0xFF7E8592)))],
+          if (!ok) ...[const SizedBox(width: 6), const Text('준비 중', style: TextStyle(fontSize: 11, color: Color(0xFFE2D2C4)))],
           const Spacer(),
-          Icon(Icons.chevron_right_rounded, size: 18, color: ok ? const Color(0xFFC9CDD5) : const Color(0xFF5A606B)),
+          Icon(Icons.chevron_right_rounded, size: 18, color: ok ? Colors.white : const Color(0xFFD2BCA9)),
           const SizedBox(width: 6),
         ]),
       ),
@@ -1309,6 +1310,38 @@ Widget kindFill(String kind, double size) => Container(
       alignment: Alignment.center,
       child: KindGlyph(kind: kind, size: size, bg: kindTint(kind)),
     );
+
+// 직접 그린 위치 표시 (지역 단추)
+class PinGlyph extends StatelessWidget {
+  final double size;
+  final Color color, bg;
+  const PinGlyph({super.key, required this.size, required this.color, required this.bg});
+  @override
+  Widget build(BuildContext context) => CustomPaint(size: Size.square(size), painter: _PinPainter(color, bg));
+}
+
+class _PinPainter extends CustomPainter {
+  final Color color, bg;
+  _PinPainter(this.color, this.bg);
+  @override
+  void paint(Canvas c, Size s) {
+    final k = s.width / 24;
+    final p = Paint()
+      ..color = color
+      ..isAntiAlias = true;
+    final pin = ui.Path()
+      ..moveTo(12 * k, 22.5 * k)
+      ..cubicTo(7 * k, 16.5 * k, 4.5 * k, 13 * k, 4.5 * k, 9.5 * k)
+      ..arcToPoint(Offset(19.5 * k, 9.5 * k), radius: Radius.circular(7.5 * k))
+      ..cubicTo(19.5 * k, 13 * k, 17 * k, 16.5 * k, 12 * k, 22.5 * k)
+      ..close();
+    c.drawPath(pin, p);
+    c.drawCircle(Offset(12 * k, 9.5 * k), 2.8 * k, Paint()..color = bg);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PinPainter o) => o.color != color || o.bg != bg;
+}
 
 // 직접 그린 그림: 맛집은 요리사 모자, 카페는 원두
 class KindGlyph extends StatelessWidget {
