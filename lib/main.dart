@@ -208,7 +208,7 @@ class _MapPageState extends State<MapPage> {
     return list.take(kTop).toList();
   }
 
-  // 지도 표시 3단계: 0 = 큰 카드, 1 = 동그란 사진, 2 = 작은 아이콘
+  // 지도 표시 3단계: 0 = 펼친 카드, 1 = 접힌 카드(사진만), 2 = 작은 아이콘
   // 넓게 보면 카드 5곳 + 사진 7곳 + 아이콘 8곳, 확대할수록 카드가 늘어난다
   int get cardCount => zoom < 13.6 ? 5 : (zoom < 14.6 ? 10 : kTop);
   static const kPhotoCount = 7;
@@ -228,13 +228,9 @@ class _MapPageState extends State<MapPage> {
       final c = px(list[i].point);
       var t = i < cardCount ? 0 : (i < cardCount + kPhotoCount ? 1 : 2);
       while (t < 2) {
-        final Rect r;
-        if (t == 0) {
-          final w = i < 3 ? 178.0 : 154.0, h = i < 3 ? 74.0 : 64.0;
-          r = Rect.fromLTWH(c.dx - w / 2, c.dy - h, w, h).inflate(3);
-        } else {
-          r = Rect.fromLTWH(c.dx - 26, c.dy - 58, 52, 58).inflate(1);
-        }
+        final w = t == 0 ? cardFullW(i + 1) : cardShutW(i + 1);
+        final h = cardH(i + 1);
+        final r = Rect.fromLTWH(c.dx - w / 2, c.dy - h, w, h).inflate(t == 0 ? 3 : 1);
         if (!kept.any((k) => k.overlaps(r))) {
           kept.add(r);
           break;
@@ -247,19 +243,25 @@ class _MapPageState extends State<MapPage> {
   }
 
   Marker markerFor(Place p, int i, int t) {
-    if (t == 0) {
+    if (t <= 1) {
+      // 1·2단계는 같은 카드: 확대하면 접힌 카드가 양옆으로 펼쳐진다
       return Marker(
+        key: ValueKey('card${p.id}'),
         point: p.point,
-        width: i < 3 ? 178 : 154,
-        height: i < 3 ? 74 : 64,
+        width: cardFullW(i + 1),
+        height: cardH(i + 1),
         alignment: Alignment.topCenter,
-        child: PlaceMarker(place: p, rank: i + 1, onTap: () => openPlace(p)),
+        child: PlaceMarker(place: p, rank: i + 1, open: t == 0, onTap: () => openPlace(p)),
       );
     }
-    if (t == 1) {
-      return Marker(point: p.point, width: 54, height: 58, alignment: Alignment.topCenter, child: PhotoMarker(place: p, onTap: () => openPlace(p)));
-    }
-    return Marker(point: p.point, width: 30, height: 32, alignment: Alignment.topCenter, child: IconMarker(place: p, onTap: () => openPlace(p)));
+    return Marker(
+      key: ValueKey('icon${p.id}'),
+      point: p.point,
+      width: 30,
+      height: 32,
+      alignment: Alignment.topCenter,
+      child: IconMarker(place: p, onTap: () => openPlace(p)),
+    );
   }
 
   void openPlace(Place p) {
@@ -512,75 +514,104 @@ class _Chip extends StatelessWidget {
 
 String commas(int n) => n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
 
+// 카드 크기 (지도 겹침 계산에도 씀)
+double cardImg(int rank) => rank <= 3 ? 52.0 : 44.0;
+double cardFullW(int rank) => rank <= 3 ? 178.0 : 154.0;
+double cardShutW(int rank) => cardImg(rank) + 12; // 사진 + 안쪽 여백 5×2 + 테두리 1×2
+double cardH(int rank) => cardImg(rank) + 12 + 6; // 카드 + 꼬리
+
+// 1·2단계 카드: 접히면 왼쪽 사진만, 펼치면 오른쪽 이름·별점까지 (확대하면 양옆으로 벌어짐)
 class PlaceMarker extends StatelessWidget {
   final Place place;
   final int rank;
+  final bool open;
   final VoidCallback onTap;
-  const PlaceMarker({super.key, required this.place, required this.rank, required this.onTap});
+  const PlaceMarker({super.key, required this.place, required this.rank, required this.open, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final big = rank <= 3;
-    final img = big ? 52.0 : 44.0;
-    final thumb = place.vids.isNotEmpty ? 'https://i.ytimg.com/vi/${place.vids.first.id}/mqdefault.jpg' : '';
+    final img = cardImg(rank);
+    final inner = cardFullW(rank) - 12;
+    final line = big ? kCafeTint : kLine; // 1~3위는 짙은 갈색 테두리
+    final thumb = thumbOf(place);
     return GestureDetector(
       onTap: onTap,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-          padding: const EdgeInsets.all(5),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: big ? kBlue : kLine, width: 1),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10)],
-          ),
-          child: Row(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(7),
-              child: SizedBox(
-                width: img,
-                height: img,
-                child: thumb.isEmpty
-                    ? kindFill(place.kind, img * 0.42)
-                    : Image.network(
-                        thumb,
-                        fit: BoxFit.cover,
-                        webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                        errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.42),
-                      ),
-              ),
+      child: Column(mainAxisSize: MainAxisSize.max, mainAxisAlignment: MainAxisAlignment.end, children: [
+        Stack(clipBehavior: Clip.none, children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            width: open ? cardFullW(rank) : cardShutW(rank),
+            height: img + 12,
+            padding: const EdgeInsets.all(5),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: line, width: 1),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10)],
             ),
-            const SizedBox(width: 7),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                Text.rich(
-                  TextSpan(children: [
-                    TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kBlue : kGray)),
-                    if (place.tv.isNotEmpty)
-                      const WidgetSpan(
-                        alignment: PlaceholderAlignment.middle,
-                        child: Padding(padding: EdgeInsets.only(right: 3), child: Icon(Icons.live_tv_outlined, size: 12, color: kInk)),
-                      ),
-                    TextSpan(text: place.name, style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: kInk)),
-                  ]),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            child: OverflowBox(
+              alignment: Alignment.centerLeft,
+              minWidth: inner,
+              maxWidth: inner,
+              child: Row(children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(7),
+                  child: SizedBox(
+                    width: img,
+                    height: img,
+                    child: thumb.isEmpty
+                        ? kindFill(place.kind, img * 0.42)
+                        : Image.network(
+                            thumb,
+                            fit: BoxFit.cover,
+                            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                            errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.42),
+                          ),
+                  ),
                 ),
-                const SizedBox(height: 2),
-                if (place.greviews > 0)
-                  Text.rich(TextSpan(children: [
-                    const TextSpan(text: '★ ', style: TextStyle(fontSize: 10.5, color: Color(0xFFF5A623))),
-                    TextSpan(text: place.grate.toStringAsFixed(1), style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: kInk)),
-                    TextSpan(text: ' · 리뷰 ${commas(place.greviews)}', style: const TextStyle(fontSize: 10, color: kGray)),
-                  ]), maxLines: 1)
-                else
-                  Text(place.cat, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: kGray)),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kCafeTint : kGray)),
+                        if (place.tv.isNotEmpty)
+                          const WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: Padding(padding: EdgeInsets.only(right: 3), child: Icon(Icons.live_tv_outlined, size: 12, color: kInk)),
+                          ),
+                        TextSpan(text: place.name, style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: kInk)),
+                      ]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    if (place.greviews > 0)
+                      Text.rich(TextSpan(children: [
+                        const TextSpan(text: '★ ', style: TextStyle(fontSize: 10.5, color: Color(0xFFF5A623))),
+                        TextSpan(text: place.grate.toStringAsFixed(1), style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: kInk)),
+                        TextSpan(text: ' · 리뷰 ${commas(place.greviews)}', style: const TextStyle(fontSize: 10, color: kGray)),
+                      ]), maxLines: 1)
+                    else
+                      Text(place.cat, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: kGray)),
+                  ]),
+                ),
               ]),
             ),
-          ]),
-        ),
+          ),
+          // 접혀 있을 때는 이름이 안 보이니 방송 표시를 모서리에
+          if (place.tv.isNotEmpty)
+            Positioned(
+              right: -5,
+              top: -5,
+              child: AnimatedOpacity(opacity: open ? 0 : 1, duration: const Duration(milliseconds: 200), child: const TvBadge()),
+            ),
+        ]),
         // 카드 아래 꼬리 (가게 위치를 가리킴)
-        CustomPaint(size: const Size(12, 6), painter: _Tail(big ? kBlue : kLine)),
+        Transform.translate(offset: const Offset(0, -1), child: CustomPaint(size: const Size(12, 6), painter: _Tail(line))),
       ]),
     );
   }
@@ -656,47 +687,6 @@ class TvBadge extends StatelessWidget {
   }
 }
 
-// 2단계: 동그란 사진 (사진이 없으면 맛집·카페 그림)
-class PhotoMarker extends StatelessWidget {
-  final Place place;
-  final VoidCallback onTap;
-  const PhotoMarker({super.key, required this.place, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    final thumb = thumbOf(place);
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Stack(clipBehavior: Clip.none, children: [
-          Container(
-            width: 48,
-            height: 48,
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(color: kLine, width: 1),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.14), blurRadius: 8)],
-            ),
-            child: ClipOval(
-              child: thumb.isEmpty
-                  ? kindFill(place.kind, 22)
-                  : Image.network(
-                      thumb,
-                      fit: BoxFit.cover,
-                      webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                      errorBuilder: (_, __, ___) => kindFill(place.kind, 22),
-                    ),
-            ),
-          ),
-          if (place.tv.isNotEmpty) const Positioned(right: -4, top: -3, child: TvBadge()),
-        ]),
-        Transform.translate(offset: const Offset(0, -1), child: CustomPaint(size: const Size(10, 6), painter: _Tail(kLine))),
-      ]),
-    );
-  }
-}
-
 // 3단계: 작은 맛집·카페 아이콘 (숫자 없이 자리만)
 class IconMarker extends StatelessWidget {
   final Place place;
@@ -706,14 +696,14 @@ class IconMarker extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
+      child: Column(mainAxisSize: MainAxisSize.max, mainAxisAlignment: MainAxisAlignment.end, children: [
         Container(
           width: 26,
           height: 26,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: kindTint(place.kind),
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(7),
             border: Border.all(color: Colors.white, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 6)],
           ),
