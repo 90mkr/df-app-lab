@@ -62,48 +62,66 @@ def run(pg):
             return [f"오류 {e}"]
 
     shot("홈")
-    log.append("홈 글자: " + " / ".join(labels()[:60]))
-    wheel(195, 560, 650)
+    log.append("홈 글자: " + " / ".join(labels()[:80]))
+    wheel(195, 560, 700)
     shot("홈_아래")
-    wheel(195, 400, -2000, 1)
-    if tap_text("오늘 뭐 먹지?", 2, exact=False):
-        tap_text("돌리기", 5)
+    wheel(195, 560, 1500)
+    shot("홈_코스")
+    wheel(195, 400, -4000, 1)
+    # 오늘 뭐 먹지 룰렛
+    if tap_text("오늘 뭐 먹지?", 2):
         shot("룰렛")
+        if tap_text("룰렛 돌리기", 5.5):
+            shot("룰렛_결과")
+            if tap_text("뽑은 집 어디야", 4):
+                shot("룰렛_가게")
         pg.keyboard.press("Escape")
         time.sleep(1.5)
+    # 테마 코스
+    tap_text("홈", 1.5)
+    wheel(195, 560, 2500)
+    if tap_text("먹방 유튜버 코스", 5) or tap_text("인기 맛집 하루 코스", 5):
+        shot("코스_지도")
+        if tap_text("순서 보기", 2.5, exact=False):
+            shot("코스_순서")
+            pg.keyboard.press("Escape")
+            time.sleep(1.5)
+        tap_text("코스 닫기", 2)
+    # 지도 축소 (− 단추)
+    tap_text("지도", 3)
+    for _ in range(3):
+        tap(356, 732, 1.2)
+    time.sleep(3)
+    shot("지도_축소_동네")
+    for _ in range(2):
+        tap(356, 732, 1.2)
+    time.sleep(3)
+    shot("지도_축소_시도")
+    # 영상
     tap_text("영상")
     shot("영상")
-    tap_text("지도", 6)
-    shot("지도")
-    wheel(195, 430, 400, 4)
-    shot("지도_축소_동네")
-    wheel(195, 430, 500, 4)
-    shot("지도_축소_시도")
+    # 이 집 어디야 + 콕
     tap_text("홈")
     if tap_text("이 집 어디야", 4):
         shot("가게")
-        if tap_text("콕", 1.5):
+        if tap_text("콕 하기", 1.5):
             shot("가게_콕")
         pg.keyboard.press("Escape")
         time.sleep(1.5)
-        shot("지도_가게위치")
     tap_text("내 콕")
     shot("내콕")
+    # 지역 메뉴 → 영종도
     tap_text("홈")
-    wheel(195, 560, 1400, 2)
-    shot("홈_코스")
-    if tap_text("코스", 5, exact=False):
-        shot("지도_코스")
-    tap_text("홈")
-    wheel(195, 400, -3000, 1)
-    b = find("송도/연수", exact=False)
+    b = find("지역", exact=False)
     if b:
         pg.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
         time.sleep(2)
         shot("지역메뉴")
         if tap_text("영종도", 4, exact=False):
             shot("홈_영종도")
-
+            wheel(195, 560, 2500)
+            shot("홈_영종도_아래")
+            wheel(195, 400, -4000, 1)
 
 with sync_playwright() as p:
     br = p.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])

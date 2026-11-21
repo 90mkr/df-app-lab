@@ -303,6 +303,8 @@ TV_SHOWS = [  # (띄어쓰기 없앤 검색어, 앱에 보일 이름)
     ("놀라운토요일", "놀라운 토요일"), ("테이스티로드", "테이스티로드"), ("맛있는tv", "찾아라 맛있는 TV"),
     ("모닝와이드", "모닝와이드"), ("굿모닝대한민국", "굿모닝 대한민국"), ("먹거리x파일", "먹거리 X파일"),
     ("돈쭐내러왔습니다", "돈쭐내러 왔습니다"), ("동네한바퀴", "김영철의 동네 한 바퀴"), ("한국인의밥상", "한국인의 밥상"),
+    # 요리 경연 (앱에서 「요리 경연 방송 코스」로 묶음 — 이름은 앱 kCookShows와 같게)
+    ("흑백요리사", "흑백요리사"), ("한식대첩", "한식대첩"), ("마스터셰프", "마스터셰프 코리아"), ("냉장고를부탁해", "냉장고를 부탁해"),
 ]
 TV_NEAR = 60   # 가게 이름과 방송 이름이 이 글자 수 안에 함께 나와야 인정
 
@@ -506,8 +508,11 @@ def yt_channels(all_out):
             for i in range(0, len(need), 50):
                 q = urllib.parse.urlencode({"part": "snippet", "id": ",".join(need[i:i + 50]), "key": YOUTUBE_KEY})
                 for it in get_json("https://www.googleapis.com/youtube/v3/videos?" + q).get("items", []):
+                    hd = "maxres" in (it["snippet"].get("thumbnails") or {})
                     for v in vids.get(it["id"], []):
                         v["cid"] = it["snippet"].get("channelId", "")
+                        if hd:
+                            v["mx"] = 1  # 고화질 표지가 있는 영상 (앱의 큰 사진)
             today = dt.date.today()
             cids = {v["cid"] for vs in vids.values() for v in vs if v.get("cid")}
             stale = [c for c in cids if c not in cc or (today - dt.date.fromisoformat(cc[c].get("d", "2000-01-01"))).days > 30]

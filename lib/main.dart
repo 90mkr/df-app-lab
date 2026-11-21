@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -59,12 +60,14 @@ class Post {
 
 class Video {
   final String id, title, channel, date, cid;
+  final bool hd; // 고화질 표지(maxres)가 있다고 확인된 영상
   Video(Map<String, dynamic> j)
       : id = j['id'] ?? '',
         title = j['t'] ?? '',
         channel = j['ch'] ?? '',
         date = j['date'] ?? '',
-        cid = j['cid'] ?? '';
+        cid = j['cid'] ?? '',
+        hd = j['mx'] == 1;
 }
 
 class Place {
@@ -320,6 +323,7 @@ class _MapPageState extends State<MapPage> {
   int tab = 0; // 0 홈, 1 영상, 2 지도, 3 내 콕
   List<Map<String, dynamic>> koks = []; // 내 콕 (저장한 집)
   LatLngBounds? bounds; // 지금 지도에 보이는 범위
+  Course? course; // 지도에서 보는 중인 테마 코스
   Timer? _sync;
   static const kClusterZoom = 11.5; // 이보다 넓게 보면 동네별 숫자 묶음
   static const kSidoZoom = 9.0; // 이보다 넓게 보면 시·도별 숫자 묶음
@@ -352,6 +356,7 @@ class _MapPageState extends State<MapPage> {
     setState(() {
       kind = 'near';
       locating = true;
+      course = null;
     });
     final pos = await myLocation();
     if (!mounted) return;
@@ -359,6 +364,8 @@ class _MapPageState extends State<MapPage> {
       locating = false;
       if (pos != null) me = pos;
     });
+    if (pos != null) await _ensureNear(pos);
+    if (!mounted) return;
     if (pos == null) {
       setState(() => kind = 'all');
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('내 위치를 확인하지 못했습니다. 위치 사용을 허용해 주세요.')));
@@ -424,6 +431,7 @@ class _MapPageState extends State<MapPage> {
     setState(() {
       regionOpen = false;
       area = a;
+      course = null;
     });
     map.move(a.center, a.zoom);
     SharedPreferences.getInstance().then((sp) => sp.setString('area', a.id)).catchError((_) => false);
@@ -442,10 +450,13 @@ class _MapPageState extends State<MapPage> {
         if (a.hits(cam.visibleBounds)) _ensure(a.id);
       }
     }
-    final inside = readyAreas.where((a) => a.contains(cam.center)).firstOrNull;
-    if (inside != null && inside.id != area.id) {
-      setState(() => area = inside);
-      _ensure(inside.id);
+    final inside = readyAreas.where((a) => a.contains(cam.center)).toList()
+      ..sort((x, y) => meters(cam.center, x.center).compareTo(meters(cam.center, y.center)));
+    if (inside.isNotEmpty && inside.first.id != area.id) {
+      final a = inside.first;
+      setState(() => area = a);
+      _ensure(a.id);
+      SharedPreferences.getInstance().then((sp) => sp.setString('area', a.id)).catchError((_) => false);
     }
   }
 
@@ -499,11 +510,105 @@ class _MapPageState extends State<MapPage> {
     return [for (final a in readyAreas) bubble(a.id, a.center, a.name, n(a), () => map.move(a.center, a.zoom))];
   }
 
+  // 오늘 뭐 먹지: 뽑을 집 (유튜버·방송 맛집, 모자라면 인기 맛집까지)
+  List<Place> roulettePool(String k, bool near) {
+    final at = me;
+    Iterable<Place> src = near && at != null
+        ? loaded.values.expand((d) => d.places).where((p) => meters(at, p.point) <= kNearMeters)
+        : (data?.places ?? const <Place>[]);
+    src = src.where((p) => p.top && (k == 'all' || p.kind == k));
+    final yt = src.where((p) => p.vids.isNotEmpty || p.tv.isNotEmpty).toList();
+    return yt.length >= 4 ? yt : src.toList();
+  }
+
+  // 내 위치 근처(약 4km 안) 동네 자료 불러오기
+  Future<void> _ensureNear(LatLng at) async {
+    for (final a in readyAreas) {
+      final b = a.box;
+      if (at.longitude >= b[0] - 0.045 && at.longitude <= b[2] + 0.045 && at.latitude >= b[1] - 0.035 && at.latitude <= b[3] + 0.035) {
+        await _ensure(a.id);
+      }
+    }
+  }
+
+  // 내 위치 확인 (룰렛 「내 주변」)
+  Future<bool> locateMe() async {
+    final at = await myLocation();
+    if (at == null || !mounted) return false;
+    setState(() => me = at);
+    await _ensureNear(at);
+    return true;
+  }
+
+  void openRoulette() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (_) => RouletteSheet(poolOf: roulettePool, locate: locateMe, located: me != null, areaName: area.name, onWhere: goWhere),
+    );
+  }
+
+  // 테마 코스를 지도에서: 코스 집들만 순서대로 잇고 화면을 맞춘다
+  void openCourse(Course c) {
+    setState(() {
+      course = c;
+      tab = 2;
+      regionOpen = false;
+      searching = false;
+      query = '';
+      searchCtl.clear();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => map.fitCamera(CameraFit.coordinates(
+          coordinates: [for (final p in c.stops) p.point],
+          padding: const EdgeInsets.fromLTRB(70, 240, 70, 120),
+          maxZoom: 16.5,
+        )));
+  }
+
+  void openCourseSheet(Course c) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (ctx) => SheetList(
+        head: Align(
+          alignment: Alignment.centerLeft,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            mixTitle(c.bold, c.light, size: 18),
+            const SizedBox(height: 3),
+            Text('${c.stops.length}곳 · ${c.trip} (직선 거리로 어림)', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w300, color: kSub)),
+          ]),
+        ),
+        rows: [
+          for (var i = 0; i < c.stops.length; i++) ...[
+            if (i > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 22, top: 2, bottom: 2),
+                child: Text('↓ ${distText(meters(c.stops[i - 1].point, c.stops[i].point))}', style: const TextStyle(fontSize: 10.5, color: kSub)),
+              ),
+            YtRow(
+              place: c.stops[i],
+              rank: i + 1,
+              onTap: () {
+                Navigator.pop(ctx);
+                openPlace(c.stops[i]);
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   // 「이 집 어디야」: 지도 탭으로 가서 그 집을 연다
   void goWhere(Place p) {
     setState(() {
       tab = 2;
       regionOpen = false;
+      course = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => openPlace(p));
   }
@@ -560,7 +665,7 @@ class _MapPageState extends State<MapPage> {
       barrierColor: Colors.black.withValues(alpha: 0.08),
       builder: (ctx) => SheetList(
         head: Row(children: [
-          SizedBox(width: 62, height: 84, child: ChanAvatar(c, ring: kAccent)),
+          ChanAvatar(c, ring: kAccent, label: false),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -608,11 +713,16 @@ class _MapPageState extends State<MapPage> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(children: [
-                  SizedBox(width: 62, height: 84, child: ChanAvatar(c)),
+                  ChanAvatar(c, label: false),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text([if (c.subs > 0) subsText(c.subs), '다녀간 집 ${c.places.length}곳'].join(' · '),
-                        style: const TextStyle(fontSize: 12.5, color: kSub)),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
+                      const SizedBox(height: 2),
+                      Text([if (c.subs > 0) subsText(c.subs), '다녀간 집 ${c.places.length}곳'].join(' · '),
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w300, color: kSub)),
+                    ]),
                   ),
                   const Icon(Icons.chevron_right_rounded, color: kSub),
                 ]),
@@ -626,14 +736,17 @@ class _MapPageState extends State<MapPage> {
   void openYtRank() {
     final d = data;
     if (d == null) return;
-    final list = ytRank(d);
+    final yt = ytRank(d);
+    final list = yt.isNotEmpty ? yt : popRank(d);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.08),
       builder: (ctx) => SheetList(
-        head: Align(alignment: Alignment.centerLeft, child: mixTitle('유튜버가 ', '많이 찾은 집', size: 18)),
+        head: Align(
+            alignment: Alignment.centerLeft,
+            child: yt.isNotEmpty ? mixTitle('유튜버가 ', '많이 찾은 집', size: 18) : mixTitle('${area.name} ', '인기 많은 집', size: 18)),
         rows: [
           for (var i = 0; i < list.length; i++)
             YtRow(
@@ -711,6 +824,7 @@ class _MapPageState extends State<MapPage> {
   void openSearch() => setState(() {
         searching = !searching;
         regionOpen = false;
+        course = null;
         if (!searching) {
           query = '';
           searchCtl.clear();
@@ -768,6 +882,8 @@ class _MapPageState extends State<MapPage> {
   }
 
   List<Place> get visible {
+    final cs = course;
+    if (cs != null) return cs.stops;
     if (loaded.isEmpty) return [];
     final all = loaded.values.expand((d) => d.places);
     if (query.isNotEmpty) {
@@ -837,6 +953,8 @@ class _MapPageState extends State<MapPage> {
 
   String subText(int total, int cards) {
     final d = data;
+    final cs = course;
+    if (cs != null) return '${cs.name} · ${cs.stops.length}곳을 순서대로 이었어요';
     if (zoom < kClusterZoom) return '동네별 가게 수  ·  확대하면 가게가 보여요';
     if (d == null) return '맛집 자료를 불러오는 중';
     if (query.isNotEmpty) return total == 0 ? '「$query」 찾는 집이 없습니다' : '「$query」 $total곳';
@@ -1008,8 +1126,10 @@ class _MapPageState extends State<MapPage> {
           onRegion: openRegion,
           onSearch: toMapSearch,
           onRetry: _load,
+          onRoulette: openRoulette,
           onWhere: goWhere,
           onChannel: openChannel,
+          onCourse: openCourse,
           onAllChannels: openAllChannels,
           onRankAll: openYtRank,
         ),
@@ -1068,10 +1188,19 @@ class _MapPageState extends State<MapPage> {
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'kr.designfeel.df_app_lab',
             ),
+            if (course != null)
+              PolylineLayer(polylines: [
+                Polyline(
+                  points: [for (final p in course!.stops) p.point],
+                  color: kAccent,
+                  strokeWidth: 3,
+                  pattern: const StrokePattern.dashed(segments: [10, 7]),
+                ),
+              ]),
             MarkerLayer(
               markers: [
-                // 넓게 보면 동네별 숫자 묶음, 확대하면 가게 하나하나
-                if (zoom < kClusterZoom)
+                // 넓게 보면 동네별 숫자 묶음, 확대하면 가게 하나하나 (코스는 늘 가게로)
+                if (zoom < kClusterZoom && course == null)
                   ...clusterMarkers()
                 else
                   for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2),
@@ -1117,7 +1246,7 @@ class _MapPageState extends State<MapPage> {
                 onRank: data == null ? null : openRank,
                 onSearch: openSearch,
                 searching: searching,
-                middle: (wide && !regionOpen && !searching) ? chipsRow() : null,
+                middle: (wide && !regionOpen && !searching && course == null) ? chipsRow() : null,
               ),
               const SizedBox(height: 8),
               if (searching)
@@ -1164,11 +1293,14 @@ class _MapPageState extends State<MapPage> {
                         },
                       ),
               ),
-              if (!regionOpen && !searching && !wide) chipsRow(),
+              if (!regionOpen && !searching && course != null)
+                CourseBar(course: course!, onList: () => openCourseSheet(course!), onClose: () => setState(() => course = null))
+              else if (!regionOpen && !searching && !wide)
+                chipsRow(),
             ]),
           ),
         ),
-        if (data == null && zoom >= kClusterZoom)
+        if (data == null && zoom >= kClusterZoom && course == null)
           Center(
             child: Container(
               margin: const EdgeInsets.all(30),
