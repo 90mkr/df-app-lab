@@ -30,7 +30,7 @@ YT = "https://www.googleapis.com/youtube/v3/"
 MAX_PAGES = int(os.environ.get("FOLLOW_PAGES", "60"))     # 처음 한 번, 채널당 최대 3,000개
 KAKAO_MAX = int(os.environ.get("FOLLOW_KAKAO", "9000"))   # 한 번에 카카오에 묻는 최대 수
 SIDO_ONLY = [x.strip() for x in os.environ.get("FOLLOW_SIDO", "").split(",") if x.strip()]  # 시범: "서울"
-VER = 5      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
+VER = 6      # 이름 뽑는 법을 바꾸면 올린다 (영상·가게를 다시 읽음, 주소 좌표는 그대로)
 BOILER = 8   # 한 채널의 영상 8개 이상에 같은 주소 → 가게가 아니라 회사·문의 주소로 본다
 
 SIDO = r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|충청[남북]도|전라[남북]도|경상[남북]도)"
@@ -161,6 +161,13 @@ def parse(desc):
                 continue
             seen.add(addr)
             out.append((name_for(lines, i, m), addr))
+    # 같은 상호가 3곳 넘게 나오면 프랜차이즈 지점 안내 → 어느 지점에 갔는지 모르니 모두 뺀다
+    brand = {}
+    for n, _ in out:
+        k = C.norm(C.base_name(n))[:3]
+        if len(k) >= 2:
+            brand[k] = brand.get(k, 0) + 1
+    out = [(n, a) for n, a in out if brand.get(C.norm(C.base_name(n))[:3], 0) < 3]
     return out[:12]
 
 
