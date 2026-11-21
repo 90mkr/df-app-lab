@@ -215,9 +215,35 @@ def discover(words, known):
               + (f" · 예: {info['sample']}" if info["sample"] else ""))
 
 
+def samples(handles):
+    """주소가 실제 가게 주소인지 눈으로 보려고, 채널마다 주소 앞뒤 글을 몇 개 찍어 본다"""
+    for h in handles:
+        it = get("channels", part=PARTS, forHandle=h).get("items", [])
+        if not it:
+            print(f"[보기] {h} → 못 찾음")
+            continue
+        up = it[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        shown = 0
+        for x in get("playlistItems", part="snippet", playlistId=up, maxResults=50).get("items", []):
+            d = x["snippet"].get("description", "")
+            m = ADDR_RE.search(d)
+            if not m:
+                continue
+            ctx = d[max(0, m.start() - 70): m.end() + 30].replace("\n", " ⏎ ")
+            print(f"[보기] {h} | {x['snippet']['title'][:45]} | …{ctx}…")
+            shown += 1
+            if shown >= 5:
+                break
+
+
 def main():
     if not KEY:
         print("유튜브 키가 없습니다")
+        return
+    sm = [x.strip() for x in os.environ.get("SAMPLES", "").split(",") if x.strip()]
+    if sm:
+        samples(sm)
+        print(f"\n유튜브 사용량 약 {used[0]}")
         return
     pr = [x.strip() for x in os.environ.get("PROBE", "").split(",") if x.strip()]
     if pr:
