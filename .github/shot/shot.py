@@ -111,6 +111,37 @@ def run(pg):
     shot("태블릿_영상")
     pg.set_viewport_size({"width": W, "height": H})
     time.sleep(2)
+    # 유튜버 따라 먹기 (전국)
+    tap_text("홈", 1.5)
+    wheel(195, 400, -4000, 1)
+    wheel(195, 560, 650, 2)
+    shot("홈_따라먹기")
+    b = find("올라온 영상", exact=False)
+    if b:
+        log.append(f"새로 올라온 영상 위치 {b}")
+    if tap_text("전국 지도", 5):
+        shot("따라가기_처음")
+        for _ in range(4):
+            tap(356, 732, 1.0)
+        time.sleep(2.5)
+        shot("따라가기_전국")
+        for _ in range(2):
+            tap(356, 690, 1.0)
+        time.sleep(2.5)
+        shot("따라가기_확대")
+        if tap_text("성시경", 5):
+            shot("따라가기_성시경")
+        tap_text("따라가기 닫기", 2)
+        shot("따라가기_닫음")
+    tap_text("홈", 1.5)
+    wheel(195, 400, -4000, 1)
+    wheel(195, 560, 650, 2)
+    b = find("올라온 영상", exact=False)
+    if b:
+        tap(120, b["y"] + 110, 5)
+        shot("새영상_가게")
+        pg.keyboard.press("Escape")
+        time.sleep(1.5)
     # 이 집 어디야 + 콕
     tap_text("홈")
     wheel(195, 400, -4000, 1.5)

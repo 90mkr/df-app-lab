@@ -650,6 +650,9 @@ class HomeView extends StatelessWidget {
   final ValueChanged<Chan> onChannel;
   final ValueChanged<Course> onCourse;
   final VoidCallback onAllChannels, onRankAll;
+  final FollowData? follow; // 유명 유튜버 따라가기 (전국)
+  final ValueChanged<String> onFollow; // 채널 id (비면 전체) → 지도
+  final ValueChanged<Place> onFollowPlace; // 새로 올라온 영상 → 그 가게
   const HomeView({
     super.key,
     required this.data,
@@ -667,6 +670,9 @@ class HomeView extends StatelessWidget {
     required this.onCourse,
     required this.onAllChannels,
     required this.onRankAll,
+    this.follow,
+    required this.onFollow,
+    required this.onFollowPlace,
   });
 
   @override
@@ -692,6 +698,8 @@ class HomeView extends StatelessWidget {
                   sectionHead('무엇이 ', '당기세요?'),
                   const SizedBox(height: 10),
                   Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: CuisinePills(current: '', onPick: onCuisine)),
+                  _follow(),
+                  _fresh(),
                   _creators(d),
                   _tops(d),
                   _courses(d),
@@ -795,13 +803,76 @@ class HomeView extends StatelessWidget {
     );
   }
 
+  // 유튜버 따라 먹기 (전국): 큰 맛집 채널 → 누르면 지도에서 그 채널이 다녀간 집
+  Widget _follow() {
+    final f = follow;
+    if (f == null || f.channels.isEmpty) return const SizedBox();
+    return Padding(
+      padding: const EdgeInsets.only(top: 28),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        sectionHead('유튜버 ', '따라 먹기', link: '전국 지도', onLink: () => onFollow('')),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+          child: Text('맛집 채널이 영상에 주소를 적어 둔 집 · 전국 ${commas(f.places.length)}곳',
+              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 100,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: f.channels.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            itemBuilder: (_, i) {
+              final c = f.channels[i];
+              return Semantics(
+                button: true,
+                label: '${c.name} 따라 먹기',
+                onTap: () => onFollow(c.id),
+                excludeSemantics: true,
+                child: GestureDetector(onTap: () => onFollow(c.id), child: ChanAvatar(c)),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+
+  // 새로 올라온 영상 (따라가는 채널들의 최근 영상 — 누르면 그 가게)
+  Widget _fresh() {
+    final f = follow;
+    if (f == null || f.fresh.isEmpty) return const SizedBox();
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        sectionHead('새로 ', '올라온 영상'),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 196,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: f.fresh.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) {
+              final (v, p) = f.fresh[i];
+              return FreshCard(video: v, place: p, channel: f.names[v.cid] ?? v.channel, onTap: () => onFollowPlace(p));
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+
   Widget _creators(SongdoData d) {
     final list = channelsOf(d).take(12).toList();
     if (list.isEmpty) return const SizedBox();
     return Padding(
       padding: const EdgeInsets.only(top: 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('유튜버 ', '따라 먹기', link: '전체 보기', onLink: onAllChannels),
+        sectionHead('이 동네 ', '다녀간 유튜버', link: '전체 보기', onLink: onAllChannels),
         const SizedBox(height: 12),
         SizedBox(
           height: 100,
@@ -952,6 +1023,143 @@ class CourseCard extends StatelessWidget {
 }
 
 // 지도 위 코스 띠 (코스 보는 중)
+// 영상 길이 12:34 · 1:02:03
+String durText(int s) {
+  if (s <= 0) return '';
+  final h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
+  final ss = sec.toString().padLeft(2, '0');
+  return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:$ss' : '$m:$ss';
+}
+
+// 올린 날: 오늘 · 어제 · 3일 전 · 2주 전 · 5개월 전 · 2년 전
+String agoText(String date) {
+  final d = DateTime.tryParse(date);
+  if (d == null) return '';
+  final days = DateTime.now().difference(d).inDays;
+  if (days <= 0) return '오늘';
+  if (days == 1) return '어제';
+  if (days < 7) return '$days일 전';
+  if (days < 30) return '${days ~/ 7}주 전';
+  if (days < 365) return '${days ~/ 30}개월 전';
+  return '${days ~/ 365}년 전';
+}
+
+class FreshCard extends StatelessWidget {
+  final Video video;
+  final Place place;
+  final String channel;
+  final VoidCallback onTap;
+  const FreshCard({super.key, required this.video, required this.place, required this.channel, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final v = video;
+    final fb = kindFill(place.kind, 28);
+    final badge = v.short ? '쇼츠' : durText(v.dur);
+    return Semantics(
+      button: true,
+      label: v.title,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: SizedBox(
+          width: 216,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(fit: StackFit.expand, children: [
+                  v.short
+                      ? _shortFit(v.id, fb)
+                      : Image.network('https://i.ytimg.com/vi/${v.id}/mqdefault.jpg',
+                          fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => fb),
+                  if (badge.isNotEmpty)
+                    Positioned(
+                      right: 6,
+                      bottom: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.72), borderRadius: BorderRadius.circular(4)),
+                        child: Text(badge, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.white)),
+                      ),
+                    ),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(v.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kInk, height: 1.3)),
+            const SizedBox(height: 3),
+            Text([channel, agoText(v.date)].where((x) => x.isNotEmpty).join(' · '),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w400, color: kSub)),
+            Text([place.name, [sidoShort(place.sido), place.gu].where((x) => x.isNotEmpty).join(' ')].where((x) => x.isNotEmpty).join(' · '),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// 따라가기 지도 머리 띠: 지금 보는 채널 · 전국 몇 곳 · 닫기, 아래에 채널 고르기
+class FollowBar extends StatelessWidget {
+  final FollowData follow;
+  final String current;
+  final ValueChanged<String> onPick;
+  final VoidCallback onClose;
+  const FollowBar({super.key, required this.follow, required this.current, required this.onPick, required this.onClose});
+  @override
+  Widget build(BuildContext context) {
+    final f = follow;
+    final ch = f.channels.where((c) => c.id == current).firstOrNull;
+    final n = ch?.places.length ?? f.places.length;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(
+        height: 40,
+        padding: const EdgeInsets.only(left: 14, right: 2),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: kAccent, width: 1),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10)],
+        ),
+        child: Row(children: [
+          const LineIcon('play', size: 15, color: kAccent),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text.rich(
+              TextSpan(children: [
+                TextSpan(text: ch == null ? '유튜버 따라 먹기' : '${ch.name} 따라 먹기', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
+                TextSpan(text: '   전국 ${commas(n)}곳', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w300, color: kSub)),
+              ]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Semantics(
+            button: true,
+            label: '따라가기 닫기',
+            onTap: onClose,
+            excludeSemantics: true,
+            child: IconButton(onPressed: onClose, tooltip: '따라가기 닫기', visualDensity: VisualDensity.compact, icon: const Icon(Icons.close_rounded, size: 18, color: kInk)),
+          ),
+        ]),
+      ),
+      const SizedBox(height: 8),
+      SizedBox(
+        height: 30,
+        child: ListView(scrollDirection: Axis.horizontal, children: [
+          _SegChip(label: '전체', on: current.isEmpty, onTap: () => onPick('')),
+          for (final c in f.channels) ...[
+            const SizedBox(width: 6),
+            _SegChip(label: c.name, on: current == c.id, onTap: () => onPick(c.id)),
+          ],
+        ]),
+      ),
+    ]);
+  }
+}
+
 class CourseBar extends StatelessWidget {
   final Course course;
   final VoidCallback onList, onClose;

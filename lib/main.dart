@@ -69,7 +69,9 @@ class Video {
         date = j['date'] ?? '',
         cid = j['cid'] ?? '',
         hd = j['mx'] == 1,
-        short = j['sh'] == 1;
+        short = j['sh'] == 1,
+        dur = ((j['dur'] ?? 0) as num).toInt();
+  final int dur; // 영상 길이(초) — 따라가기 자료에만
 }
 
 class Place {
@@ -96,6 +98,7 @@ class Place {
   final int r30; // 최근 30일 블로그 글 수
   final double rr; // 그 전보다 몇 배
   final List<String> feat; // 편의 정보 (주차·애견 동반 등, 구글 기준)
+  final String sido, gu; // 시·도, 시·군·구 (따라가기 자료)
   Place(Map<String, dynamic> j, [this.areaId = ''])
       : id = '${j['id']}',
         kind = j['kind'] ?? 'food',
@@ -129,7 +132,9 @@ class Place {
         rise = j['rise'] == true,
         r30 = j['r30'] ?? 0,
         rr = ((j['rr'] ?? 0) as num).toDouble(),
-        feat = ((j['feat'] ?? []) as List).map((e) => '$e').toList();
+        feat = ((j['feat'] ?? []) as List).map((e) => '$e').toList(),
+        sido = j['s'] ?? '',
+        gu = j['gu'] ?? '';
   LatLng get point => LatLng(lat, lng);
 }
 
@@ -330,6 +335,51 @@ Future<SongdoData> loadData(String areaId, {String version = ''}) async {
   return SongdoData(j['updated'] ?? '', j['recent_days'] ?? 90, list, chans);
 }
 
+// 유명 유튜버 따라가기 (전국): 큰 맛집 채널이 영상 설명란에 주소를 적은 가게
+class FollowData {
+  final String updated;
+  final List<Chan> channels; // 가게 많은 순 (이름은 짧은 이름)
+  final List<Place> places;
+  final Map<String, String> names; // 채널 id → 짧은 이름
+  FollowData(this.updated, this.channels, this.places, this.names);
+  // 새로 올라온 영상 (한 영상에 여러 집이면 한 번만) — 한 번만 계산
+  late final List<(Video, Place)> fresh = () {
+    final all = [for (final p in places) for (final v in p.vids) (v, p)]..sort((a, b) => b.$1.date.compareTo(a.$1.date));
+    final seen = <String>{};
+    return [for (final it in all) if (seen.add(it.$1.id)) it].take(15).toList();
+  }();
+}
+
+Future<FollowData?> loadFollow() async {
+  try {
+    final res = await http.get(Uri.parse('${dataUrl('follow.json')}?t=${DateTime.now().millisecondsSinceEpoch ~/ 3600000}'));
+    if (res.statusCode != 200) return null;
+    final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    final places = ((j['places'] ?? []) as List).map((e) => Place(e as Map<String, dynamic>, 'follow')).toList();
+    final byCh = <String, List<String>>{};
+    for (final p in places) {
+      for (final cid in p.vids.map((v) => v.cid).toSet()) {
+        byCh.putIfAbsent(cid, () => []).add(p.id);
+      }
+    }
+    final names = <String, String>{};
+    final chans = <Chan>[];
+    for (final c in (j['channels'] ?? []) as List) {
+      final id = '${c['id']}';
+      final nm = '${c['short'] ?? ''}'.isNotEmpty ? '${c['short']}' : '${c['name'] ?? ''}';
+      names[id] = nm;
+      if ((byCh[id] ?? []).isNotEmpty) chans.add(Chan(id, nm, '${c['thumb'] ?? ''}', ((c['subs'] ?? 0) as num).toInt(), byCh[id]!));
+    }
+    chans.sort((a, b) => b.places.length.compareTo(a.places.length));
+    return FollowData(j['updated'] ?? '', chans, places, names);
+  } catch (_) {
+    return null;
+  }
+}
+
+String sidoShort(String s) =>
+    const {'제주특별자치도': '제주', '강원특별자치도': '강원', '전북특별자치도': '전북', '전남광주통합특별시': '광주·전남', '세종특별자치시': '세종'}[s] ?? s;
+
 Future<void> openUrl(String url) async {
   if (url.isEmpty) return;
   await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
@@ -356,6 +406,20 @@ class _MapPageState extends State<MapPage> {
   LatLngBounds? bounds; // 지금 지도에 보이는 범위
   Course? course; // 지도에서 보는 중인 테마 코스
   String cuisine = ''; // 음식 종류 고르기 (한식·중식 …, 비면 전체)
+  FollowData? follow; // 유명 유튜버 따라가기 (전국)
+  bool followOn = false; // 지도에서 따라가기 가게를 보는 중
+  String followCh = ''; // 그중 한 채널만 (비면 전체)
+  List<Place> _fp = const [];
+  String _fpKey = '#';
+  List<Place> get followPlaces {
+    final f = follow;
+    if (f == null) return const [];
+    if (_fpKey != followCh) {
+      _fpKey = followCh;
+      _fp = followCh.isEmpty ? f.places : f.places.where((p) => p.vids.any((v) => v.cid == followCh)).toList();
+    }
+    return _fp;
+  }
   Timer? _sync;
   static const kClusterZoom = 11.5; // 이보다 넓게 보면 동네별 숫자 묶음
   static const kSidoZoom = 9.0; // 이보다 넓게 보면 시·도별 숫자 묶음
@@ -385,6 +449,7 @@ class _MapPageState extends State<MapPage> {
   // 홈에서 음식 종류: 지도로 가서 지금 동네의 그 음식 집이 모두 보이게 맞춘다
   void goCuisine(String c) {
     setState(() {
+      followOn = false;
       tab = 2;
       regionOpen = false;
       kind = 'all';
@@ -453,6 +518,7 @@ class _MapPageState extends State<MapPage> {
     }
     setState(() {
       kind = 'near';
+      followOn = false;
       locating = true;
       course = null;
     });
@@ -521,6 +587,14 @@ class _MapPageState extends State<MapPage> {
       } catch (_) {}
     }
     _load();
+    loadFollow().then((f) {
+      if (mounted && f != null) {
+        setState(() {
+          follow = f;
+          _fpKey = '#';
+        });
+      }
+    });
   }
 
   Future<void> _load() => _ensure(area.id);
@@ -544,6 +618,7 @@ class _MapPageState extends State<MapPage> {
   // 지역 고르기 = 지도를 그 동네로 옮기기만 (가게는 보이는 범위를 따라 불러온다)
   void setArea(Area a) {
     setState(() {
+      followOn = false;
       regionOpen = false;
       area = a;
       course = null;
@@ -575,35 +650,37 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  // 축소 화면: 동네별(더 넓으면 시·도별) 숫자 묶음 — 수집할 때 세어 둔 숫자만 쓴다
-  List<Marker> clusterMarkers() {
-    Marker bubble(String key, LatLng c, String name, int n, VoidCallback onTap) => Marker(
-          key: ValueKey('bubble$key'),
-          point: c,
-          width: 200,
-          height: 44,
-          child: Center(
-            child: GestureDetector(
-              onTap: onTap,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                decoration: BoxDecoration(
-                  color: kRegion,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: Colors.white, width: 1),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 10)],
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white)),
-                  if (n > 0) ...[
-                    const SizedBox(width: 6),
-                    Text('$n', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
-                  ],
-                ]),
+  // 숫자 묶음 풍선 (동네·시·도·따라가기 묶음)
+  Marker bubble(String key, LatLng c, String name, int n, VoidCallback onTap) => Marker(
+        key: ValueKey('bubble$key'),
+        point: c,
+        width: 200,
+        height: 44,
+        child: Center(
+          child: GestureDetector(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+              decoration: BoxDecoration(
+                color: kRegion,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: Colors.white, width: 1),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 10)],
               ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white)),
+                if (n > 0) ...[
+                  const SizedBox(width: 6),
+                  Text('$n', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
+                ],
+              ]),
             ),
           ),
-        );
+        ),
+      );
+
+  // 축소 화면: 동네별(더 넓으면 시·도별) 숫자 묶음 — 수집할 때 세어 둔 숫자만 쓴다
+  List<Marker> clusterMarkers() {
     int n(Area a) {
       final c = a.countFor(kind);
       if (c > 0) return c;
@@ -623,6 +700,100 @@ class _MapPageState extends State<MapPage> {
       ];
     }
     return [for (final a in readyAreas) bubble(a.id, a.center, a.name, n(a), () => map.move(a.center, a.zoom))];
+  }
+
+  // 따라가기 축소 화면: 화면 약 100px 칸마다 묶어 숫자로 — 넓게 보면 시·도 이름, 가까이 보면 시·군·구 이름
+  List<Marker> followClusters() {
+    final cell = (zoom < kSidoZoom ? 120.0 : 100.0) * 360 / (256 * math.pow(2, zoom));
+    final groups = <String, List<Place>>{};
+    for (final p in followPlaces) {
+      groups.putIfAbsent('${(p.lng / cell).floor()}_${(p.lat / (cell * 0.8)).floor()}', () => []).add(p);
+    }
+    String most(List<Place> ps, String Function(Place) f) {
+      final m = <String, int>{};
+      for (final p in ps) {
+        final k = f(p);
+        if (k.isNotEmpty) m[k] = (m[k] ?? 0) + 1;
+      }
+      if (m.isEmpty) return '';
+      return (m.entries.toList()..sort((x, y) => y.value.compareTo(x.value))).first.key;
+    }
+
+    return [
+      for (final e in groups.entries)
+        () {
+          final ps = e.value;
+          final c = LatLng(ps.map((p) => p.lat).reduce((x, y) => x + y) / ps.length, ps.map((p) => p.lng).reduce((x, y) => x + y) / ps.length);
+          final name = zoom < kSidoZoom ? sidoShort(most(ps, (p) => p.sido)) : most(ps, (p) => p.gu.split(' ').first);
+          return bubble('f${e.key}', c, name, ps.length, () => map.move(c, math.min(zoom + 2, kClusterZoom + 0.5)));
+        }(),
+    ];
+  }
+
+  // 유튜버 따라 먹기: 지도에서 전국 가게 (한 채널만 고를 수도)
+  void openFollow([String ch = '']) {
+    if (follow == null) return;
+    setState(() {
+      followOn = true;
+      followCh = ch;
+      _fpKey = '#';
+      course = null;
+      tab = 2;
+      regionOpen = false;
+      searching = false;
+      query = '';
+      searchCtl.clear();
+    });
+    final ps = followPlaces;
+    if (ps.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final at = me ?? myPos.value;
+      if (at != null && ps.where((p) => meters(at, p.point) < 8000).length >= 3) {
+        map.move(at, 12.4); // 내 근처에 몇 곳 있으면 거기부터
+      } else {
+        map.fitCamera(CameraFit.coordinates(
+          coordinates: [for (final p in ps) p.point],
+          padding: const EdgeInsets.fromLTRB(40, 210, 40, 90),
+          maxZoom: 12.5,
+        ));
+      }
+    });
+  }
+
+  // 새로 올라온 영상·내 콕에서 따라가기 가게 하나 열기
+  void openFollowPlace(Place p) {
+    setState(() {
+      followOn = true;
+      followCh = '';
+      _fpKey = '#';
+      course = null;
+      tab = 2;
+      regionOpen = false;
+      searching = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => openPlace(p));
+  }
+
+  void closeFollow() => setState(() {
+        followOn = false;
+        followCh = '';
+        _fpKey = '#';
+      });
+
+  // 따라가기: 지금 보이는 범위의 가게 (여러 채널이 다녀간 집 → 최근 영상 순)
+  List<Place> followVisible() {
+    final b = bounds;
+    Iterable<Place> src = followPlaces;
+    if (b != null) {
+      final dLat = (b.north - b.south) * 0.1, dLng = (b.east - b.west) * 0.1;
+      src = src.where((p) => p.lat >= b.south - dLat && p.lat <= b.north + dLat && p.lng >= b.west - dLng && p.lng <= b.east + dLng);
+    }
+    final out = src.toList()
+      ..sort((a, b) {
+        final c = ytCount(b).compareTo(ytCount(a));
+        return c != 0 ? c : b.vids.first.date.compareTo(a.vids.first.date);
+      });
+    return out.take(300).toList();
   }
 
   // 오늘 뭐 먹지: 뽑을 집 (유튜버·방송 맛집, 모자라면 인기 맛집까지)
@@ -669,6 +840,7 @@ class _MapPageState extends State<MapPage> {
   // 테마 코스를 지도에서: 코스 집들만 순서대로 잇고 화면을 맞춘다
   void openCourse(Course c) {
     setState(() {
+      followOn = false;
       course = c;
       tab = 2;
       regionOpen = false;
@@ -722,6 +894,7 @@ class _MapPageState extends State<MapPage> {
   // 「이 집 어디야」: 지도 탭으로 가서 그 집을 연다
   void goWhere(Place p) {
     setState(() {
+      followOn = false;
       tab = 2;
       regionOpen = false;
       course = null;
@@ -740,7 +913,9 @@ class _MapPageState extends State<MapPage> {
         'la': p.lat,
         'ln': p.lng,
         'a': p.areaId,
-        'an': readyAreas.where((a) => a.id == p.areaId).firstOrNull?.name ?? area.name,
+        'an': p.areaId == 'follow'
+            ? [sidoShort(p.sido), p.gu].where((x) => x.isNotEmpty).join(' ')
+            : (readyAreas.where((a) => a.id == p.areaId).firstOrNull?.name ?? area.name),
         'th': p.vids.isEmpty ? '' : 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg',
       };
   void _saveList(String key, List<Map<String, dynamic>> list) =>
@@ -765,6 +940,13 @@ class _MapPageState extends State<MapPage> {
   }
 
   void openKok(Map<String, dynamic> k) {
+    if (k['a'] == 'follow') {
+      final fp = follow?.places.where((x) => x.id == k['id']).firstOrNull;
+      if (fp != null) {
+        openFollowPlace(fp);
+        return;
+      }
+    }
     final a = readyAreas.where((x) => x.id == k['a']).firstOrNull;
     final at = LatLng(((k['la'] ?? 0) as num).toDouble(), ((k['ln'] ?? 0) as num).toDouble());
     setState(() {
@@ -951,6 +1133,7 @@ class _MapPageState extends State<MapPage> {
 
   void openSearch() => setState(() {
         searching = !searching;
+        followOn = false;
         regionOpen = false;
         course = null;
         if (!searching) {
@@ -1024,6 +1207,7 @@ class _MapPageState extends State<MapPage> {
   }
 
   List<Place> get visible {
+    if (followOn) return followVisible();
     final cs = course;
     if (cs != null) return cs.stops;
     if (loaded.isEmpty) return [];
@@ -1097,6 +1281,10 @@ class _MapPageState extends State<MapPage> {
   String subText(int total, int cards) {
     final d = data;
     final cs = course;
+    if (followOn) {
+      final nm = followCh.isEmpty ? '유튜버 따라 먹기' : (follow?.names[followCh] ?? '');
+      return zoom < kClusterZoom ? '$nm · 전국 ${commas(followPlaces.length)}곳  ·  확대하면 가게가 보여요' : '$nm · 이 화면 $total곳';
+    }
     if (cs != null) return cs.route ? '${cs.name} · ${cs.stops.length}곳을 순서대로 이었어요' : '${cs.name} · ${cs.stops.length}곳';
     if (zoom < kClusterZoom) return '동네별 가게 수  ·  확대하면 가게가 보여요';
     if (d == null) return '맛집 자료를 불러오는 중';
@@ -1132,7 +1320,7 @@ class _MapPageState extends State<MapPage> {
         width: side ? w + 6 : w,
         height: side ? ch : ch + 6,
         alignment: const [Alignment.topCenter, Alignment.bottomCenter, Alignment.centerRight, Alignment.centerLeft][d],
-        child: PlaceMarker(place: p, rank: i + 1, open: t == 0, dir: d, onTap: () => openPlace(p)),
+        child: PlaceMarker(place: p, rank: i + 1, open: t == 0, dir: d, numbered: !followOn, onTap: () => openPlace(p)),
       );
     }
     return Marker(
@@ -1256,6 +1444,7 @@ class _MapPageState extends State<MapPage> {
       },
     );
     void toMapSearch() => setState(() {
+          followOn = false;
           tab = 2;
           regionOpen = false;
           searching = true;
@@ -1278,6 +1467,9 @@ class _MapPageState extends State<MapPage> {
           onCourse: openCourse,
           onAllChannels: openAllChannels,
           onRankAll: openYtRank,
+          follow: follow,
+          onFollow: openFollow,
+          onFollowPlace: openFollowPlace,
         ),
         VideoView(
           data: data,
@@ -1360,7 +1552,7 @@ class _MapPageState extends State<MapPage> {
               markers: [
                 // 넓게 보면 동네별 숫자 묶음, 확대하면 가게 하나하나 (코스는 늘 가게로)
                 if (zoom < kClusterZoom && course == null)
-                  ...clusterMarkers()
+                  ...(followOn ? followClusters() : clusterMarkers())
                 else
                   for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2),
                 if (me != null)
@@ -1405,7 +1597,7 @@ class _MapPageState extends State<MapPage> {
                 onRank: data == null ? null : openRank,
                 onSearch: openSearch,
                 searching: searching,
-                middle: (wide && !regionOpen && !searching && course == null) ? chipsRow() : null,
+                middle: (wide && !regionOpen && !searching && course == null && !followOn) ? chipsRow() : null,
               ),
               const SizedBox(height: 8),
               if (searching)
@@ -1452,14 +1644,16 @@ class _MapPageState extends State<MapPage> {
                         },
                       ),
               ),
-              if (!regionOpen && !searching && course != null)
+              if (!regionOpen && !searching && followOn && follow != null)
+                FollowBar(follow: follow!, current: followCh, onPick: openFollow, onClose: closeFollow)
+              else if (!regionOpen && !searching && course != null)
                 CourseBar(course: course!, onList: () => openCourseSheet(course!), onClose: () => setState(() => course = null))
               else if (!regionOpen && !searching && !wide)
                 chipsRow(),
             ]),
           ),
         ),
-        if (data == null && zoom >= kClusterZoom && course == null)
+        if (data == null && zoom >= kClusterZoom && course == null && !followOn)
           Center(
             child: Container(
               margin: const EdgeInsets.all(30),
@@ -1480,7 +1674,7 @@ class _MapPageState extends State<MapPage> {
                     ]),
             ),
           ),
-        if (data != null && feats.isEmpty && const ['tv', 'big', 'view', 'rise'].contains(kind) && list.isEmpty)
+        if (data != null && !followOn && feats.isEmpty && const ['tv', 'big', 'view', 'rise'].contains(kind) && list.isEmpty)
           Center(
             child: Container(
               margin: const EdgeInsets.all(30),
@@ -1849,7 +2043,8 @@ class PlaceMarker extends StatelessWidget {
   final bool open;
   final int dir; // 0 가게 위, 1 아래, 2 오른쪽, 3 왼쪽
   final VoidCallback onTap;
-  const PlaceMarker({super.key, required this.place, required this.rank, required this.open, this.dir = 0, required this.onTap});
+  final bool numbered; // 순위 번호 (따라가기 지도는 순위가 아니라 번호 없이)
+  const PlaceMarker({super.key, required this.place, required this.rank, required this.open, this.dir = 0, this.numbered = true, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1897,7 +2092,7 @@ class PlaceMarker extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
                     Text.rich(
                       TextSpan(children: [
-                        TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kindLine(place.kind) : kGray)),
+                        if (numbered) TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kindLine(place.kind) : kGray)),
                         if (place.tv.isNotEmpty)
                           const WidgetSpan(
                             alignment: PlaceholderAlignment.middle,
@@ -2264,7 +2459,7 @@ class PlaceSheet extends StatelessWidget {
                 ],
               ]),
             ),
-            ScoreTag(score: p.score),
+            if (p.score > 0) ScoreTag(score: p.score),
             if (onKok != null) ...[const SizedBox(width: 8), KokButton(on: kok, onChanged: onKok!)],
           ]),
           const SizedBox(height: 10),
