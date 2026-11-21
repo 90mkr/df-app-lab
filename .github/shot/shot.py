@@ -155,6 +155,20 @@ with sync_playwright() as p:
     try:
         pg.set_viewport_size({"width": 820, "height": 1180})
         time.sleep(3)
+        # 송도로 돌아가기 (영상이 있는 동네)
+        loc = pg.get_by_label("지역", exact=False)
+        if loc.count():
+            bb = loc.first.bounding_box()
+            if bb:
+                pg.mouse.click(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
+                time.sleep(2)
+                l2 = pg.get_by_text("송도/연수", exact=False)
+                for i in range(l2.count()):
+                    b2 = l2.nth(i).bounding_box()
+                    if b2 and b2["y"] > 150:
+                        pg.mouse.click(b2["x"] + b2["width"] / 2, b2["y"] + b2["height"] / 2)
+                        time.sleep(4)
+                        break
         b = None
         for lab in ("영상",):
             loc = pg.get_by_role("button", name=lab, exact=True)
@@ -173,27 +187,6 @@ with sync_playwright() as p:
         pg.screenshot(path=f"{OUT}/98_넓은화면.png")
     except Exception as e:
         log.append(f"[넓은 화면] {e}")
-    # 유튜브 표지 확인 (여러 크기 · CORS · 쇼츠)
-    try:
-        vid = "9FVJZsbhIUM"
-        for nm in ("hqdefault", "mqdefault", "maxresdefault", "hq720", "sddefault"):
-            r = ctx.request.get(f"https://i.ytimg.com/vi/{vid}/{nm}.jpg")
-            hd = r.headers
-            log.append(f"[표지] {nm}: {r.status} cors={hd.get('access-control-allow-origin')} 크기={len(r.body())}")
-            if r.status == 200:
-                open(f"{OUT}/thumb_{nm}.jpg", "wb").write(r.body())
-        import json as _j
-        ids = []
-        try:
-            d = _j.load(open("web/data/songdo.json", encoding="utf-8"))
-            ids = [v["id"] for p in d["places"] for v in p["vids"]][:12]
-        except Exception as e:
-            log.append(f"[쇼츠] 자료 못 읽음 {e}")
-        for v in ids:
-            r = ctx.request.fetch(f"https://www.youtube.com/shorts/{v}", method="HEAD", max_redirects=0)
-            log.append(f"[쇼츠] {v}: {r.status}")
-    except Exception as e:
-        log.append(f"[표지 확인] {e}")
     br.close()
 
 with open(f"{OUT}/log.txt", "w", encoding="utf-8") as f:

@@ -148,7 +148,8 @@ def google_lookup(p):
         "X-Goog-FieldMask": "places.id,places.displayName,places.rating,places.userRatingCount,places.location,"
                             "places.googleMapsUri,places.regularOpeningHours,places.businessStatus,"
                             "places.parkingOptions,places.allowsDogs,places.goodForChildren,places.reservable,"
-                            "places.outdoorSeating,places.takeout,places.delivery,places.goodForGroups,places.accessibilityOptions",
+                            "places.outdoorSeating,places.takeout,places.delivery,places.goodForGroups,places.accessibilityOptions,"
+                            "places.websiteUri",  # 같은 등급 — 가게 홈페이지(인스타 계정을 적어 둔 가게가 많다)
     })
     key = norm(base_name(p["place_name"]))
     for g in res.get("places", []):
@@ -158,7 +159,9 @@ def google_lookup(p):
         gname = norm((g.get("displayName") or {}).get("text", ""))
         if key[:3] not in gname and gname[:3] not in key:
             continue
-        out = {"r": g.get("rating", 0), "n": g.get("userRatingCount", 0), "u": g.get("googleMapsUri", ""), "v": 3}
+        out = {"r": g.get("rating", 0), "n": g.get("userRatingCount", 0), "u": g.get("googleMapsUri", ""), "v": 4}
+        if g.get("websiteUri"):
+            out["web"] = g["websiteUri"]
         feat = []  # 편의 정보: 구글에 '있음'으로 등록된 것만
         if any(v is True for v in (g.get("parkingOptions") or {}).values()):
             feat.append("park")
@@ -187,7 +190,7 @@ def google_lookup(p):
         if oh.get("weekdayDescriptions"):
             out["w"] = oh["weekdayDescriptions"]            # "월요일: 오전 11:00~오후 9:00" 같은 한국어 7줄
         return out
-    return {"r": 0, "n": 0, "u": "", "v": 3}
+    return {"r": 0, "n": 0, "u": "", "v": 4}
 
 
 # ---------- 1. 카카오: 음식점 목록 ----------
@@ -494,6 +497,59 @@ def youtube_videos(place):
 
 CHANNELS = os.path.join(os.path.dirname(__file__), "channels_cache.json")
 SHORTS = os.path.join(os.path.dirname(__file__), "shorts_cache.json")  # 영상 id → 쇼츠(세로)인지 (바뀌지 않으니 한 번만)
+INSTA = os.path.join(os.path.dirname(__file__), "insta_cache.json")    # 가게 id → 인스타 계정 주소 (홈페이지에서 찾은 것)
+MANUAL = os.path.join(os.path.dirname(__file__), "manual.json")        # 관리자가 직접 넣는 값 {"insta": {"가게 이름 또는 id": "주소"}}
+
+INSTA_RE = re.compile(r"instagram\.com/([A-Za-z0-9_.]{2,30})", re.I)
+INSTA_SKIP = {"p", "reel", "reels", "explore", "accounts", "stories", "tv", "about", "developer", "legal", "direct", "web", "share", "sharer"}
+NO_FETCH = ("naver.com", "naver.me", "kakao.com", "daum.net", "facebook.com", "youtube.com", "google.com", "goo.gl")
+
+
+def insta_from(text):
+    for m in INSTA_RE.finditer(text or ""):
+        h = m.group(1).strip(".")
+        if h.lower() not in INSTA_SKIP:
+            return f"https://www.instagram.com/{h}/"
+    return ""
+
+
+def find_insta(web):
+    """가게 홈페이지(구글에 등록된 주소)에서 인스타그램 계정 주소만 찾는다. 인스타 게시물·사진은 가져오지 않는다."""
+    u = insta_from(web)
+    if u or not web.startswith("http") or any(d in web for d in NO_FETCH):
+        return u
+    try:
+        req = urllib.request.Request(web, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return insta_from(r.read(400000).decode("utf-8", "ignore"))
+    except Exception:
+        return ""
+
+
+def insta_fill(all_out, gcache):
+    """가게마다 인스타 계정 주소: 관리자가 넣은 것 > 구글 홈페이지가 인스타이거나 홈페이지에 적힌 것 (90일마다 다시 확인)."""
+    ic = load_json(INSTA, {})
+    manual = load_json(MANUAL, {}).get("insta", {})
+    today = dt.date.today()
+    n = 0
+    for o in all_out:
+        pid = str(o["id"])
+        url = manual.get(pid) or manual.get(o["name"]) or ""
+        if not url:
+            web = (gcache.get(pid) or {}).get("web", "")
+            hit = ic.get(pid)
+            if hit and hit.get("w") == web and (today - dt.date.fromisoformat(hit["d"])).days < 90:
+                url = hit.get("i", "")
+            elif web and n < 80:
+                url = find_insta(web)
+                n += 1
+                ic[pid] = {"i": url, "w": web, "d": today.isoformat()}
+        if url:
+            o["insta"] = url
+        else:
+            o.pop("insta", None)
+    save_json(INSTA, ic)
+    print(f"인스타 주소: {sum(1 for o in all_out if o.get('insta'))}곳 (새로 확인 {n}곳)")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -864,8 +920,8 @@ def main():
             if hit:
                 r["g"] = hit
                 age = (today - dt.date.fromisoformat(hit["d"])).days
-                if pid in ranked and hit.get("v", 1) < 3:
-                    need.append((0, rank_of.get(pid, 99), r))  # 순위권인데 영업시간·편의 정보가 없음: 맨 먼저
+                if pid in ranked and hit.get("v", 1) < 4:
+                    need.append((0, rank_of.get(pid, 99), r))  # 순위권인데 영업시간·편의 정보·홈페이지가 없음: 맨 먼저 (무료량 안에서)
                     continue
                 limit = GOOGLE_DAYS_TOP if pid in ranked else GOOGLE_DAYS
                 if age < limit:
@@ -1010,6 +1066,10 @@ def main():
           + " / 대형 카페: " + ", ".join(o["name"] for o in all_out if o.get("big"))
           + " / 뷰: " + ", ".join(o["name"] for o in all_out if o.get("view")))
 
+    try:
+        insta_fill(all_out, cache)
+    except Exception as e:
+        print("인스타 주소 확인 중단:", str(e)[:120])
     channels = yt_channels(all_out)
 
     data = {

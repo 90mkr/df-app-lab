@@ -4,8 +4,8 @@ on:
   push:
     branches: [ main ]
   schedule:
-    # 매일 새벽 4시 37분(한국 시각)에 맛집 자료를 새로 모은다
-    - cron: '37 19 * * *'
+    # 매일 오후 5시 37분(한국 시각)에 맛집 자료를 새로 모은다 — 유튜브 하루 사용량이 오후 5시에 새로 채워지므로 그 직후
+    - cron: '37 8 * * *'
   workflow_dispatch:
     inputs:
       areas:

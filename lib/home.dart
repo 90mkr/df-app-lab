@@ -125,7 +125,7 @@ class Course {
   String get trip {
     final m = length;
     int r5(double x) => math.max(5, (x / 5).ceil() * 5);
-    return m <= 2500 ? '도보 약 ${r5(m / 70)}분' : '차로 약 ${r5(m / 350)}분';
+    return m <= 2500 ? '도보 약 ${r5(m / 70)}분' : '차로 약 ${r5(m / 500)}분';
   }
 
   String get sub => route ? '${stops.length}곳 · $trip' : [('${stops.length}곳'), if (desc.isNotEmpty) desc].join(' · ');
@@ -396,18 +396,18 @@ Widget _shortFit(String id, Widget fb) => Container(
       ),
     );
 
-// 유튜브 큰 사진 (16:9 칸): 쇼츠는 통째로, 고화질(maxres)이 있다고 확인된 영상은 그것으로, 아니면 띠만 뺀 hqdefault
+// 유튜브 큰 사진 (16:9 칸): 고화질 표지(maxres, 16:9 그대로 — 쇼츠도 통째로)를 먼저,
+// 없는 영상은 hqdefault에서 검은 띠만 빼거나(가로 영상) 통째로(쇼츠) — 어느 쪽도 그림을 자르지 않는다
 Widget ytWide(Video v, {Widget? fallback}) {
   final fb = fallback ?? Container(color: const Color(0xFFE9E9EC));
-  if (v.short) return _shortFit(v.id, fb);
-  if (!v.hd) return _hqCrop(v.id, fb);
   return Image.network(
     'https://i.ytimg.com/vi/${v.id}/maxresdefault.jpg',
     fit: BoxFit.cover,
     width: double.infinity,
     height: double.infinity,
     webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-    errorBuilder: (_, __, ___) => _hqCrop(v.id, fb),
+    loadingBuilder: (_, child, progress) => progress == null ? child : Container(color: const Color(0xFFEDEDF0)),
+    errorBuilder: (_, __, ___) => v.short ? _shortFit(v.id, fb) : _hqCrop(v.id, fb),
   );
 }
 

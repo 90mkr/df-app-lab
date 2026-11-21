@@ -75,6 +75,7 @@ class Video {
 class Place {
   final String id, kind, name, cat, addr, tel, kakao, home, gurl;
   final String dong; // 송도동 같은 동 이름
+  final String insta; // 가게 인스타그램 계정 주소 (없으면 단추 숨김)
   final String areaId; // 어느 동네 자료에서 왔는지
   final double grate;
   final int greviews;
@@ -98,6 +99,7 @@ class Place {
         name = j['name'] ?? '',
         cat = j['cat'] ?? '',
         dong = j['dong'] ?? '',
+        insta = j['insta'] ?? '',
         addr = j['addr'] ?? '',
         tel = j['tel'] ?? '',
         kakao = j['kakao'] ?? '',
@@ -2245,6 +2247,12 @@ class PlaceSheet extends StatelessWidget {
             ),
           const SizedBox(height: 12),
           const Text('블로그 글은 제목과 앞부분만 보여 드리며, 누르면 원래 글로 이동합니다. 가게가 직접 쓴 글과 광고 의심 글은 점수에서 뺐습니다.', style: TextStyle(fontSize: 11, color: kGray)),
+          // 인스타: 가게 계정 주소만 (게시물·사진은 가져오지 않음), 주소 없는 가게는 숨김
+          if (p.insta.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            const _Title(text: '인스타그램'),
+            _Btn(label: '인스타 보기', onTap: () => openUrl(p.insta)),
+          ],
         ],
       ),
     );
