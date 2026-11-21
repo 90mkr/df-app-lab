@@ -267,7 +267,11 @@ QUERIES = [
     "맛집", "맛집 추천", "현지인 맛집", "데이트 맛집", "가족 외식", "회식",
     "한식", "고기집", "일식", "중식", "양식", "파스타", "브런치", "센트럴파크 맛집", "트리플스트리트 맛집",
     "카페", "대형카페", "베이커리 카페", "브런치 카페", "디저트 카페", "뷰 카페", "분위기 좋은 카페", "빵집",
+    "핫플", "가볼만한곳", "대형 베이커리카페", "식물원 카페",
 ]
+
+# 대표님이 직접 짚어 준, 꼭 후보에 넣어 볼 가게
+MUST = ["포레스트아웃팅스"]
 
 # 지점 안내가 될 뿐인 전국 체인은 뺀다
 CHAINS = [
@@ -316,6 +320,19 @@ def popular_candidates():
                 c["hits"] += 1
             if res.get("meta", {}).get("is_end", True):
                 break
+    # 꼭 확인할 가게: 이름으로 직접 찾아 송도 범위 안이면 후보에 넣는다 (인기 점수는 후보들 중간값)
+    mid = sorted(c["pop"] for c in cands.values())[len(cands) // 2] if cands else 1
+    x1, y1, x2, y2 = AREA
+    for name in MUST:
+        res = get_json("https://dapi.kakao.com/v2/local/search/keyword.json?" + urllib.parse.urlencode({"query": name}),
+                       {"Authorization": f"KakaoAK {KAKAO_KEY}"})
+        for d in res.get("documents", []):
+            inside = x1 <= float(d["x"]) <= x2 and y1 <= float(d["y"]) <= y2
+            print("  직접 확인:", d["place_name"], "/", d.get("category_name"), "/", d.get("road_address_name"), "/ 송도 범위", "안" if inside else "밖")
+            if inside and d["id"] not in cands:
+                if d.get("category_group_code") not in ("FD6", "CE7"):
+                    d["category_group_code"] = "CE7" if "카페" in (d.get("category_name") or "") or "베이커리" in (d.get("category_name") or "") else "FD6"
+                cands[d["id"]] = {"p": d, "pop": mid, "hits": 0}
     print(f"인기 후보 {len(cands)}곳 (검색어 {len(QUERIES)}개)")
     for c in cands.values():
         if "포레스트" in c["p"]["place_name"]:
