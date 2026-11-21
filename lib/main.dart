@@ -124,6 +124,7 @@ class _MapPageState extends State<MapPage> {
   SongdoData? data;
   String? error;
   String kind = 'food';
+  double zoom = 13;
   String get kindLabel => kind == 'cafe' ? '카페' : '맛집';
 
   @override
@@ -148,6 +149,32 @@ class _MapPageState extends State<MapPage> {
     final list = d.places.where((p) => p.kind == kind && p.score > 0).toList()
       ..sort((a, b) => b.score.compareTo(a.score));
     return list.take(kTop).toList();
+  }
+
+  // 지도 배율에 따라 보이는 순위 수: 넓게 보면 5위, 조금 확대하면 10위, 더 확대하면 20위
+  int get capByZoom => zoom < 13.6 ? 5 : (zoom < 14.6 ? 10 : kTop);
+
+  // 순위 높은 카드부터 놓고, 이미 놓인 카드와 겹치는 아래 순위는 숨긴다 (확대하면 나타남)
+  List<int> shownIndexes(List<Place> list) {
+    final scale = 256 * math.pow(2, zoom).toDouble();
+    Offset px(LatLng p) {
+      final x = (p.longitude + 180) / 360 * scale;
+      final r = p.latitude * math.pi / 180;
+      final y = (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * scale;
+      return Offset(x, y);
+    }
+    final kept = <Rect>[];
+    final out = <int>[];
+    final n = math.min(capByZoom, list.length);
+    for (var i = 0; i < n; i++) {
+      final w = i < 3 ? 178.0 : 154.0, h = i < 3 ? 74.0 : 64.0;
+      final c = px(list[i].point);
+      final rect = Rect.fromLTWH(c.dx - w / 2, c.dy - h, w, h).inflate(3);
+      if (kept.any((k) => k.overlaps(rect))) continue;
+      kept.add(rect);
+      out.add(i);
+    }
+    return out;
   }
 
   void openPlace(Place p) {
@@ -220,11 +247,20 @@ class _MapPageState extends State<MapPage> {
   @override
   Widget build(BuildContext context) {
     final list = visible;
+    final shown = shownIndexes(list);
     return Scaffold(
       body: Stack(children: [
         FlutterMap(
           mapController: map,
-          options: const MapOptions(initialCenter: kCenter, initialZoom: 14, minZoom: 11, maxZoom: 19),
+          options: MapOptions(
+            initialCenter: kCenter,
+            initialZoom: 13,
+            minZoom: 11,
+            maxZoom: 19,
+            onPositionChanged: (camera, hasGesture) {
+              if ((camera.zoom - zoom).abs() >= 0.05) setState(() => zoom = camera.zoom);
+            },
+          ),
           children: [
             TileLayer(
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -232,7 +268,7 @@ class _MapPageState extends State<MapPage> {
             ),
             MarkerLayer(
               markers: [
-                for (var i = list.length - 1; i >= 0; i--)
+                for (final i in shown.reversed)
                   Marker(
                     point: list[i].point,
                     width: i < 3 ? 178 : 154,
@@ -249,7 +285,7 @@ class _MapPageState extends State<MapPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _Header(data: data, kindLabel: kindLabel, onRank: data == null ? null : openRank),
+              _Header(data: data, kindLabel: kindLabel, shown: shown.length, onRank: data == null ? null : openRank),
               const SizedBox(height: 8),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -308,8 +344,9 @@ BoxDecoration _card({double r = 14}) => BoxDecoration(
 class _Header extends StatelessWidget {
   final SongdoData? data;
   final String kindLabel;
+  final int shown;
   final VoidCallback? onRank;
-  const _Header({required this.data, required this.kindLabel, required this.onRank});
+  const _Header({required this.data, required this.kindLabel, required this.shown, required this.onRank});
 
   @override
   Widget build(BuildContext context) {
@@ -325,7 +362,7 @@ class _Header extends StatelessWidget {
             ])),
             const SizedBox(height: 2),
             Text(
-              data == null ? '블로그·유튜브 화제 순' : '$kindLabel 화제 상위 $kTop곳  ·  ${data!.updated} 기준',
+              data == null ? '블로그·유튜브 화제 순' : (shown < kTop ? '$kindLabel 상위 $kTop곳 중 $shown곳 표시 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $kTop곳  ·  ${data!.updated} 기준'),
               style: const TextStyle(fontSize: 11.5, color: kGray),
             ),
           ]),
