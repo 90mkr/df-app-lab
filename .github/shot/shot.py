@@ -77,8 +77,14 @@ def run(pg):
                 shot("룰렛_가게")
         pg.keyboard.press("Escape")
         time.sleep(1.5)
+    # 음식 종류: 홈에서 「양식」 → 지도
+    tap_text("홈", 1.5)
+    wheel(195, 560, 500, 1.5)
+    if tap_text("양식", 5):
+        shot("음식종류_양식_지도")
     # 테마 코스
     tap_text("홈", 1.5)
+    wheel(195, 400, -4000, 1)
     wheel(195, 560, 2500)
     if tap_text("먹방 유튜버 코스", 5) or tap_text("인기 맛집 하루 코스", 5):
         shot("코스_지도")

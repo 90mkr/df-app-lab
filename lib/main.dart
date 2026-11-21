@@ -76,6 +76,9 @@ class Place {
   final String id, kind, name, cat, addr, tel, kakao, home, gurl;
   final String dong; // 송도동 같은 동 이름
   final String insta; // 가게 인스타그램 계정 주소 (없으면 단추 숨김)
+  final String cz; // 음식 종류 (카카오 분류 둘째 칸)
+  final String model; // 「○○구 지정 모범음식점」 (공공데이터)
+  final String mfood; // 모범음식점 자료의 주된 음식
   final String areaId; // 어느 동네 자료에서 왔는지
   final double grate;
   final int greviews;
@@ -100,6 +103,9 @@ class Place {
         cat = j['cat'] ?? '',
         dong = j['dong'] ?? '',
         insta = j['insta'] ?? '',
+        cz = j['cz'] ?? '',
+        model = j['model'] ?? '',
+        mfood = j['mfood'] ?? '',
         addr = j['addr'] ?? '',
         tel = j['tel'] ?? '',
         kakao = j['kakao'] ?? '',
@@ -330,6 +336,7 @@ class _MapPageState extends State<MapPage> {
   List<Map<String, dynamic>> koks = []; // 내 콕 (저장한 집)
   LatLngBounds? bounds; // 지금 지도에 보이는 범위
   Course? course; // 지도에서 보는 중인 테마 코스
+  String cuisine = ''; // 음식 종류 고르기 (한식·중식 …, 비면 전체)
   Timer? _sync;
   static const kClusterZoom = 11.5; // 이보다 넓게 보면 동네별 숫자 묶음
   static const kSidoZoom = 9.0; // 이보다 넓게 보면 시·도별 숫자 묶음
@@ -341,17 +348,58 @@ class _MapPageState extends State<MapPage> {
   bool locating = false;
   static const kNearMeters = 3000.0; // 내 주변: 3km 안
   double zoom = 13;
-  String get kindLabel => switch (kind) {
-        'cafe' => '카페',
-        'food' => '맛집',
-        'tv' => '방송탄 집',
-        'near' => '내 주변',
-        'big' => '대형 카페',
-        'open' => '영업 중',
-        'view' => '뷰 맛집',
-        'rise' => '새로 뜨는 집',
-        _ => '맛집·카페',
-      };
+  String get kindLabel {
+    final b = switch (kind) {
+      'cafe' => '카페',
+      'food' => '맛집',
+      'tv' => '방송탄 집',
+      'near' => '내 주변',
+      'big' => '대형 카페',
+      'open' => '영업 중',
+      'view' => '뷰 맛집',
+      'rise' => '새로 뜨는 집',
+      _ => '맛집·카페',
+    };
+    return cuisine.isEmpty ? b : (kind == 'all' ? cuisine : '$cuisine $b');
+  }
+
+  // 음식 종류 고르기 (지도 분류 줄의 「음식 종류」 · 홈의 음식 알약)
+  void pickCuisine(String c) => setState(() {
+        cuisine = c;
+        course = null;
+      });
+
+  void openCuisine() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (ctx) => Align(
+        alignment: Alignment.bottomCenter,
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(20, 18, 20, 22 + MediaQuery.of(ctx).padding.bottom),
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              mixTitle('음식 ', '종류', size: 17),
+              const SizedBox(height: 14),
+              CuisinePills(
+                current: cuisine,
+                withAll: true,
+                onPick: (c) {
+                  Navigator.pop(ctx);
+                  pickCuisine(c);
+                },
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
 
   // 분류 단추를 눌렀을 때: 내 주변은 위치부터 확인
   Future<void> pickKind(String k) async {
@@ -870,6 +918,20 @@ class _MapPageState extends State<MapPage> {
               padding: const EdgeInsets.only(right: 6),
               child: _Chip(label: k[1], on: kind == k[0], onTap: () => pickKind(k[0])),
             ),
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: _Chip(
+              label: cuisine.isEmpty ? '음식 종류' : '$cuisine ✕',
+              on: cuisine.isNotEmpty,
+              onTap: () {
+                if (cuisine.isEmpty) {
+                  openCuisine();
+                } else {
+                  pickCuisine('');
+                }
+              },
+            ),
+          ),
           _Chip(label: feats.isEmpty ? '편의 필터' : '편의 필터 ${feats.length}', on: feats.isNotEmpty, onTap: openFeats),
         ]),
       );
@@ -899,6 +961,7 @@ class _MapPageState extends State<MapPage> {
     }
     var src = (kind == 'near' ? all : pool).where((p) => kind == 'rise' ? p.rise : (p.top && p.score > 0));
     if (feats.isNotEmpty) src = src.where((p) => feats.every(p.feat.contains));
+    if (cuisine.isNotEmpty) src = src.where((p) => cuisineOf(p) == cuisine);
     if (kind == 'open') src = src.where((p) => openInfo(p)?.open == true);
     if (kind == 'view') src = src.where((p) => p.view);
     if (kind == 'rise') {
@@ -1133,6 +1196,13 @@ class _MapPageState extends State<MapPage> {
           onSearch: toMapSearch,
           onRetry: _load,
           onRoulette: openRoulette,
+          onCuisine: (c) {
+            setState(() {
+              tab = 2;
+              regionOpen = false;
+            });
+            pickCuisine(c);
+          },
           onWhere: goWhere,
           onChannel: openChannel,
           onCourse: openCourse,
@@ -2105,6 +2175,10 @@ class PlaceSheet extends StatelessWidget {
                 Text(p.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk, height: 1.25)),
                 const SizedBox(height: 3),
                 Text(p.cat, style: const TextStyle(fontSize: 12.5, color: kGray)),
+                if (oneLine(p).isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Text(oneLine(p), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: kInk, height: 1.35)),
+                ],
               ]),
             ),
             ScoreTag(score: p.score),
@@ -2119,6 +2193,15 @@ class PlaceSheet extends StatelessWidget {
                 TextSpan(text: p.grate.toStringAsFixed(1), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
                 TextSpan(text: '   리뷰 ${p.greviews}개', style: const TextStyle(fontSize: 12.5, color: kGray)),
               ])),
+            ),
+          if (p.model.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: [
+                const Icon(Icons.verified_outlined, size: 14, color: kInk),
+                const SizedBox(width: 5),
+                Expanded(child: Text(p.model, style: const TextStyle(fontSize: 13, color: kInk))),
+              ]),
             ),
           if (p.tv.isNotEmpty)
             Padding(

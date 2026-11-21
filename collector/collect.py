@@ -526,6 +526,94 @@ def find_insta(web):
         return ""
 
 
+MODEL = os.path.join(os.path.dirname(__file__), "model_cache.json")  # 동네별 모범음식점 목록 (공공데이터, 30일마다)
+DATA_KEY = os.environ.get("DATA_GO_KR_KEY", "")
+SIDO_FULL = {"서울": "서울특별시", "부산": "부산광역시", "대구": "대구광역시", "인천": "인천광역시", "광주": "광주광역시",
+             "대전": "대전광역시", "울산": "울산광역시", "세종": "세종특별자치시", "경기": "경기도", "강원": "강원특별자치도",
+             "충북": "충청북도", "충남": "충청남도", "전북": "전북특별자치도", "전남": "전라남도", "경북": "경상북도",
+             "경남": "경상남도", "제주": "제주특별자치도"}
+
+
+def _road_key(addr):
+    """도로명 주소에서 「○○로12번길 3」만 (시·도 표기가 달라도 맞춰 보려고)."""
+    m = re.search(r"([가-힣0-9]+(?:로|길)(?:\s*\d+(?:번길|가길|길))?)\s*(\d+(?:-\d+)?)", addr or "")
+    return (m.group(1).replace(" ", "") + " " + m.group(2)) if m else ""
+
+
+def model_fill(all_out):
+    """행정안전부 모범음식점 정보(공공데이터, 이용 제한 없음)와 맞춰 「○○구 지정 모범음식점」·주된 음식을 붙인다.
+    인증키(DATA_GO_KR_KEY)가 없으면 건너뛴다. 목록은 동네(구)마다 30일에 한 번만 받는다."""
+    if not DATA_KEY:
+        print("모범음식점: 공공데이터 인증키가 없어 건너뜀")
+        return
+    key = urllib.parse.unquote(DATA_KEY)
+    gus = {}
+    for o in all_out:
+        t = (o.get("addr") or "").split()
+        if len(t) >= 2:
+            gus.setdefault(f"{SIDO_FULL.get(t[0], t[0])} {t[1]}", 0)
+            gus[f"{SIDO_FULL.get(t[0], t[0])} {t[1]}"] += 1
+    if not gus:
+        return
+    gu = max(gus, key=gus.get)
+    mc = load_json(MODEL, {})
+    today = dt.date.today()
+    hit = mc.get(gu)
+    if not hit or (today - dt.date.fromisoformat(hit["d"])).days > 30:
+        rows, page = [], 1
+        try:
+            while page <= 30:
+                q = urllib.parse.urlencode({"serviceKey": key, "pageNo": page, "numOfRows": 100, "returnType": "json",
+                                            "cond[ROAD_NM_ADDR::LIKE]": gu})
+                res = get_json("https://apis.data.go.kr/1741000/excellent_restaurant_info?" + q)
+                body = res.get("response", {}).get("body", res.get("body", {})) if isinstance(res, dict) else {}
+                items = body.get("items", {})
+                if isinstance(items, dict):
+                    items = items.get("item", [])
+                if isinstance(items, dict):
+                    items = [items]
+                if not items:
+                    break
+                for it in items:
+                    name = it.get("BSNSSP_NM") or it.get("bsnsspNm") or ""
+                    addr = it.get("ROAD_NM_ADDR") or it.get("roadNmAddr") or it.get("LOTNO_ADDR") or ""
+                    food = it.get("PRINC_FD") or it.get("PRINC_FD_NM") or it.get("princFd") or ""
+                    kind = it.get("PRINC_FD_KND") or it.get("princFdKnd") or ""
+                    if name:
+                        rows.append({"n": name, "a": addr, "f": food, "k": kind})
+                total = int(body.get("totalCount", 0) or 0)
+                if page * 100 >= total:
+                    break
+                page += 1
+            mc[gu] = {"d": today.isoformat(), "rows": rows}
+            save_json(MODEL, mc)
+            print(f"모범음식점 목록 {gu}: {len(rows)}곳")
+        except Exception as e:
+            print("모범음식점 목록 받기 중단:", str(e)[:200])
+            if not hit:
+                return
+    rows = (mc.get(gu) or {}).get("rows", [])
+    by_road = {}
+    for r in rows:
+        by_road.setdefault(_road_key(r["a"]), []).append(r)
+    gu_name = gu.split()[-1]
+    n = 0
+    for o in all_out:
+        k = norm(base_name(o["name"]))
+        cand = by_road.get(_road_key(o.get("addr", "")), [])
+        # 같은 도로명 주소(건물 번호까지) + 이름 앞 두 글자가 같을 때만 (체인 다른 지점과 헷갈리지 않게)
+        m = next((r for r in cand if k[:2] and k[:2] in norm(r["n"])), None)
+        if m:
+            o["model"] = f"{gu_name} 지정 모범음식점"
+            if m.get("f") or m.get("k"):
+                o["mfood"] = (m.get("f") or m.get("k"))[:30]
+            n += 1
+        else:
+            o.pop("model", None)
+            o.pop("mfood", None)
+    print(f"모범음식점: {n}곳 맞춤")
+
+
 FIX_KEYS = ("name", "tel", "addr", "lat", "lng", "cat", "hours", "week", "home", "insta")
 
 
@@ -677,6 +765,11 @@ def yt_channels(all_out):
 
 # ---------- 4. 점수 ----------
 
+def cuisine_of(cat):
+    parts = [x.strip() for x in (cat or "").split(">")]
+    return parts[1] if len(parts) > 1 else ""
+
+
 def short_category(cat):
     parts = [p.strip() for p in (cat or "").split(">")]
     return parts[2] if len(parts) > 2 else (parts[-1] if parts else "")
@@ -807,6 +900,7 @@ def to_out(r):
         "kind": r["kind"],
         "name": p["place_name"],
         "cat": short_category(p.get("category_name")),
+        "cz": cuisine_of(p.get("category_name")),  # 음식 종류 (카카오 분류 둘째 칸: 한식·중식·일식·양식·분식 …)
         "dong": dong_of(p),
         "lat": float(p["y"]),
         "lng": float(p["x"]),
@@ -1092,6 +1186,10 @@ def main():
           + " / 뷰: " + ", ".join(o["name"] for o in all_out if o.get("view")))
 
     all_out = apply_fix(all_out)
+    try:
+        model_fill(all_out)
+    except Exception as e:
+        print("모범음식점 확인 중단:", str(e)[:120])
     try:
         insta_fill(all_out, cache)
     except Exception as e:

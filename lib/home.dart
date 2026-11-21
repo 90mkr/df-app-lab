@@ -105,6 +105,86 @@ String subsText(int s) {
   return '구독자 ${commas(s)}';
 }
 
+// ---- 음식 종류 (카카오 분류 둘째 칸이 있으면 그것, 없으면 분류·이름으로) ----
+const kCuisines = ['한식', '중식', '일식', '양식', '아시안', '분식', '빵', '카페'];
+
+String cuisineOf(Place p) {
+  if (isBread(p)) return '빵';
+  if (p.kind == 'cafe') return '카페';
+  const direct = {'한식': '한식', '중식': '중식', '일식': '일식', '양식': '양식', '분식': '분식', '아시아음식': '아시안', '패스트푸드': '양식'};
+  final d = direct[p.cz];
+  if (d != null) return d;
+  final c = '${p.cat} ${p.name}';
+  bool has(List<String> ks) => ks.any(c.contains);
+  if (has(const ['중국', '중식', '짬뽕', '짜장', '마라', '양꼬치', '딤섬', '훠궈'])) return '중식';
+  if (has(const ['일식', '초밥', '스시', '라멘', '우동', '돈까스', '돈카츠', '이자카야', '오마카세', '텐동', '규동', '소바'])) return '일식';
+  if (has(const ['양식', '이탈리안', '파스타', '피자', '스테이크', '버거', '브런치', '패밀리레스토랑', '멕시칸', '프랑스', '스페인', '쉐이크쉑'])) return '양식';
+  if (has(const ['인도', '베트남', '태국', '쌀국수', '아시아', '네팔', '터키'])) return '아시안';
+  if (has(const ['분식', '떡볶이', '김밥', '만두'])) return '분식';
+  if (has(const ['한식', '육류', '고기', '국수', '순대', '한정식', '해물', '생선', '찌개', '전골', '국밥', '해장', '곰탕', '냉면', '칼국수', '감자탕', '닭',
+    '족발', '보쌈', '갈비', '백반', '두부', '쌈밥', '조개'])) {
+    return '한식';
+  }
+  return '';
+}
+
+// 대표 메뉴: 영상·블로그 제목에 두 번 넘게 나온 메뉴 (모범음식점 자료의 주된 음식이 있으면 그것을 먼저)
+const kMenus = [
+  '묵은지김치찜', '김치찜', '김치찌개', '된장찌개', '부대찌개', '순두부', '청국장', '갈비찜', '갈비탕', '돼지갈비', '소갈비', '갈비', '삼겹살', '목살', '항정살',
+  '갈매기살', '차돌박이', '꽃등심', '등심', '안심', '한우', '육회', '불고기', '제육볶음', '닭갈비', '닭볶음탕', '백숙', '삼계탕', '찜닭', '치킨', '족발', '보쌈',
+  '곱창', '막창', '대창', '순대국', '순댓국', '돼지국밥', '국밥', '해장국', '뼈해장국', '감자탕', '곰탕', '설렁탕', '수육', '물냉면', '비빔냉면', '냉면', '막국수',
+  '바지락칼국수', '해물칼국수', '칼국수', '수제비', '잔치국수', '콩국수', '비빔밥', '쌈밥', '한정식', '보리밥', '생선구이', '갈치조림', '아구찜', '해물찜', '해물탕',
+  '매운탕', '조개구이', '조개찜', '낙지볶음', '연포탕', '쭈꾸미', '주꾸미', '장어구이', '장어', '물회', '회덮밥', '모둠회', '대게', '킹크랩', '간장게장', '양념게장',
+  '게장', '전복', '추어탕', '오리구이', '훈제오리', '만두', '떡볶이', '김밥', '라볶이', '어묵', '파전', '짜장면', '짬뽕', '탕수육', '마라탕', '마라샹궈', '양꼬치',
+  '딤섬', '샤오롱바오', '꿔바로우', '깐풍기', '유린기', '훠궈', '초밥', '스시', '오마카세', '사시미', '라멘', '우동', '소바', '돈까스', '돈카츠', '텐동', '규동',
+  '카츠동', '오코노미야키', '타코야키', '야키토리', '파스타', '피자', '스테이크', '수제버거', '햄버거', '함박스테이크', '리조또', '브런치', '샐러드', '샌드위치',
+  '타코', '부리또', '쌀국수', '분짜', '반미', '팟타이', '커리', '카레', '탄두리', '소금빵', '크루아상', '베이글', '식빵', '단팥빵', '크림빵', '치즈케이크',
+  '롤케이크', '케이크', '마카롱', '휘낭시에', '스콘', '도넛', '에그타르트', '크로플', '와플', '망고빙수', '팥빙수', '빙수', '젤라또', '아이스크림', '티라미수',
+  '푸딩', '아인슈페너', '핸드드립', '말차', '밀크티',
+];
+
+List<String> menusOf(Place p) {
+  final texts = [for (final v in p.vids) v.title, for (final b in p.posts) '${b.title} ${b.desc}'];
+  final cnt = <String, int>{};
+  for (final t in texts) {
+    final s = t.replaceAll(' ', '');
+    for (final m in kMenus) {
+      if (s.contains(m)) cnt[m] = (cnt[m] ?? 0) + 1;
+    }
+  }
+  final keys = cnt.keys.where((k) => cnt[k]! >= 2).toList()
+    ..sort((a, b) {
+      final c = cnt[b]!.compareTo(cnt[a]!);
+      return c != 0 ? c : b.length.compareTo(a.length);
+    });
+  final out = <String>[];
+  for (final k in keys) {
+    if (out.any((o) => o.contains(k) || k.contains(o))) continue;
+    out.add(k);
+    if (out.length == 2) break;
+  }
+  return out;
+}
+
+// 가게 한 줄 소개 (대표 메뉴)
+String oneLine(Place p) {
+  final m = p.mfood.isNotEmpty ? [p.mfood] : menusOf(p);
+  return m.isEmpty ? '' : '대표 메뉴 · ${m.join(', ')}';
+}
+
+// 음식 종류 알약 (홈 · 지도)
+class CuisinePills extends StatelessWidget {
+  final String current;
+  final bool withAll;
+  final ValueChanged<String> onPick;
+  const CuisinePills({super.key, required this.current, required this.onPick, this.withAll = false});
+  @override
+  Widget build(BuildContext context) => Wrap(spacing: 6, runSpacing: 8, children: [
+        if (withAll) _SegChip(label: '전체', on: current.isEmpty, onTap: () => onPick('')),
+        for (final c in kCuisines) _SegChip(label: c, on: current == c, onTap: () => onPick(c)),
+      ]);
+}
+
 // ---- 테마 (자동으로 묶이는 것부터) ----
 // 이름에 유명인·방송 프로그램 이름은 쓰지 않는다 (가게 화면의 「○○ 출연」 사실 표시는 괜찮음)
 class Course {
@@ -559,6 +639,7 @@ class HomeView extends StatelessWidget {
   final bool regionOpen;
   final Widget regionPanel;
   final VoidCallback onRegion, onSearch, onRetry, onRoulette;
+  final ValueChanged<String> onCuisine; // 음식 종류 → 지도
   final ValueChanged<Place> onWhere; // 이 집 어디야 → 지도
   final ValueChanged<Chan> onChannel;
   final ValueChanged<Course> onCourse;
@@ -574,6 +655,7 @@ class HomeView extends StatelessWidget {
     required this.onSearch,
     required this.onRetry,
     required this.onRoulette,
+    required this.onCuisine,
     required this.onWhere,
     required this.onChannel,
     required this.onCourse,
@@ -600,6 +682,10 @@ class HomeView extends StatelessWidget {
                   _hero(d),
                   const SizedBox(height: 18),
                   Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: RouletteBanner(onTap: onRoulette)),
+                  const SizedBox(height: 22),
+                  sectionHead('무엇이 ', '당기세요?'),
+                  const SizedBox(height: 10),
+                  Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: CuisinePills(current: '', onPick: onCuisine)),
                   _creators(d),
                   _tops(d),
                   _courses(d),
@@ -1293,6 +1379,10 @@ class YtRow extends StatelessWidget {
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.3)),
               const SizedBox(height: 2),
               Text(metaOf(place), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
+              if (oneLine(place).isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(oneLine(place), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: kInk)),
+              ],
             ]),
           ),
           const SizedBox(width: 8),
@@ -1749,7 +1839,7 @@ class SettingsPage extends StatelessWidget {
               const SizedBox(height: 16),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4),
-                child: Text('영상과 표지 사진의 저작권은 각 유튜버에게 있습니다. 지도 © OpenStreetMap',
+                child: Text('영상과 표지 사진의 저작권은 각 유튜버에게 있습니다. 지도 © OpenStreetMap · 모범음식점 정보 행정안전부(공공데이터포털)',
                     style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub, height: 1.4)),
               ),
             ]),

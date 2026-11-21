@@ -37,6 +37,7 @@ jobs:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           AREAS: ${{ inputs.areas }}
         run: python3 -u collector/collect.py
 
