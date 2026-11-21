@@ -211,12 +211,13 @@ class _MapPageState extends State<MapPage> {
   }
 
   // 지도 표시 3단계: 0 = 펼친 카드, 1 = 접힌 카드(사진만), 2 = 작은 아이콘
-  // 넓게 보면 카드 5곳 + 사진 7곳 + 아이콘 8곳, 확대할수록 카드가 늘어난다
-  int get cardCount => zoom < 13.6 ? 5 : (zoom < 14.6 ? 10 : kTop);
+  // 넓게 보면 카드 5곳부터, 조금만 확대해도 빠르게 늘어난다 (단계는 겹침을 막기 위한 것)
+  int get cardCount => zoom < 13.4 ? 5 : (zoom < 14.0 ? 10 : (zoom < 14.6 ? 20 : 999));
   static const kPhotoCount = 7;
 
-  // 순위 높은 집부터 자리를 잡고, 겹치면 한 단계 작은 모양으로 내린다 (숨기지 않음)
-  List<int> tiers(List<Place> list) {
+  // 순위 높은 집부터 자리를 잡는다. 겹치면 위 → 아래 → 오른쪽 → 왼쪽 자리를 찾아보고,
+  // 그래도 없으면 한 단계 작게. 끝까지 확대하면(17.5 이상) 모두 카드로 보인다.
+  List<(int, int)> layout(List<Place> list) {
     final scale = 256 * math.pow(2, zoom).toDouble();
     Offset px(LatLng p) {
       final x = (p.longitude + 180) / 360 * scale;
@@ -225,35 +226,41 @@ class _MapPageState extends State<MapPage> {
       return Offset(x, y);
     }
     final kept = <Rect>[];
-    final out = List<int>.filled(list.length, 2);
+    final out = List<(int, int)>.filled(list.length, (2, 0));
     for (var i = 0; i < list.length; i++) {
       final c = px(list[i].point);
-      var t = i < cardCount ? 0 : (i < cardCount + kPhotoCount ? 1 : 2);
-      while (t < 2) {
-        final w = t == 0 ? cardFullW(i + 1) : cardShutW(i + 1);
-        final h = cardH(i + 1);
-        final r = Rect.fromLTWH(c.dx - w / 2, c.dy - h, w, h).inflate(t == 0 ? 3 : 1);
-        if (!kept.any((k) => k.overlaps(r))) {
-          kept.add(r);
-          break;
+      final want = i < cardCount ? 0 : (i < cardCount + kPhotoCount ? 1 : 2);
+      (int, int)? got;
+      for (var t = want; t < 2 && got == null; t++) {
+        for (var d = 0; d < 4 && got == null; d++) {
+          final r = cardRect(i + 1, t, d, c);
+          if (!kept.any((k) => k.overlaps(r))) {
+            kept.add(r);
+            got = (t, d);
+          }
         }
-        t++;
       }
-      out[i] = t;
+      if (got == null && zoom >= 17.5) {
+        kept.add(cardRect(i + 1, 0, 0, c));
+        got = (0, 0);
+      }
+      out[i] = got ?? (2, 0);
     }
     return out;
   }
 
-  Marker markerFor(Place p, int i, int t) {
+  Marker markerFor(Place p, int i, int t, int d) {
     if (t <= 1) {
-      // 1·2단계는 같은 카드: 확대하면 접힌 카드가 양옆으로 펼쳐진다
+      // 1·2단계는 같은 카드: 확대하면 접힌 카드가 펼쳐진다
+      final w = cardFullW(i + 1), ch = cardImg(i + 1) + 12;
+      final side = d >= 2;
       return Marker(
         key: ValueKey('card${p.id}'),
         point: p.point,
-        width: cardFullW(i + 1),
-        height: cardH(i + 1),
-        alignment: Alignment.topCenter,
-        child: PlaceMarker(place: p, rank: i + 1, open: t == 0, onTap: () => openPlace(p)),
+        width: side ? w + 6 : w,
+        height: side ? ch : ch + 6,
+        alignment: const [Alignment.topCenter, Alignment.bottomCenter, Alignment.centerRight, Alignment.centerLeft][d],
+        child: PlaceMarker(place: p, rank: i + 1, open: t == 0, dir: d, onTap: () => openPlace(p)),
       );
     }
     return Marker(
@@ -360,13 +367,13 @@ class _MapPageState extends State<MapPage> {
   @override
   Widget build(BuildContext context) {
     final list = visible;
-    final tier = tiers(list);
-    final cards = tier.where((t) => t == 0).length;
+    final place = layout(list);
+    final cards = place.where((x) => x.$1 == 0).length;
     // 작은 것부터 깔고 큰 카드를 위에 (같은 단계는 높은 순위가 위)
     final order = [
       for (final t in const [2, 1, 0])
         for (var i = list.length - 1; i >= 0; i--)
-          if (tier[i] == t) i
+          if (place[i].$1 == t) i
     ];
     return Scaffold(
       body: Stack(children: [
@@ -387,7 +394,7 @@ class _MapPageState extends State<MapPage> {
               userAgentPackageName: 'kr.designfeel.df_app_lab',
             ),
             MarkerLayer(
-              markers: [for (final i in order) markerFor(list[i], i, tier[i])],
+              markers: [for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2)],
             ),
           ],
         ),
@@ -544,13 +551,28 @@ double cardFullW(int rank) => rank <= 3 ? 178.0 : 154.0;
 double cardShutW(int rank) => cardImg(rank) + 12; // 사진 + 안쪽 여백 5×2 + 테두리 1×2
 double cardH(int rank) => cardImg(rank) + 12 + 6; // 카드 + 꼬리
 
+// 자리(d): 0 가게 위, 1 가게 아래, 2 가게 오른쪽, 3 가게 왼쪽
+Rect cardRect(int rank, int t, int d, Offset c) {
+  final w = t == 0 ? cardFullW(rank) : cardShutW(rank);
+  final ch = cardImg(rank) + 12;
+  const tail = 6.0;
+  final r = switch (d) {
+    0 => Rect.fromLTWH(c.dx - w / 2, c.dy - ch - tail, w, ch + tail),
+    1 => Rect.fromLTWH(c.dx - w / 2, c.dy, w, ch + tail),
+    2 => Rect.fromLTWH(c.dx, c.dy - ch / 2, w + tail, ch),
+    _ => Rect.fromLTWH(c.dx - w - tail, c.dy - ch / 2, w + tail, ch),
+  };
+  return r.inflate(t == 0 ? 3 : 1);
+}
+
 // 1·2단계 카드: 접히면 왼쪽 사진만, 펼치면 오른쪽 이름·별점까지 (확대하면 양옆으로 벌어짐)
 class PlaceMarker extends StatelessWidget {
   final Place place;
   final int rank;
   final bool open;
+  final int dir; // 0 가게 위, 1 아래, 2 오른쪽, 3 왼쪽
   final VoidCallback onTap;
-  const PlaceMarker({super.key, required this.place, required this.rank, required this.open, required this.onTap});
+  const PlaceMarker({super.key, required this.place, required this.rank, required this.open, this.dir = 0, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -559,10 +581,7 @@ class PlaceMarker extends StatelessWidget {
     final inner = cardFullW(rank) - 12;
     final line = kindLine(place.kind); // 맛집 빨강, 카페 짙은 갈색
     final thumb = thumbOf(place);
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(mainAxisSize: MainAxisSize.max, mainAxisAlignment: MainAxisAlignment.end, children: [
-        Stack(clipBehavior: Clip.none, children: [
+    final card = Stack(clipBehavior: Clip.none, children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 280),
             curve: Curves.easeOutCubic,
@@ -633,11 +652,17 @@ class PlaceMarker extends StatelessWidget {
               top: -5,
               child: AnimatedOpacity(opacity: open ? 0 : 1, duration: const Duration(milliseconds: 200), child: const TvBadge()),
             ),
-        ]),
-        // 카드 아래 꼬리 (가게 위치를 가리킴)
-        Transform.translate(offset: const Offset(0, -1), child: CustomPaint(size: const Size(12, 6), painter: _Tail(line))),
-      ]),
-    );
+        ]);
+    // 꼬리: 가게 위치를 가리킨다 (기본 그림은 아래쪽 뾰족)
+    Widget tail(int turns, Offset nudge) =>
+        Transform.translate(offset: nudge, child: RotatedBox(quarterTurns: turns, child: CustomPaint(size: const Size(12, 6), painter: _Tail(line))));
+    final Widget body = switch (dir) {
+      1 => Column(mainAxisAlignment: MainAxisAlignment.start, children: [tail(2, const Offset(0, 1)), card]),
+      2 => Row(mainAxisAlignment: MainAxisAlignment.start, children: [tail(1, const Offset(1, 0)), card]),
+      3 => Row(mainAxisAlignment: MainAxisAlignment.end, children: [card, tail(3, const Offset(-1, 0))]),
+      _ => Column(mainAxisAlignment: MainAxisAlignment.end, children: [card, tail(0, const Offset(0, -1))]),
+    };
+    return GestureDetector(onTap: onTap, child: body);
   }
 }
 
