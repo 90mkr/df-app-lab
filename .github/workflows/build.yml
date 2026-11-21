@@ -17,6 +17,10 @@ on:
         type: boolean
         required: false
         default: false
+      follow_debug:
+        description: '따라가기 점검 (이름|주소;이름|주소 — 넣으면 점검만 하고 저장 안 함)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -42,6 +46,7 @@ jobs:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
           FOLLOW_MIN: '30'
+          FOLLOW_DEBUG: ${{ inputs.follow_debug }}
         run: python3 -u collector/follow.py
 
       - name: 맛집 자료 모으기

@@ -397,7 +397,23 @@ def build(chs, info, cache):
     return {"updated": dt.date.today().isoformat(), "sido": SIDO_ONLY, "channels": out_ch, "places": pl}
 
 
+def debug(pairs):
+    """FOLLOW_DEBUG="이름|주소;이름|주소" — 카카오가 무엇을 돌려주는지 그대로 찍어 본다"""
+    for pr in pairs:
+        name, addr = pr.split("|", 1)
+        g = geocode(addr, {"g": {}})
+        print(f"[확인] {name} | {addr} → 좌표 {g}")
+        if not g:
+            continue
+        for d in kakao("search/keyword.json", query=name, x=g["x"], y=g["y"], radius=2000, sort="distance", size=5).get("documents", []):
+            print(f"    {d.get('place_name')} | {d.get('category_name')} | {d.get('category_group_code')} | {d.get('distance')}m | {d.get('road_address_name')} | 닮음 {sim(d.get('place_name', ''), name):.2f} | 음식 {foodish(d)}")
+
+
 def main():
+    dbg = [x for x in os.environ.get("FOLLOW_DEBUG", "").split(";") if "|" in x]
+    if dbg:
+        debug(dbg)
+        return
     if not C.YOUTUBE_KEY or not C.KAKAO_KEY:
         print("유튜브·카카오 키가 없어 건너뜀")
         return
