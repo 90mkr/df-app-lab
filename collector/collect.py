@@ -44,6 +44,8 @@ GOOGLE_DAYS_TOP = 30   # 순위권 가게: 한 달마다 갱신
 BLOG_DAYS = 14         # 1차 블로그 건수는 2주마다 새로 (무료)
 GOOGLE_MONTH = 900     # 한 달 구글 조회 상한 (무료 1,000회 안쪽)
 USAGE = os.path.join(os.path.dirname(__file__), "google_usage.json")
+TV_CACHE = os.path.join(os.path.dirname(__file__), "tv_cache.json")   # 방송 출연 확인 결과
+TV_DAYS = 30           # 방송 출연은 한 달마다 다시 확인 (무료)
 MIN_REVIEWS = int(os.environ.get("MIN_REVIEWS", "30"))  # 구글 리뷰가 이보다 적으면 순위 제외
 CACHE = os.path.join(os.path.dirname(__file__), "..", "web", "data", "google_cache.json")
 PLACES_CACHE = os.path.join(os.path.dirname(__file__), "places_cache.json")  # 가게 목록 (7일마다 새로)
@@ -263,6 +265,55 @@ def kakao_blog(query, pages=2):
             break
         time.sleep(0.05)
     return {"items": items, "full": not ended}
+
+
+# ---------- 방송 출연 확인: 다음(카카오) 블로그 글에서 방송 이름이 가게 이름 가까이 나오는지 본다 (무료) ----------
+
+TV_SHOWS = [  # (띄어쓰기 없앤 검색어, 앱에 보일 이름)
+    ("생활의달인", "생활의 달인"), ("수요미식회", "수요미식회"), ("맛있는녀석들", "맛있는 녀석들"),
+    ("3대천왕", "백종원의 3대천왕"), ("골목식당", "백종원의 골목식당"), ("생생정보", "생생정보"),
+    ("vj특공대", "VJ특공대"), ("6시내고향", "6시 내고향"), ("생방송투데이", "생방송 투데이"),
+    ("생방송오늘저녁", "생방송 오늘 저녁"), ("생방송오늘아침", "생방송 오늘 아침"), ("전지적참견시점", "전지적 참견 시점"),
+    ("나혼자산다", "나 혼자 산다"), ("줄서는식당", "줄 서는 식당"), ("토요일은밥이좋아", "토요일은 밥이 좋아"),
+    ("토밥좋아", "토요일은 밥이 좋아"), ("백반기행", "식객 허영만의 백반기행"), ("서민갑부", "서민갑부"),
+    ("놀라운토요일", "놀라운 토요일"), ("테이스티로드", "테이스티로드"), ("맛있는tv", "찾아라 맛있는 TV"),
+    ("모닝와이드", "모닝와이드"), ("굿모닝대한민국", "굿모닝 대한민국"), ("먹거리x파일", "먹거리 X파일"),
+    ("돈쭐내러왔습니다", "돈쭐내러 왔습니다"), ("동네한바퀴", "김영철의 동네 한 바퀴"), ("한국인의밥상", "한국인의 밥상"),
+]
+TV_NEAR = 60   # 가게 이름과 방송 이름이 이 글자 수 안에 함께 나와야 인정
+
+
+def tv_check(name):
+    """블로그 글 2묶음(가게+방송 / 가게+출연)을 보고, 같은 방송이 글 2개 이상(또는 제목 1개)에서 나오면 출연으로 본다."""
+    base = base_name(name)
+    key = norm(base)
+    if len(key) < 3:
+        return []
+    near, strong, seen = {}, set(), set()
+    for word in ("방송", "출연"):
+        q = urllib.parse.urlencode({"query": f"{base} {AREA_NAME} {word}", "sort": "accuracy", "size": 50})
+        res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
+        for d in res.get("documents", []):
+            u = d.get("url") or ""
+            if u in seen:
+                continue
+            seen.add(u)
+            title = norm(clean(d.get("title")))
+            text = title + "|" + norm(clean(d.get("contents")))
+            spots = [m.start() for m in re.finditer(re.escape(key), text)]
+            if not spots:
+                continue
+            for k, label in TV_SHOWS:
+                if k in title and key in title:
+                    strong.add(label)
+                    continue
+                for m in re.finditer(re.escape(k), text):
+                    if any(abs(m.start() - sp) <= TV_NEAR for sp in spots):
+                        near.setdefault(label, set()).add(u)
+                        break
+        time.sleep(0.05)
+    found = [lb for lb in dict.fromkeys(list(strong) + [lb for lb, us in near.items() if len(us) >= 2])]
+    return found[:2]
 
 
 def blog_home(url):
@@ -669,6 +720,23 @@ def main():
         out = build_list(kind, rows, TOP_N, use_google)
         all_out += out
         print(f"[{label}] " + " / ".join(f"{o['name']}({o['score']}, 구글 {o['greviews']})" for o in out))
+
+    # 방송 출연: 순위에 든 집만, 한 달에 한 번 (카카오가 멈추면 지난 결과를 그대로 씀)
+    tvc = load_json(TV_CACHE, {})
+    checked = 0
+    for o in all_out:
+        pid = str(o["id"])
+        h = tvc.get(pid)
+        if not (h and (dt.date.today() - dt.date.fromisoformat(h["d"])).days < TV_DAYS):
+            try:
+                h = {"t": tv_check(o["name"]), "d": dt.date.today().isoformat()}
+                tvc[pid] = h
+                checked += 1
+            except Exception as e:
+                print("방송 확인 실패", o["name"], str(e)[:80])
+        o["tv"] = (h or {}).get("t", [])
+    save_json(TV_CACHE, tvc)
+    print(f"방송 확인 {checked}곳 새로, 방송 나온 집: " + ", ".join(f"{o['name']}({'·'.join(o['tv'])})" for o in all_out if o["tv"]))
 
     data = {
         "area": AREA_NAME,

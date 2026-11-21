@@ -70,6 +70,7 @@ class Place {
   final List<Video> vids;
   final List<List<int>> hours; // [여는 요일, 시각(hhmm), 닫는 요일, 시각] 요일 0=일, 닫는 시각 없으면 -1
   final List<String> week; // "월요일: 오전 11:00~오후 9:00" 같은 7줄
+  final List<String> tv; // 출연한 방송 이름 (블로그 글로 확인)
   Place(Map<String, dynamic> j)
       : id = '${j['id']}',
         kind = j['kind'] ?? 'food',
@@ -90,7 +91,8 @@ class Place {
         posts = ((j['posts'] ?? []) as List).map((e) => Post(e)).toList(),
         vids = ((j['vids'] ?? []) as List).map((e) => Video(e)).toList(),
         hours = ((j['hours'] ?? []) as List).map((e) => (e as List).map((x) => (x as num).toInt()).toList()).toList(),
-        week = ((j['week'] ?? []) as List).map((e) => '$e').toList();
+        week = ((j['week'] ?? []) as List).map((e) => '$e').toList(),
+        tv = ((j['tv'] ?? []) as List).map((e) => '$e').toList();
   LatLng get point => LatLng(lat, lng);
 }
 
@@ -204,11 +206,13 @@ class _MapPageState extends State<MapPage> {
     return list.take(kTop).toList();
   }
 
-  // 지도 배율에 따라 보이는 순위 수: 넓게 보면 5위, 조금 확대하면 10위, 더 확대하면 20위
-  int get capByZoom => zoom < 13.6 ? 5 : (zoom < 14.6 ? 10 : kTop);
+  // 지도 표시 3단계: 0 = 큰 카드, 1 = 동그란 사진, 2 = 작은 아이콘
+  // 넓게 보면 카드 5곳 + 사진 7곳 + 아이콘 8곳, 확대할수록 카드가 늘어난다
+  int get cardCount => zoom < 13.6 ? 5 : (zoom < 14.6 ? 10 : kTop);
+  static const kPhotoCount = 7;
 
-  // 순위 높은 카드부터 놓고, 이미 놓인 카드와 겹치는 아래 순위는 숨긴다 (확대하면 나타남)
-  List<int> shownIndexes(List<Place> list) {
+  // 순위 높은 집부터 자리를 잡고, 겹치면 한 단계 작은 모양으로 내린다 (숨기지 않음)
+  List<int> tiers(List<Place> list) {
     final scale = 256 * math.pow(2, zoom).toDouble();
     Offset px(LatLng p) {
       final x = (p.longitude + 180) / 360 * scale;
@@ -217,17 +221,43 @@ class _MapPageState extends State<MapPage> {
       return Offset(x, y);
     }
     final kept = <Rect>[];
-    final out = <int>[];
-    final n = math.min(capByZoom, list.length);
-    for (var i = 0; i < n; i++) {
-      final w = i < 3 ? 178.0 : 154.0, h = i < 3 ? 74.0 : 64.0;
+    final out = List<int>.filled(list.length, 2);
+    for (var i = 0; i < list.length; i++) {
       final c = px(list[i].point);
-      final rect = Rect.fromLTWH(c.dx - w / 2, c.dy - h, w, h).inflate(3);
-      if (kept.any((k) => k.overlaps(rect))) continue;
-      kept.add(rect);
-      out.add(i);
+      var t = i < cardCount ? 0 : (i < cardCount + kPhotoCount ? 1 : 2);
+      while (t < 2) {
+        final Rect r;
+        if (t == 0) {
+          final w = i < 3 ? 178.0 : 154.0, h = i < 3 ? 74.0 : 64.0;
+          r = Rect.fromLTWH(c.dx - w / 2, c.dy - h, w, h).inflate(3);
+        } else {
+          r = Rect.fromLTWH(c.dx - 26, c.dy - 58, 52, 58).inflate(1);
+        }
+        if (!kept.any((k) => k.overlaps(r))) {
+          kept.add(r);
+          break;
+        }
+        t++;
+      }
+      out[i] = t;
     }
     return out;
+  }
+
+  Marker markerFor(Place p, int i, int t) {
+    if (t == 0) {
+      return Marker(
+        point: p.point,
+        width: i < 3 ? 178 : 154,
+        height: i < 3 ? 74 : 64,
+        alignment: Alignment.topCenter,
+        child: PlaceMarker(place: p, rank: i + 1, onTap: () => openPlace(p)),
+      );
+    }
+    if (t == 1) {
+      return Marker(point: p.point, width: 54, height: 58, alignment: Alignment.topCenter, child: PhotoMarker(place: p, onTap: () => openPlace(p)));
+    }
+    return Marker(point: p.point, width: 30, height: 32, alignment: Alignment.topCenter, child: IconMarker(place: p, onTap: () => openPlace(p)));
   }
 
   void openPlace(Place p) {
@@ -281,7 +311,15 @@ class _MapPageState extends State<MapPage> {
                   ),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: kInk)),
+                      Row(children: [
+                        Flexible(child: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: kInk))),
+                        if (p.tv.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          const Icon(Icons.live_tv_outlined, size: 13, color: kInk),
+                          const SizedBox(width: 2),
+                          const Text('방송', style: TextStyle(fontSize: 11, color: kInk)),
+                        ],
+                      ]),
                       const SizedBox(height: 2),
                       Builder(builder: (_) {
                         final o = openInfo(p);
@@ -311,7 +349,14 @@ class _MapPageState extends State<MapPage> {
   @override
   Widget build(BuildContext context) {
     final list = visible;
-    final shown = shownIndexes(list);
+    final tier = tiers(list);
+    final cards = tier.where((t) => t == 0).length;
+    // 작은 것부터 깔고 큰 카드를 위에 (같은 단계는 높은 순위가 위)
+    final order = [
+      for (final t in const [2, 1, 0])
+        for (var i = list.length - 1; i >= 0; i--)
+          if (tier[i] == t) i
+    ];
     return Scaffold(
       body: Stack(children: [
         FlutterMap(
@@ -331,25 +376,7 @@ class _MapPageState extends State<MapPage> {
               userAgentPackageName: 'kr.designfeel.df_app_lab',
             ),
             MarkerLayer(
-              markers: [
-                // 카드로 못 보인 순위(확대 전·겹침)는 작은 숫자 점으로 자리만 표시
-                for (var i = list.length - 1; i >= 0; i--)
-                  if (!shown.contains(i))
-                    Marker(
-                      point: list[i].point,
-                      width: 24,
-                      height: 24,
-                      child: RankDot(rank: i + 1, onTap: () => openPlace(list[i])),
-                    ),
-                for (final i in shown.reversed)
-                  Marker(
-                    point: list[i].point,
-                    width: i < 3 ? 178 : 154,
-                    height: i < 3 ? 74 : 64,
-                    alignment: Alignment.topCenter,
-                    child: PlaceMarker(place: list[i], rank: i + 1, onTap: () => openPlace(list[i])),
-                  ),
-              ],
+              markers: [for (final i in order) markerFor(list[i], i, tier[i])],
             ),
           ],
         ),
@@ -358,7 +385,7 @@ class _MapPageState extends State<MapPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _Header(data: data, kindLabel: kindLabel, shown: shown.length, onRank: data == null ? null : openRank),
+              _Header(data: data, kindLabel: kindLabel, shown: cards < list.length ? cards : kTop, onRank: data == null ? null : openRank),
               const SizedBox(height: 8),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -513,9 +540,9 @@ class PlaceMarker extends StatelessWidget {
                 height: img,
                 child: thumb.isEmpty
                     ? Container(
-                        color: const Color(0xFFF1F3F7),
+                        color: const Color(0xFFFBF7F3),
                         alignment: Alignment.center,
-                        child: Icon(place.kind == 'cafe' ? Icons.local_cafe_outlined : Icons.restaurant_outlined, size: img * 0.42, color: kGray),
+                        child: Icon(kindIcon(place.kind), size: img * 0.42, color: kindTint(place.kind)),
                       )
                     : Image.network(
                         thumb,
@@ -531,6 +558,11 @@ class PlaceMarker extends StatelessWidget {
                 Text.rich(
                   TextSpan(children: [
                     TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kBlue : kGray)),
+                    if (place.tv.isNotEmpty)
+                      const WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: Padding(padding: EdgeInsets.only(right: 3), child: Icon(Icons.live_tv_outlined, size: 12, color: kInk)),
+                      ),
                     TextSpan(text: place.name, style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: kInk)),
                   ]),
                   maxLines: 1,
@@ -556,28 +588,106 @@ class PlaceMarker extends StatelessWidget {
   }
 }
 
-class RankDot extends StatelessWidget {
-  final int rank;
+const kFoodTint = Color(0xFFE0703C); // 맛집 아이콘 (따뜻한 주황)
+const kCafeTint = Color(0xFF8A5A3B); // 카페 아이콘 (커피색)
+
+IconData kindIcon(String kind) => kind == 'cafe' ? Icons.local_cafe_outlined : Icons.restaurant_outlined;
+Color kindTint(String kind) => kind == 'cafe' ? kCafeTint : kFoodTint;
+String thumbOf(Place p) => p.vids.isNotEmpty ? 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg' : '';
+
+// 방송 출연 표시 (진한 회색, 작게)
+class TvBadge extends StatelessWidget {
+  const TvBadge({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18,
+      height: 18,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(color: kLine, width: 1),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 4)],
+      ),
+      child: const Icon(Icons.live_tv_outlined, size: 11, color: kInk),
+    );
+  }
+}
+
+// 2단계: 동그란 사진 (사진이 없으면 맛집·카페 그림)
+class PhotoMarker extends StatelessWidget {
+  final Place place;
   final VoidCallback onTap;
-  const RankDot({super.key, required this.rank, required this.onTap});
+  const PhotoMarker({super.key, required this.place, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final thumb = thumbOf(place);
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Stack(clipBehavior: Clip.none, children: [
+          Container(
+            width: 48,
+            height: 48,
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: kLine, width: 1),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.14), blurRadius: 8)],
+            ),
+            child: ClipOval(
+              child: thumb.isEmpty
+                  ? Container(
+                      color: const Color(0xFFFBF7F3),
+                      alignment: Alignment.center,
+                      child: Icon(kindIcon(place.kind), size: 22, color: kindTint(place.kind)),
+                    )
+                  : Image.network(
+                      thumb,
+                      fit: BoxFit.cover,
+                      webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: const Color(0xFFFBF7F3),
+                        alignment: Alignment.center,
+                        child: Icon(kindIcon(place.kind), size: 22, color: kindTint(place.kind)),
+                      ),
+                    ),
+            ),
+          ),
+          if (place.tv.isNotEmpty) const Positioned(right: -4, top: -3, child: TvBadge()),
+        ]),
+        Transform.translate(offset: const Offset(0, -1), child: CustomPaint(size: const Size(10, 6), painter: _Tail(kLine))),
+      ]),
+    );
+  }
+}
+
+// 3단계: 작은 맛집·카페 아이콘 (숫자 없이 자리만)
+class IconMarker extends StatelessWidget {
+  final Place place;
+  final VoidCallback onTap;
+  const IconMarker({super.key, required this.place, required this.onTap});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Center(
-        child: Container(
-          width: 22,
-          height: 22,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 26,
+          height: 26,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: Colors.white,
             shape: BoxShape.circle,
-            border: Border.all(color: const Color(0xFF8C95A3), width: 1),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 6)],
+            border: Border.all(color: kLine, width: 1),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.13), blurRadius: 6)],
           ),
-          child: Text('$rank', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: kInk, height: 1)),
+          child: Icon(kindIcon(place.kind), size: 14, color: kindTint(place.kind)),
         ),
-      ),
+        Transform.translate(offset: const Offset(0, -1), child: CustomPaint(size: const Size(8, 5), painter: _Tail(kLine))),
+      ]),
     );
   }
 }
@@ -690,6 +800,15 @@ class PlaceSheet extends StatelessWidget {
                 TextSpan(text: p.grate.toStringAsFixed(1), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
                 TextSpan(text: '   리뷰 ${p.greviews}개', style: const TextStyle(fontSize: 12.5, color: kGray)),
               ])),
+            ),
+          if (p.tv.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: [
+                const Icon(Icons.live_tv_outlined, size: 14, color: kInk),
+                const SizedBox(width: 5),
+                Expanded(child: Text('${p.tv.join(' · ')} 출연', style: const TextStyle(fontSize: 13, color: kInk))),
+              ]),
             ),
           if (open != null)
             Padding(
