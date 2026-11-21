@@ -179,7 +179,16 @@ def blog_stats(place):
             "date": it.get("postdate"),
             "by": clean(it.get("bloggername"))[:30],
         })
-    return clean_posts, ad_count
+    # 검색 결과가 꽉 찼고(50건) 가장 오래된 글도 90일 안이면, 실제로는 더 많다는 뜻 → 기간 비율로 추정
+    items = res.get("items", [])
+    est = len(clean_posts)
+    if len(items) >= 50:
+        dates = [i.get("postdate") for i in items if (i.get("postdate") or "").isdigit()]
+        if dates and min(dates) >= since:
+            oldest = dt.datetime.strptime(min(dates), "%Y%m%d").date()
+            span = max((dt.date.today() - oldest).days, 3)
+            est = round(len(clean_posts) * RECENT_DAYS / span)
+    return clean_posts, ad_count, est
 
 
 # ---------- 3. 유튜브 ----------
@@ -226,19 +235,19 @@ def main():
 
     def one(p):
         try:
-            posts, ads = blog_stats(p)
+            posts, ads, est = blog_stats(p)
         except Exception as e:
             print("블로그 실패", p["place_name"], str(e)[:120])
-            posts, ads = [], 0
+            posts, ads, est = [], 0, 0
         done[0] += 1
         if done[0] % 100 == 0:
             print(f"  블로그 {done[0]}/{len(places)}")
-        return {"p": p, "posts": posts, "ads": ads, "vids": []}
+        return {"p": p, "posts": posts, "ads": ads, "est": est, "vids": []}
 
     with ThreadPoolExecutor(max_workers=6) as ex:
         rows = list(ex.map(one, places))
 
-    rows.sort(key=lambda r: len(r["posts"]), reverse=True)
+    rows.sort(key=lambda r: r["est"], reverse=True)
     if YOUTUBE_KEY:
         for r in rows[:YOUTUBE_TOP]:
             if not r["posts"]:
@@ -252,7 +261,7 @@ def main():
     out = []
     for r in rows:
         p = r["p"]
-        n_blog = len(r["posts"])
+        n_blog = r["est"]
         raw = 10 * math.log2(1 + n_blog) + 6 * min(len(r["vids"]), 3)
         out.append({
             "id": p["id"],
