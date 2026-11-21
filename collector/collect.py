@@ -134,9 +134,12 @@ def google_lookup(p):
     }
     res = post_json("https://places.googleapis.com/v1/places:searchText", body, {
         "X-Goog-Api-Key": GOOGLE_KEY,
-        # 영업시간(regularOpeningHours)은 별점과 같은 요금 등급, 영업 상태(businessStatus)는 더 낮은 등급 → 추가 비용 없음
+        # 영업시간·영업 상태는 별점과 같은 등급. 주차·애견 동반 같은 편의 정보는 한 단계 위 등급이지만
+        # 그 등급도 한 달 1,000번까지 무료라, 한 달 900번 상한 안에서는 비용이 없다
         "X-Goog-FieldMask": "places.id,places.displayName,places.rating,places.userRatingCount,places.location,"
-                            "places.googleMapsUri,places.regularOpeningHours,places.businessStatus",
+                            "places.googleMapsUri,places.regularOpeningHours,places.businessStatus,"
+                            "places.parkingOptions,places.allowsDogs,places.goodForChildren,places.reservable,"
+                            "places.outdoorSeating,places.takeout,places.delivery,places.goodForGroups,places.accessibilityOptions",
     })
     key = norm(base_name(p["place_name"]))
     for g in res.get("places", []):
@@ -146,7 +149,18 @@ def google_lookup(p):
         gname = norm((g.get("displayName") or {}).get("text", ""))
         if key[:3] not in gname and gname[:3] not in key:
             continue
-        out = {"r": g.get("rating", 0), "n": g.get("userRatingCount", 0), "u": g.get("googleMapsUri", ""), "v": 2}
+        out = {"r": g.get("rating", 0), "n": g.get("userRatingCount", 0), "u": g.get("googleMapsUri", ""), "v": 3}
+        feat = []  # 편의 정보: 구글에 '있음'으로 등록된 것만
+        if any(v is True for v in (g.get("parkingOptions") or {}).values()):
+            feat.append("park")
+        for field, code in (("allowsDogs", "dog"), ("goodForChildren", "kid"), ("reservable", "resv"),
+                            ("outdoorSeating", "out"), ("takeout", "take"), ("delivery", "deliv"), ("goodForGroups", "group")):
+            if g.get(field) is True:
+                feat.append(code)
+        if (g.get("accessibilityOptions") or {}).get("wheelchairAccessibleEntrance") is True:
+            feat.append("wheel")
+        if feat:
+            out["f"] = feat
         bs = g.get("businessStatus", "")
         if bs and bs != "OPERATIONAL":
             out["bs"] = bs
@@ -164,7 +178,7 @@ def google_lookup(p):
         if oh.get("weekdayDescriptions"):
             out["w"] = oh["weekdayDescriptions"]            # "월요일: 오전 11:00~오후 9:00" 같은 한국어 7줄
         return out
-    return {"r": 0, "n": 0, "u": "", "v": 2}
+    return {"r": 0, "n": 0, "u": "", "v": 3}
 
 
 # ---------- 1. 카카오: 음식점 목록 ----------
@@ -546,6 +560,7 @@ def build_list(kind, rows, top_n, use_google):
             "vids": r["vids"],
             "hours": r["g"].get("h", []),
             "week": r["g"].get("w", []),
+            "feat": r["g"].get("f", []),
         })
     return out
 
@@ -657,8 +672,8 @@ def main():
             if hit:
                 r["g"] = hit
                 age = (today - dt.date.fromisoformat(hit["d"])).days
-                if pid in ranked and hit.get("v", 1) < 2:
-                    need.append((0, rank_of.get(pid, 99), r))  # 순위권인데 영업시간이 없음: 맨 먼저
+                if pid in ranked and hit.get("v", 1) < 3:
+                    need.append((0, rank_of.get(pid, 99), r))  # 순위권인데 영업시간·편의 정보가 없음: 맨 먼저
                     continue
                 limit = GOOGLE_DAYS_TOP if pid in ranked else GOOGLE_DAYS
                 if age < limit:

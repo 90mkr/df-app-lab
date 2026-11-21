@@ -71,6 +71,7 @@ class Place {
   final List<List<int>> hours; // [여는 요일, 시각(hhmm), 닫는 요일, 시각] 요일 0=일, 닫는 시각 없으면 -1
   final List<String> week; // "월요일: 오전 11:00~오후 9:00" 같은 7줄
   final List<String> tv; // 출연한 방송 이름 (블로그 글로 확인)
+  final List<String> feat; // 편의 정보 (주차·애견 동반 등, 구글 기준)
   Place(Map<String, dynamic> j)
       : id = '${j['id']}',
         kind = j['kind'] ?? 'food',
@@ -92,7 +93,8 @@ class Place {
         vids = ((j['vids'] ?? []) as List).map((e) => Video(e)).toList(),
         hours = ((j['hours'] ?? []) as List).map((e) => (e as List).map((x) => (x as num).toInt()).toList()).toList(),
         week = ((j['week'] ?? []) as List).map((e) => '$e').toList(),
-        tv = ((j['tv'] ?? []) as List).map((e) => '$e').toList();
+        tv = ((j['tv'] ?? []) as List).map((e) => '$e').toList(),
+        feat = ((j['feat'] ?? []) as List).map((e) => '$e').toList();
   LatLng get point => LatLng(lat, lng);
 }
 
@@ -588,6 +590,41 @@ class PlaceMarker extends StatelessWidget {
   }
 }
 
+// 편의 정보: 코드 → (아이콘, 이름)
+const kFeat = <String, (IconData, String)>{
+  'park': (Icons.local_parking_outlined, '주차'),
+  'dog': (Icons.pets_outlined, '애견 동반'),
+  'kid': (Icons.child_care_outlined, '아이 동반'),
+  'resv': (Icons.event_available_outlined, '예약'),
+  'take': (Icons.takeout_dining_outlined, '포장'),
+  'deliv': (Icons.delivery_dining_outlined, '배달'),
+  'out': (Icons.deck_outlined, '야외석'),
+  'group': (Icons.groups_outlined, '단체석'),
+  'wheel': (Icons.accessible_outlined, '휠체어'),
+};
+
+class FeatChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const FeatChip({super.key, required this.icon, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(9, 5, 12, 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kLine, width: 1),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 15, color: kInk),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 12, color: kInk, height: 1.2)),
+      ]),
+    );
+  }
+}
+
 const kFoodTint = Color(0xFFE0703C); // 맛집 아이콘 (따뜻한 주황)
 const kCafeTint = Color(0xFF8A5A3B); // 카페 아이콘 (커피색)
 
@@ -773,6 +810,8 @@ class PlaceSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = place;
     final naver = 'https://map.naver.com/p/search/${Uri.encodeComponent(p.name)}';
+    // 길찾기: 카카오맵 길안내 (도착지 = 이 가게)
+    final route = 'https://map.kakao.com/link/to/${Uri.encodeComponent(p.name)},${p.lat},${p.lng}';
     final open = openInfo(p);
     final today = '${kDays[nowKst().weekday % 7]}요일';
     return _Sheet(
@@ -816,11 +855,18 @@ class PlaceSheet extends StatelessWidget {
               child: Text(open.text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: open.open ? kBlue : kGray)),
             ),
           if (p.addr.isNotEmpty) Text(p.addr, style: const TextStyle(fontSize: 13, color: kInk, height: 1.4)),
+          if (p.feat.any(kFeat.containsKey)) ...[
+            const SizedBox(height: 10),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final f in p.feat)
+                if (kFeat[f] != null) FeatChip(icon: kFeat[f]!.$1, label: kFeat[f]!.$2),
+            ]),
+          ],
           const SizedBox(height: 14),
           Row(children: [
-            Expanded(child: _Btn(label: '카카오맵', onTap: () => openUrl(p.kakao))),
+            Expanded(child: _Btn(label: '길찾기', onTap: () => openUrl(route))),
             const SizedBox(width: 8),
-            Expanded(child: _Btn(label: '네이버 지도', onTap: () => openUrl(naver))),
+            Expanded(child: _Btn(label: '메뉴·사진', onTap: () => openUrl(p.kakao.isNotEmpty ? p.kakao : naver))),
             if (p.home.isNotEmpty) ...[
               const SizedBox(width: 8),
               Expanded(child: _Btn(label: '가게 블로그', onTap: () => openUrl(p.home))),
