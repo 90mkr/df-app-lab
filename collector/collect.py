@@ -299,7 +299,17 @@ def popular_candidates():
             for d in res.get("documents", []):
                 rank += 1
                 code = d.get("category_group_code")
-                if code not in ("FD6", "CE7") or is_chain(d.get("place_name")):
+                cat = d.get("category_name") or ""
+                # 카카오 분류가 비어 있거나 다르게 잡힌 대형 카페·복합공간도 이름/분류로 받아들인다
+                if code not in ("FD6", "CE7"):
+                    if "카페" in cat or "베이커리" in cat or "디저트" in cat:
+                        d["category_group_code"] = "CE7"
+                    elif cat.startswith("음식점"):
+                        d["category_group_code"] = "FD6"
+                    else:
+                        print("  분류 제외:", d.get("place_name"), "/", cat)
+                        continue
+                if is_chain(d.get("place_name")):
                     continue
                 c = cands.setdefault(d["id"], {"p": d, "pop": 0, "hits": 0})
                 c["pop"] += (46 - rank)
@@ -307,6 +317,9 @@ def popular_candidates():
             if res.get("meta", {}).get("is_end", True):
                 break
     print(f"인기 후보 {len(cands)}곳 (검색어 {len(QUERIES)}개)")
+    for c in cands.values():
+        if "포레스트" in c["p"]["place_name"]:
+            print("  확인:", c["p"]["place_name"], c["p"].get("category_name"), "인기", c["pop"], "횟수", c["hits"])
     return list(cands.values())
 
 
