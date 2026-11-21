@@ -2186,22 +2186,26 @@ class PlaceSheet extends StatelessWidget {
           // 정보 수정 신고 (작게)
           Align(
             alignment: Alignment.centerRight,
-            child: Semantics(
+            child: Builder(builder: (context) {
+              void report() => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    barrierColor: Colors.black.withValues(alpha: 0.08),
+                    builder: (_) => ReportSheet(place: p),
+                  );
+              return Semantics(
               button: true,
               label: '정보 수정 신고',
+              onTap: report,
               excludeSemantics: true,
               child: TextButton(
-                onPressed: () => showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  barrierColor: Colors.black.withValues(alpha: 0.08),
-                  builder: (_) => ReportSheet(place: p),
-                ),
+                onPressed: report,
                 style: TextButton.styleFrom(foregroundColor: kGray, padding: const EdgeInsets.symmetric(horizontal: 4), minimumSize: const Size(0, 32)),
                 child: const Text('정보가 다른가요?  정보 수정 신고', style: TextStyle(fontSize: 11.5, color: kGray, decoration: TextDecoration.underline, decorationColor: kGray)),
               ),
-            ),
+            );
+            }),
           ),
           const SizedBox(height: 14),
           if (p.vids.isNotEmpty) ...[

@@ -452,6 +452,7 @@ class _SegChip extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
         button: true,
         label: label,
+        onTap: onTap,
         excludeSemantics: true,
         child: GestureDetector(
           onTap: onTap,
@@ -504,6 +505,7 @@ class KokHeader extends StatelessWidget {
         Semantics(
           button: true,
           label: '지역 ${area.sido} ${area.name}',
+          onTap: onRegion,
           excludeSemantics: true,
           child: InkWell(
             onTap: onRegion,
@@ -680,6 +682,7 @@ class HomeView extends StatelessWidget {
           Semantics(
             button: true,
             label: '이 집 어디야',
+            onTap: () => onWhere(p),
             excludeSemantics: true,
             child: GestureDetector(
               onTap: () => onWhere(p),
@@ -781,6 +784,7 @@ class RouletteBanner extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
         button: true,
         label: '오늘 뭐 먹지?',
+        onTap: onTap,
         excludeSemantics: true,
         child: GestureDetector(
           onTap: onTap,
@@ -823,6 +827,7 @@ class CourseCard extends StatelessWidget {
     return Semantics(
       button: true,
       label: c.name,
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -1044,6 +1049,7 @@ class _RouletteSheetState extends State<RouletteSheet> with SingleTickerProvider
                     child: Semantics(
                       button: true,
                       label: '룰렛 돌리기',
+                      onTap: spin,
                       excludeSemantics: true,
                       child: GestureDetector(
                         onTap: spin,
@@ -1098,6 +1104,10 @@ class _RouletteSheetState extends State<RouletteSheet> with SingleTickerProvider
                         Semantics(
                           button: true,
                           label: '뽑은 집 어디야',
+                          onTap: () {
+                            Navigator.pop(context);
+                            widget.onWhere(p);
+                          },
                           excludeSemantics: true,
                           child: GestureDetector(
                             onTap: () {
@@ -1420,6 +1430,7 @@ class SavedView extends StatelessWidget {
             Semantics(
               button: true,
               label: '설정',
+              onTap: () => openSettings(context),
               excludeSemantics: true,
               child: TextButton(
                 onPressed: () => openSettings(context),
@@ -1509,6 +1520,8 @@ class KokNav extends StatelessWidget {
                     child: Semantics(
                       button: true,
                       label: items[i].$2,
+                      selected: tab == i,
+                      onTap: () => onTap(i),
                       excludeSemantics: true,
                       child: InkWell(
                         onTap: () => onTap(i),
@@ -1541,17 +1554,20 @@ class KokButton extends StatefulWidget {
 
 class _KokButtonState extends State<KokButton> {
   late bool on = widget.on;
+  void toggle() {
+    setState(() => on = !on);
+    widget.onChanged(on);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
       label: on ? '콕 했어요' : '콕 하기',
+      onTap: toggle,
       excludeSemantics: true,
       child: InkWell(
-        onTap: () {
-          setState(() => on = !on);
-          widget.onChanged(on);
-        },
+        onTap: toggle,
         borderRadius: BorderRadius.circular(10),
         child: Container(
           height: 32,
@@ -1648,6 +1664,7 @@ class SettingsPage extends StatelessWidget {
     Widget row(String label, {String? sub, VoidCallback? onTap, Widget? trail}) => Semantics(
           button: onTap != null,
           label: label,
+          onTap: onTap,
           excludeSemantics: true,
           child: InkWell(
             onTap: onTap,
