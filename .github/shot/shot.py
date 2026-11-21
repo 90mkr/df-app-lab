@@ -108,7 +108,9 @@ def run(pg):
     # 이 집 어디야 + 콕
     tap_text("홈")
     wheel(195, 400, -4000, 1.5)
-    if tap_text("이 집 어디야", 4):
+    if not tap_text("이 집 어디야", 4):
+        tap(325, 290, 4)  # 오늘의 영상 「이 집 어디야」 자리
+    if True:
         shot("가게")
         if tap_text("콕 하기", 1.5):
             shot("가게_콕")
