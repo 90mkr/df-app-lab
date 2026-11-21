@@ -533,7 +533,7 @@ class PlaceMarker extends StatelessWidget {
     final big = rank <= 3;
     final img = cardImg(rank);
     final inner = cardFullW(rank) - 12;
-    const line = kCafeTint; // 모든 카드 테두리·꼬리는 짙은 갈색
+    const line = kLineBrown; // 모든 카드 테두리·꼬리는 짙은 갈색
     final thumb = thumbOf(place);
     return GestureDetector(
       onTap: onTap,
@@ -577,7 +577,7 @@ class PlaceMarker extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
                     Text.rich(
                       TextSpan(children: [
-                        TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kCafeTint : kGray)),
+                        TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kLineBrown : kGray)),
                         if (place.tv.isNotEmpty)
                           const WidgetSpan(
                             alignment: PlaceholderAlignment.middle,
@@ -653,7 +653,8 @@ class FeatChip extends StatelessWidget {
 }
 
 const kFoodTint = Color(0xFFF5822A); // 맛집: 주황
-const kCafeTint = Color(0xFF5C3A21); // 카페: 짙은 갈색
+const kCafeTint = Color(0xFF8A5A33); // 카페: 밝은 갈색 (커피색)
+const kLineBrown = Color(0xFF5C3A21); // 카드 테두리·꼬리·1~3위 숫자: 짙은 갈색
 
 IconData kindIcon(String kind) => kind == 'cafe' ? Icons.local_cafe_outlined : Icons.restaurant_outlined;
 Color kindTint(String kind) => kind == 'cafe' ? kCafeTint : kFoodTint;
