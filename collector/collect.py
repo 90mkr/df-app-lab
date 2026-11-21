@@ -63,22 +63,45 @@ def save_json(path, data):
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def get_json(url, headers=None, tries=4):
+class KakaoDown(Exception):
+    """카카오가 계속 응답하지 않음 → 이번 수집은 멈추고 기존 자료를 그대로 둔다."""
+
+
+KAKAO_FAILS = [0]   # 카카오 연속 실패 수
+KAKAO_LIMIT = 4     # 연속 4번 실패하면 카카오가 멈춘 것으로 본다
+
+
+def check_kakao():
+    if KAKAO_FAILS[0] >= KAKAO_LIMIT:
+        raise KakaoDown()
+
+
+def get_json(url, headers=None, tries=3):
+    kakao = "kakao.com" in url
+    if kakao and KAKAO_FAILS[0] >= KAKAO_LIMIT:
+        raise KakaoDown()   # 이미 멈춘 것으로 확인됨: 기다리지 않고 바로 포기
     for i in range(tries):
         try:
             req = urllib.request.Request(url, headers=headers or {})
-            with urllib.request.urlopen(req, timeout=20) as r:
-                return json.loads(r.read().decode("utf-8"))
+            with urllib.request.urlopen(req, timeout=10) as r:
+                out = json.loads(r.read().decode("utf-8"))
+            if kakao:
+                KAKAO_FAILS[0] = 0
+            return out
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", "ignore")[:300]
             if e.code in (429, 500, 502, 503) and i < tries - 1:
-                time.sleep(2 + i * 3)
+                time.sleep(2 + i * 2)
                 continue
+            if kakao and e.code in (429, 500, 502, 503):
+                KAKAO_FAILS[0] += 1
             raise RuntimeError(f"{e.code} {url[:80]} {body}")
         except Exception:
             if i < tries - 1:
-                time.sleep(3 + i * 4)
+                time.sleep(2 + i * 2)
                 continue
+            if kakao:
+                KAKAO_FAILS[0] += 1
             raise
 
 
@@ -498,12 +521,14 @@ def main():
 
     # 후보 1: 카카오 검색 상위 + 꼭 확인할 가게
     pop = popular_candidates()
+    check_kakao()
     by_id = {c["p"]["id"]: c for c in pop}
     # 후보 2: 송도 전체 음식점·카페 (체인 제외) — 목록은 7일마다만 새로 받는다
     pc = load_json(PLACES_CACHE, {})
     fresh = pc.get("d") and (dt.date.today() - dt.date.fromisoformat(pc["d"])).days < 7 and pc.get("area") == list(AREA)
     if not fresh:
         pc = {"d": dt.date.today().isoformat(), "area": list(AREA), "FD6": collect_places("FD6"), "CE7": collect_places("CE7")}
+        check_kakao()   # 중간에 끊긴 목록은 저장하지 않는다 (멀쩡한 가게가 빠져 보이지 않게)
         save_json(PLACES_CACHE, pc)
     else:
         print(f"가게 목록 재사용 ({pc['d']} 기준)")
@@ -550,6 +575,7 @@ def main():
     with ThreadPoolExecutor(max_workers=8) as ex:
         rows = list(ex.map(one, cands))
     save_json(BLOG_CACHE, bc)
+    check_kakao()
 
     # 구글 별점·리뷰: 무료 범위(월 1,000회) 안에서만 조회한다.
     #  - 한 달 최대 GOOGLE_MONTH회, 하루 최대 GOOGLE_MAX회 (넘으면 저장값 그대로 씀)
@@ -619,6 +645,7 @@ def main():
         with ThreadPoolExecutor(max_workers=8) as ex:
             list(ex.map(deep, detail))
         print(f"블로그 상세 확인 {len(detail)}곳")
+        check_kakao()
 
     # 유튜브: 종류별 상위 후보만 (하루 사용량 한도)
     if YOUTUBE_KEY:
@@ -659,4 +686,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KakaoDown:
+        print("카카오가 응답하지 않아 이번 수집은 여기서 멈춥니다. 앱에는 기존 자료가 그대로 보입니다.")
