@@ -2183,7 +2183,27 @@ class PlaceSheet extends StatelessWidget {
               padding: EdgeInsets.only(top: 6),
               child: Text('구글 지도 기준이라 명절·임시 휴무는 반영되지 않을 수 있습니다.', style: TextStyle(fontSize: 11, color: kGray)),
             ),
-          const SizedBox(height: 22),
+          // 정보 수정 신고 (작게)
+          Align(
+            alignment: Alignment.centerRight,
+            child: Semantics(
+              button: true,
+              label: '정보 수정 신고',
+              excludeSemantics: true,
+              child: TextButton(
+                onPressed: () => showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  barrierColor: Colors.black.withValues(alpha: 0.08),
+                  builder: (_) => ReportSheet(place: p),
+                ),
+                style: TextButton.styleFrom(foregroundColor: kGray, padding: const EdgeInsets.symmetric(horizontal: 4), minimumSize: const Size(0, 32)),
+                child: const Text('정보가 다른가요?  정보 수정 신고', style: TextStyle(fontSize: 11.5, color: kGray, decoration: TextDecoration.underline, decorationColor: kGray)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
           if (p.vids.isNotEmpty) ...[
             const _Title(text: '유튜브 영상'),
             const SizedBox(height: 10),

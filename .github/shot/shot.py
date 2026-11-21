@@ -100,12 +100,24 @@ def run(pg):
     # 영상
     tap_text("영상")
     shot("영상")
+    pg.set_viewport_size({"width": 820, "height": 1180})
+    time.sleep(3)
+    shot("태블릿_영상")
+    pg.set_viewport_size({"width": W, "height": H})
+    time.sleep(2)
     # 이 집 어디야 + 콕
     tap_text("홈")
+    wheel(195, 400, -4000, 1.5)
     if tap_text("이 집 어디야", 4):
         shot("가게")
         if tap_text("콕 하기", 1.5):
             shot("가게_콕")
+        wheel(195, 700, 900, 1.5)
+        if tap_text("정보 수정 신고", 2):
+            tap_text("영업시간", 0.8)
+            shot("정보수정신고")
+            pg.keyboard.press("Escape")
+            time.sleep(1.2)
         pg.keyboard.press("Escape")
         time.sleep(1.5)
     tap_text("내 콕")
@@ -151,35 +163,6 @@ with sync_playwright() as p:
             pg.screenshot(path=f"{OUT}/99_중단.png")
         except Exception:
             pass
-    # 태블릿(세로 820×1180) — 영상은 한 줄에 2개
-    try:
-        pg.set_viewport_size({"width": 820, "height": 1180})
-        time.sleep(3)
-        # 송도로 돌아가기 (영상이 있는 동네)
-        loc = pg.get_by_label("지역", exact=False)
-        if loc.count():
-            bb = loc.first.bounding_box()
-            if bb:
-                pg.mouse.click(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
-                time.sleep(2)
-                l2 = pg.get_by_text("송도/연수", exact=False)
-                for i in range(l2.count()):
-                    b2 = l2.nth(i).bounding_box()
-                    if b2 and b2["y"] > 150:
-                        pg.mouse.click(b2["x"] + b2["width"] / 2, b2["y"] + b2["height"] / 2)
-                        time.sleep(4)
-                        break
-        b = None
-        for lab in ("영상",):
-            loc = pg.get_by_role("button", name=lab, exact=True)
-            if loc.count():
-                b = loc.first.bounding_box()
-        if b:
-            pg.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
-            time.sleep(3)
-        pg.screenshot(path=f"{OUT}/97_태블릿_영상.png")
-    except Exception as e:
-        log.append(f"[태블릿] {e}")
     # 넓은 화면도 한 장
     try:
         pg.set_viewport_size({"width": 1280, "height": 800})

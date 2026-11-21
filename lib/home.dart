@@ -1739,3 +1739,141 @@ class SettingsPage extends StatelessWidget {
     );
   }
 }
+
+// ---- 정보 수정 신고 ----
+// 로그인 기능이 열리기 전까지는 메일로 보낸다 (보낸 사람이 남아 장난 신고가 줄고, 같은 휴대폰에서 같은 가게는 하루 한 번)
+class ReportSheet extends StatefulWidget {
+  final Place place;
+  const ReportSheet({super.key, required this.place});
+  @override
+  State<ReportSheet> createState() => _ReportSheetState();
+}
+
+class _ReportSheetState extends State<ReportSheet> {
+  static const items = ['영업시간', '전화번호', '주소·위치', '폐업·이전', '메뉴·가격', '기타'];
+  final picks = <String>{};
+  final memo = TextEditingController();
+  String note = '';
+  bool sent = false;
+
+  @override
+  void dispose() {
+    memo.dispose();
+    super.dispose();
+  }
+
+  String get todayKey {
+    final t = nowKst();
+    return 'report_${widget.place.id}_${t.year}${t.month.toString().padLeft(2, '0')}${t.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> send() async {
+    SharedPreferences? sp;
+    try {
+      sp = await SharedPreferences.getInstance();
+    } catch (_) {}
+    if (sp?.getBool(todayKey) == true) {
+      setState(() => note = '이 가게는 오늘 이미 신고하셨어요. 내일 다시 보낼 수 있어요.');
+      return;
+    }
+    final p = widget.place;
+    final body = '가게: ${p.name}\n주소: ${p.addr}\n항목: ${picks.join(', ')}\n내용: ${memo.text.trim()}\n\n(콕플 앱에서 보냄 · 가게 번호 ${p.id})';
+    await openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플 정보 수정] ${p.name}')}&body=${Uri.encodeComponent(body)}');
+    try {
+      await sp?.setBool(todayKey, true);
+    } catch (_) {}
+    if (mounted) setState(() => sent = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.place;
+    final inset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: inset),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(20, 10, 20, 20 + MediaQuery.of(context).padding.bottom),
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: kLine, borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              mixTitle(sent ? '신고를 ' : '정보 수정 ', sent ? '보냈어요' : '신고', size: 18),
+              const SizedBox(height: 3),
+              Text(p.name, style: const TextStyle(fontSize: 12, color: kSub)),
+              const SizedBox(height: 14),
+              if (sent) ...[
+                const Text('메일 앱에서 「보내기」를 누르면 접수됩니다.\n확인한 뒤 바로 고칠게요. 알려 주셔서 고맙습니다.', style: TextStyle(fontSize: 13, color: kInk, height: 1.45)),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                        backgroundColor: kInk, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    child: const Text('확인', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ] else ...[
+                const Text('무엇이 다른가요? (여러 개 고를 수 있어요)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: kInk)),
+                const SizedBox(height: 8),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final t in items)
+                    _SegChip(
+                      label: t,
+                      on: picks.contains(t),
+                      onTap: () => setState(() {
+                        if (!picks.remove(t)) picks.add(t);
+                        note = '';
+                      }),
+                    ),
+                ]),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: memo,
+                  minLines: 2,
+                  maxLines: 3,
+                  maxLength: 200,
+                  style: const TextStyle(fontSize: 13.5, color: kInk),
+                  decoration: InputDecoration(
+                    hintText: '어떻게 다른지 짧게 적어 주세요 (선택)',
+                    hintStyle: const TextStyle(fontSize: 13, color: kSub),
+                    counterText: '',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.all(12),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kPillLine, width: 1)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kInk, width: 1)),
+                  ),
+                ),
+                if (note.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(note, style: const TextStyle(fontSize: 12, color: kAccent))),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: TextButton(
+                    onPressed: picks.isEmpty ? null : send,
+                    style: TextButton.styleFrom(
+                      backgroundColor: picks.isEmpty ? const Color(0xFFE9E9EC) : kAccent,
+                      foregroundColor: Colors.white,
+                      disabledForegroundColor: kSub,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('보내기', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text('지금은 메일로 보내져요. 로그인 기능이 열리면 앱 안에서 바로 접수됩니다.', style: TextStyle(fontSize: 10.5, color: kSub)),
+              ],
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}

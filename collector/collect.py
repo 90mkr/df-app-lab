@@ -526,6 +526,31 @@ def find_insta(web):
         return ""
 
 
+FIX_KEYS = ("name", "tel", "addr", "lat", "lng", "cat", "hours", "week", "home", "insta")
+
+
+def apply_fix(all_out):
+    """관리자가 직접 고친 값(manual.json의 fix)은 항목별 잠금: 자동 수집이 옛 정보로 덮어쓰지 못하게 매번 마지막에 다시 씌운다.
+    예) "fix": {"가게 이름 또는 id": {"tel": "032-000-0000", "memo": "11/22 대표님 확인"}} · 폐업은 {"closed": true}
+    잠금을 풀려면 그 항목만 지우면 된다 (다른 항목은 계속 자동 갱신)."""
+    fix = load_json(MANUAL, {}).get("fix", {})
+    if not fix:
+        return all_out
+    out = []
+    for o in all_out:
+        f = fix.get(str(o["id"])) or fix.get(o["name"])
+        if f:
+            if f.get("closed"):
+                print(f"직접 수정: {o['name']} 폐업·이전으로 뺌")
+                continue
+            for k in FIX_KEYS:
+                if k in f:
+                    o[k] = f[k]
+            o["fixed"] = [k for k in FIX_KEYS if k in f]  # 「직접 수정함」 — 관리자 화면에서 잠금 표시
+        out.append(o)
+    return out
+
+
 def insta_fill(all_out, gcache):
     """가게마다 인스타 계정 주소: 관리자가 넣은 것 > 구글 홈페이지가 인스타이거나 홈페이지에 적힌 것 (90일마다 다시 확인)."""
     ic = load_json(INSTA, {})
@@ -1066,6 +1091,7 @@ def main():
           + " / 대형 카페: " + ", ".join(o["name"] for o in all_out if o.get("big"))
           + " / 뷰: " + ", ".join(o["name"] for o in all_out if o.get("view")))
 
+    all_out = apply_fix(all_out)
     try:
         insta_fill(all_out, cache)
     except Exception as e:
