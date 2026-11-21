@@ -114,6 +114,7 @@ def look(ch, pages=3):
             break
     today = dt.date.today()
     dates, addr, store, recent, sample = [], 0, 0, 0, ""
+    uniq = set()
     for it in items:
         sn = it["snippet"]
         d = sn.get("description", "")
@@ -125,11 +126,12 @@ def look(ch, pages=3):
         m = ADDR_RE.search(d)
         if m:
             addr += 1
+            uniq.update(x.group(0) for x in ADDR_RE.finditer(d))
             if not sample and m:
                 sample = d[m.start(): m.start() + 40].replace("\n", " ")
         if STORE_RE.search(d):
             store += 1
-    return {"n": len(items), "last": max(dates) if dates else "", "recent": recent, "addr": addr, "store": store, "sample": sample}
+    return {"n": len(items), "last": max(dates) if dates else "", "recent": recent, "addr": addr, "store": store, "sample": sample, "uniq": len(uniq)}
 
 
 def probe(handles):
@@ -209,7 +211,7 @@ def discover(words, known):
         rows.append((info["addr"] / max(info["n"], 1), int(st.get("subscriberCount", 0)), sn.get("title", ""), sn.get("customUrl", ""), ch["id"], info))
     rows.sort(key=lambda r: (r[0] >= 0.3, r[1]), reverse=True)
     for ratio, subs, title, handle, cid, info in rows:
-        print(f"[찾아보기] {title} ({handle} {cid}) 구독 {subs:,} · 마지막 {info['last']} · 90일 {info['recent']}개 · 주소 {info['addr']}/{info['n']} · 상호표시 {info['store']}/{info['n']}"
+        print(f"[찾아보기] {title} ({handle} {cid}) 구독 {subs:,} · 마지막 {info['last']} · 90일 {info['recent']}개 · 주소 {info['addr']}/{info['n']} (서로 다른 주소 {info['uniq']}곳) · 상호표시 {info['store']}/{info['n']}"
               + (f" · 예: {info['sample']}" if info["sample"] else ""))
 
 
@@ -248,7 +250,7 @@ def main():
             }
             rows.append(row)
             print(f"[{group}] {name} → {row['title']} ({row['handle']}) 구독 {row['subs']:,} · 영상 {row['videos']:,} · "
-                  f"마지막 {row['last']} · 90일 {row['recent']}개 · 주소 {row['addr']}/{row['n']} · 상호표시 {row['store']}/{row['n']} · {how}"
+                  f"마지막 {row['last']} · 90일 {row['recent']}개 · 주소 {row['addr']}/{row['n']} (서로 다른 주소 {row['uniq']}곳) · 상호표시 {row['store']}/{row['n']} · {how}"
                   + (f" · 예: {row['sample']}" if row["sample"] else ""))
     except Stop as e:
         print("중단:", e)
