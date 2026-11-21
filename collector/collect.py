@@ -69,30 +69,42 @@ def kakao_rect(x1, y1, x2, y2, page):
 
 
 def collect_places():
+    """송도 범위를 약 1km 칸으로 나누고, 한 칸에 45곳이 넘으면 4칸씩 3번까지 더 쪼갠다."""
     places = {}
+    calls = [0]
 
-    def walk(x1, y1, x2, y2, depth=0):
+    def fetch_all(x1, y1, x2, y2):
+        docs, page = [], 1
+        while True:
+            res = kakao_rect(x1, y1, x2, y2, page)
+            calls[0] += 1
+            docs += res["documents"]
+            if res["meta"]["is_end"] or page >= 3:
+                return docs, res["meta"]["total_count"]
+            page += 1
+
+    def walk(x1, y1, x2, y2, depth):
         first = kakao_rect(x1, y1, x2, y2, 1)
+        calls[0] += 1
         total = first["meta"]["total_count"]
-        # 한 칸에 45곳 넘으면 4칸으로 쪼갠다
-        if total > 45 and depth < 8:
+        if total > 45 and depth < 3:
             mx, my = (x1 + x2) / 2, (y1 + y2) / 2
             for a in ((x1, y1, mx, my), (mx, y1, x2, my), (x1, my, mx, y2), (mx, my, x2, y2)):
-                walk(*a, depth=depth + 1)
+                walk(*a, depth + 1)
             return
-        docs = list(first["documents"])
-        page = 1
-        meta = first["meta"]
-        while not meta["is_end"] and page < 3:
-            page += 1
-            res = kakao_rect(x1, y1, x2, y2, page)
-            docs += res["documents"]
-            meta = res["meta"]
-            time.sleep(0.05)
+        docs, _ = fetch_all(x1, y1, x2, y2) if total > 15 else (first["documents"], total)
         for d in docs:
             places[d["id"]] = d
 
-    walk(*AREA)
+    x1, y1, x2, y2 = AREA
+    step = 0.0125
+    nx = round((x2 - x1) / step)
+    ny = round((y2 - y1) / step)
+    for i in range(nx):
+        for j in range(ny):
+            cx1, cy1 = x1 + i * step, y1 + j * step
+            walk(round(cx1, 5), round(cy1, 5), round(cx1 + step, 5), round(cy1 + step, 5), 0)
+        print(f"  지도 칸 {i + 1}/{nx} 완료 · 음식점 {len(places)}곳 · 호출 {calls[0]}회")
     return list(places.values())
 
 
