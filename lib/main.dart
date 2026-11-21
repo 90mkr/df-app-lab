@@ -14,7 +14,7 @@ const kGray = Color(0xFF7A808C);
 const kLine = Color(0xFFE3E6EC);
 const kDataUrl = 'https://90mkr.github.io/df-app-lab/data/songdo.json';
 const kCenter = LatLng(37.3905, 126.6430);
-const kTop = 20; // 종류별로 지도에 보이는 수
+const kTop = 10; // 종류별로 지도에 보이는 수
 
 void main() => runApp(const DfApp());
 

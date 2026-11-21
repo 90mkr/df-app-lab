@@ -25,8 +25,8 @@ from concurrent.futures import ThreadPoolExecutor
 AREA = (126.600, 37.355, 126.700, 37.420)
 AREA_NAME = "송도"
 RECENT_DAYS = 90
-YOUTUBE_TOP = int(os.environ.get("YOUTUBE_TOP", "30"))  # 종류별 유튜브 확인 수
-TOP_N = int(os.environ.get("TOP_N", "20"))  # 종류별로 앱에 남기는 수
+YOUTUBE_TOP = int(os.environ.get("YOUTUBE_TOP", "25"))  # 종류별 유튜브 확인 수
+TOP_N = int(os.environ.get("TOP_N", "10"))  # 종류별로 앱에 남기는 수
 KINDS = [("food", "FD6", "맛집"), ("cafe", "CE7", "카페")]
 OUT = os.path.join(os.path.dirname(__file__), "..", "web", "data", "songdo.json")
 
@@ -169,9 +169,25 @@ def blog_home(url):
     return m.group(1) if m else ""
 
 
-def blog_stats(place):
+def branch_token(name, base):
+    """지점 이름에서 구별 글자만 뽑는다. 예: 스타벅스 송도호반써밋점 → 호반써밋"""
+    rest = name.strip()[len(base):].strip() if name.strip().startswith(base) else ""
+    full = norm(rest)  # 예: 송도점
+    rest = re.sub(r"(직영|본)?점$", "", rest)
+    rest = re.sub(r"^(인천)?(송도)?", "", rest).strip()
+    # 구별 글자가 없으면(송도점) 「송도점」이라는 말 자체를 요구한다
+    return norm(rest) or full
+
+
+def blog_stats(place, chain=False):
     base = base_name(place["place_name"])
     key = norm(base)
+    # 두 글자 이하 이름(봄, 숲, 정원…)은 엉뚱한 글이 너무 많이 잡혀 판단 불가 → 제외
+    if len(key) < 3:
+        return [], 0, 0, ""
+    branch = branch_token(place["place_name"], base) if chain else ""
+    if chain and len(branch) < 2:
+        return [], 0, 0, ""
     query = f"{AREA_NAME} {base}"
     res = naver_blog(query) if (NAVER_ID and NAVER_SECRET) else kakao_blog(query)
     since = (dt.date.today() - dt.timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
@@ -184,6 +200,9 @@ def blog_stats(place):
                 home = blog_home(it.get("link"))
             continue
         if key not in norm(title + desc):
+            continue
+        # 같은 상호 여러 지점이면 그 지점 이름이 글에 있어야 한다
+        if branch and branch not in norm(title + desc):
             continue
         if (it.get("postdate") or "0") < since:
             continue
@@ -245,10 +264,14 @@ def rank_kind(kind, code, label, prev):
     places = collect_places(code)
     print(f"[{label}] 카카오 {len(places)}곳")
     done = [0]
+    counts = {}
+    for p in places:
+        b = norm(base_name(p["place_name"]))
+        counts[b] = counts.get(b, 0) + 1
 
     def one(p):
         try:
-            posts, ads, est, home = blog_stats(p)
+            posts, ads, est, home = blog_stats(p, counts.get(norm(base_name(p["place_name"])), 0) > 1)
         except Exception as e:
             print("블로그 실패", p["place_name"], str(e)[:120])
             posts, ads, est, home = [], 0, 0, ""
