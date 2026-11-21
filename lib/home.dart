@@ -633,7 +633,18 @@ Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLin
       child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
         mixTitle(bold, light),
         const Spacer(),
-        if (link != null) GestureDetector(onTap: onLink, child: Text(link, style: const TextStyle(fontSize: 11, color: kSub))),
+        if (link != null)
+          Semantics(
+            button: true,
+            label: link,
+            onTap: onLink,
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: onLink,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(padding: const EdgeInsets.fromLTRB(10, 6, 0, 2), child: Text(link, style: const TextStyle(fontSize: 11, color: kSub))),
+            ),
+          ),
       ]),
     );
 

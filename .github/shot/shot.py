@@ -85,7 +85,7 @@ def run(pg):
     # 테마 코스
     tap_text("홈", 1.5)
     wheel(195, 400, -4000, 1)
-    wheel(195, 560, 2500)
+    wheel(195, 560, 3400)
     if tap_text("먹방 유튜버 코스", 5) or tap_text("인기 맛집 하루 코스", 5):
         shot("코스_지도")
         if tap_text("순서 보기", 2.5, exact=False):
