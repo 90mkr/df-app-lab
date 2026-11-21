@@ -183,10 +183,10 @@ def naver_blog(query):
     })
 
 
-def kakao_blog(query):
+def kakao_blog(query, pages=2):
     """다음(카카오) 블로그 검색 — 네이버 블로그·티스토리 글도 함께 잡힌다. 네이버 검색과 같은 모양으로 바꿔 돌려준다."""
     items, ended = [], False
-    for page in (1, 2):
+    for page in range(1, pages + 1):
         q = urllib.parse.urlencode({"query": query, "sort": "recency", "size": 50, "page": page})
         res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
         for d in res.get("documents", []):
@@ -226,7 +226,7 @@ def branch_token(name, base):
     return norm(rest) or full
 
 
-def blog_stats(place, chain=False):
+def blog_stats(place, chain=False, pages=2):
     base = base_name(place["place_name"])
     key = norm(base)
     # 두 글자 이하 이름(봄, 숲, 정원…)은 엉뚱한 글이 너무 많이 잡혀 판단 불가 → 제외
@@ -236,7 +236,7 @@ def blog_stats(place, chain=False):
     if chain and len(branch) < 2:
         return [], 0, 0, ""
     query = f"{AREA_NAME} {base}"
-    res = naver_blog(query) if (NAVER_ID and NAVER_SECRET) else kakao_blog(query)
+    res = naver_blog(query) if (NAVER_ID and NAVER_SECRET) else kakao_blog(query, pages)
     since = (dt.date.today() - dt.timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
     clean_posts, ad_count, home = [], 0, ""
     for it in res.get("items", []):
@@ -463,10 +463,20 @@ def main():
     print(f"블로그 확인 대상 {len(cands)}곳")
     done = [0]
 
+    today0 = dt.date.today()
+
+    def known_small(pid):
+        h = cache.get(str(pid))
+        return h and h.get("n", 0) < MIN_REVIEWS and (today0 - dt.date.fromisoformat(h["d"])).days < GOOGLE_DAYS
+
     def one(c):
         p = c["p"]
+        kind = "cafe" if p.get("category_group_code") == "CE7" else "food"
+        if known_small(p["id"]):  # 구글 리뷰가 적다고 이미 확인된 곳은 건너뛴다
+            return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": 0,
+                    "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
         try:
-            posts, ads, est, home = blog_stats(p)
+            posts, ads, est, home = blog_stats(p, pages=1)
         except Exception as e:
             print("블로그 실패", p["place_name"], str(e)[:120])
             posts, ads, est, home = [], 0, 0, ""
@@ -477,7 +487,7 @@ def main():
         return {"p": p, "kind": kind, "pop": c["pop"], "posts": posts, "ads": ads, "est": est,
                 "home": home, "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
 
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    with ThreadPoolExecutor(max_workers=8) as ex:
         rows = list(ex.map(one, cands))
 
     # 구글 별점·리뷰: 카카오 인기 후보 + 블로그 상위 위주로, 저장해 둔 값은 2주간 재사용
@@ -511,6 +521,21 @@ def main():
         use_google = have >= 20
         with open(CACHE, "w", encoding="utf-8") as f:
             json.dump(cache, f, ensure_ascii=False, separators=(",", ":"))
+
+    # 2단계: 순위 후보(구글 리뷰 충분한 곳)만 블로그를 자세히(2쪽) 다시 본다
+    if use_google:
+        detail = [r for r in rows if r["g"]["n"] >= MIN_REVIEWS]
+
+        def deep(r):
+            try:
+                r["posts"], r["ads"], r["est"], h = blog_stats(r["p"], pages=2)
+                r["home"] = r["home"] or h
+            except Exception as e:
+                print("블로그 상세 실패", r["p"]["place_name"], str(e)[:100])
+
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            list(ex.map(deep, detail))
+        print(f"블로그 상세 확인 {len(detail)}곳")
 
     # 유튜브: 종류별 상위 후보만 (하루 사용량 한도)
     if YOUTUBE_KEY:
