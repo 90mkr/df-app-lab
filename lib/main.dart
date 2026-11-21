@@ -641,36 +641,37 @@ class PlaceMarker extends StatelessWidget {
   }
 }
 
-// 편의 정보: 코드 → (아이콘, 이름)
-const kFeat = <String, (IconData, String)>{
-  'park': (Icons.local_parking_outlined, '주차'),
-  'dog': (Icons.pets_outlined, '애견 동반'),
-  'kid': (Icons.child_care_outlined, '아이 동반'),
-  'resv': (Icons.event_available_outlined, '예약'),
-  'take': (Icons.takeout_dining_outlined, '포장'),
-  'deliv': (Icons.delivery_dining_outlined, '배달'),
-  'out': (Icons.deck_outlined, '야외석'),
-  'group': (Icons.groups_outlined, '단체석'),
-  'wheel': (Icons.accessible_outlined, '휠체어'),
+// 편의 정보: 코드 → (아이콘, 이름, 색) — 둥근 사각형 칸에 색 아이콘
+const kFeat = <String, (IconData, String, Color)>{
+  'park': (Icons.local_parking_rounded, '주차', Color(0xFF2F6BFF)),
+  'dog': (Icons.pets_rounded, '애견 동반', Color(0xFFF08A24)),
+  'kid': (Icons.child_care_rounded, '아이 동반', Color(0xFFE8558A)),
+  'resv': (Icons.event_available_rounded, '예약', Color(0xFF7A5AF8)),
+  'take': (Icons.takeout_dining_rounded, '포장', Color(0xFFD9930D)),
+  'deliv': (Icons.delivery_dining_rounded, '배달', Color(0xFFE5484D)),
+  'out': (Icons.deck_rounded, '야외석', Color(0xFF1BA3C6)),
+  'group': (Icons.groups_rounded, '단체석', Color(0xFF5B6B86)),
+  'wheel': (Icons.accessible_rounded, '휠체어', Color(0xFF2F6BFF)),
 };
 
-class FeatChip extends StatelessWidget {
+class FeatTile extends StatelessWidget {
   final IconData icon;
   final String label;
-  const FeatChip({super.key, required this.icon, required this.label});
+  final Color color;
+  const FeatTile({super.key, required this.icon, required this.label, required this.color});
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(9, 5, 12, 5),
+      width: 62,
+      height: 62,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kLine, width: 1),
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 15, color: kInk),
-        const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: kInk, height: 1.2)),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(icon, size: 25, color: color),
+        const SizedBox(height: 4),
+        Text(label, maxLines: 1, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: kInk, height: 1.1)),
       ]),
     );
   }
@@ -949,10 +950,10 @@ class PlaceSheet extends StatelessWidget {
             ),
           if (p.addr.isNotEmpty) Text(p.addr, style: const TextStyle(fontSize: 13, color: kInk, height: 1.4)),
           if (p.feat.any(kFeat.containsKey)) ...[
-            const SizedBox(height: 10),
-            Wrap(spacing: 6, runSpacing: 6, children: [
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
               for (final f in p.feat)
-                if (kFeat[f] != null) FeatChip(icon: kFeat[f]!.$1, label: kFeat[f]!.$2),
+                if (kFeat[f] != null) FeatTile(icon: kFeat[f]!.$1, label: kFeat[f]!.$2, color: kFeat[f]!.$3),
             ]),
           ],
           const SizedBox(height: 14),
