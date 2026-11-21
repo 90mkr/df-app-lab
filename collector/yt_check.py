@@ -1,6 +1,6 @@
 """유명 유튜버 따라가기 — 채널 후보 확인 (한 번만 돌려 보는 점검)
 
-채널마다: 실제 채널 찾기(핸들 → 없으면 이름 검색), 구독자·영상 수, 최근 영상 50개 중
+채널마다: 실제 채널 찾기(핸들 → 없으면 이름 검색), 구독자·영상 수, 최근 영상 150개 중
 설명란에 가게 주소·상호가 적힌 영상 수, 마지막 업로드 날짜를 적는다.
 유튜브 사용량: 핸들 찾기 1, 이름 검색 100, 최근 영상 50개 1 (모두 합쳐 몇천 이하).
 """
@@ -98,9 +98,18 @@ def find(handles, q, cid):
     return (it[0] if it else None), f"검색({others})"
 
 
-def look(ch):
+def look(ch, pages=3):
     up = ch["contentDetails"]["relatedPlaylists"]["uploads"]
-    items = get("playlistItems", part="snippet", playlistId=up, maxResults=50).get("items", [])
+    items, token = [], ""
+    for _ in range(pages):  # 최근 영상 150개까지 (한 번에 50개, 1씩)
+        q = {"part": "snippet", "playlistId": up, "maxResults": 50}
+        if token:
+            q["pageToken"] = token
+        res = get("playlistItems", **q)
+        items += res.get("items", [])
+        token = res.get("nextPageToken", "")
+        if not token:
+            break
     today = dt.date.today()
     dates, addr, store, recent, sample = [], 0, 0, 0, ""
     for it in items:
@@ -137,7 +146,11 @@ def main():
                 print(f"[{group}] {name} → {how}")
                 continue
             st, sn = ch.get("statistics", {}), ch["snippet"]
-            info = look(ch)
+            try:
+                info = look(ch)
+            except RuntimeError as e:
+                print(f"[{group}] {name} → {sn.get('title', '')} 영상 목록 오류 {str(e)[:80]}")
+                continue
             row = {
                 "group": group, "name": name, "title": sn.get("title", ""), "handle": sn.get("customUrl", ""), "id": ch["id"],
                 "subs": int(st.get("subscriberCount", 0) or 0), "videos": int(st.get("videoCount", 0) or 0), "how": how, **info,
