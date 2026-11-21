@@ -381,7 +381,12 @@ def durations(vids, cache):
 
 # ---------- 결과 ----------
 
+CLOSED = re.compile(r"폐업|휴업|영업\s*종료|문\s*닫")
+
+
 def build(chs, info, cache):
+    # 설명란에 「폐업」이라고 적힌 가게는 빼기 (카카오 이름에는 표시가 없을 수 있어 설명란 이름으로 본다)
+    closed = {pid for k, pid in cache["r"].items() if pid and CLOSED.search(k.split("|")[0])}
     by_ch = {}
     for vid, v in cache["v"].items():
         for k in v.get("p", []):
@@ -390,8 +395,8 @@ def build(chs, info, cache):
     for cid, ks in by_ch.items():
         nm = info.get(cid, {}).get("name", "")
         for k, vs in ks.items():
-            if len(vs) >= BOILER:
-                continue   # 회사·문의 주소
+            if len(vs) >= BOILER or k in closed:
+                continue   # 회사·문의 주소, 폐업
             p = cache["pl"].get(k)
             if not p:
                 continue
