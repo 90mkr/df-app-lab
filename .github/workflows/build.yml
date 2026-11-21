@@ -7,6 +7,11 @@ on:
     # 매일 새벽 4시 37분(한국 시각)에 맛집 자료를 새로 모은다
     - cron: '37 19 * * *'
   workflow_dispatch:
+    inputs:
+      areas:
+        description: '이번에 모을 동네 (쉼표로, 비우면 전부)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -26,19 +31,20 @@ jobs:
         uses: actions/checkout@v7
 
       - name: 송도 맛집 자료 모으기
-        timeout-minutes: 20
+        timeout-minutes: 45
         env:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
+          AREAS: ${{ inputs.areas }}
         run: python3 -u collector/collect.py
 
       - name: 모은 자료 저장
         run: |
           git config user.name "df-app-lab"
           git config user.email "dfmail@naver.com"
-          git add -f web/data/songdo.json web/data/google_cache.json collector/places_cache.json collector/blog_cache.json collector/google_usage.json collector/tv_cache.json 2>/dev/null || git add web/data/songdo.json
+          git add -f web/data/*.json collector/*.json
           git commit -m "송도 맛집 자료 갱신" || exit 0
           git pull --rebase origin main
           git push

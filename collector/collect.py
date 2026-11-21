@@ -21,14 +21,23 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-# 송도 일대 범위 (서쪽 경도, 남쪽 위도, 동쪽 경도, 북쪽 위도)
+# 지금 모으는 동네 (run_all이 regions.json의 동네마다 바꿔 끼운다)
+# 범위: (서쪽 경도, 남쪽 위도, 동쪽 경도, 북쪽 위도)
 AREA = (126.590, 37.355, 126.705, 37.445)  # 송도국제도시 + 송도유원지·동춘동 쪽까지
-AREA_NAME = "송도"
+AREA_NAME = "송도"      # 검색어 앞에 붙이는 동네 이름
+AREA_ID = "songdo"
+AREA_LABEL = "송도/연수"
+EXTRA_Q = []            # 그 동네만의 검색어 (통째로 검색)
+NEW_AREA = False        # 처음 여는 동네면 구글 조회를 한 번에 더 많이
+REGIONS = os.path.join(os.path.dirname(__file__), "..", "web", "data", "regions.json")
+GOOGLE_PER_AREA = 150   # 동네마다 구글로 확인하는 후보 상한 (블로그·인기 상위부터)
+GOOGLE_NEW_MAX = 160    # 처음 여는 동네는 한 번에 이만큼까지
 RECENT_DAYS = 90
 YOUTUBE_TOP = int(os.environ.get("YOUTUBE_TOP", "25"))  # 종류별 유튜브 확인 수
 TOP_N = int(os.environ.get("TOP_N", "20"))  # 종류별로 앱에 남기는 수
 KINDS = [("food", "FD6", "맛집"), ("cafe", "CE7", "카페")]
-OUT = os.path.join(os.path.dirname(__file__), "..", "web", "data", "songdo.json")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "web", "data")
+OUT = os.path.join(DATA_DIR, "songdo.json")
 
 AD_WORDS = ["협찬", "체험단", "원고료", "소정의", "제공받", "지원받", "광고", "업체로부터", "서포터즈", "무료로 제공"]
 
@@ -492,12 +501,12 @@ def short_category(cat):
 
 QUERIES = [
     "맛집", "맛집 추천", "현지인 맛집", "데이트 맛집", "가족 외식", "회식",
-    "한식", "고기집", "일식", "중식", "양식", "파스타", "브런치", "센트럴파크 맛집", "트리플스트리트 맛집",
+    "한식", "고기집", "일식", "중식", "양식", "파스타", "브런치",
     "카페", "대형카페", "베이커리 카페", "브런치 카페", "디저트 카페", "뷰 카페", "분위기 좋은 카페", "빵집",
     "핫플", "가볼만한곳", "대형 베이커리카페", "식물원 카페",
 ]
 
-# 대표님이 직접 짚어 준, 꼭 후보에 넣어 볼 가게
+# 대표님이 직접 짚어 준, 꼭 후보에 넣어 볼 가게 (동네마다 regions.json의 must)
 MUST = ["포레스트아웃팅스"]
 
 # 지점 안내가 될 뿐인 전국 체인은 뺀다
@@ -523,11 +532,11 @@ def is_chain(name):
 def popular_candidates():
     """여러 검색어로 카카오 검색 상위 45곳씩 모아, 자주·높게 나온 곳일수록 인기 점수를 준다."""
     cands = {}
-    for q in QUERIES:
+    for q in [f"{AREA_NAME} {x}" for x in QUERIES] + EXTRA_Q:
         rank = 0
         for page in (1, 2, 3):
             try:
-                res = kakao_keyword(f"{AREA_NAME} {q}", page)
+                res = kakao_keyword(q, page)
             except Exception as e:
                 print(f"  검색 건너뜀 ({q}):", str(e)[:80])
                 break
@@ -559,7 +568,7 @@ def popular_candidates():
                        {"Authorization": f"KakaoAK {KAKAO_KEY}"})
         for d in res.get("documents", []):
             inside = x1 <= float(d["x"]) <= x2 and y1 <= float(d["y"]) <= y2
-            print("  직접 확인:", d["place_name"], "/", d.get("category_name"), "/", d.get("road_address_name"), "/ 송도 범위", "안" if inside else "밖")
+            print("  직접 확인:", d["place_name"], "/", d.get("category_name"), "/", d.get("road_address_name"), f"/ {AREA_LABEL} 범위", "안" if inside else "밖")
             if inside and d["id"] not in cands:
                 if d.get("category_group_code") not in ("FD6", "CE7"):
                     d["category_group_code"] = "CE7" if "카페" in (d.get("category_name") or "") or "베이커리" in (d.get("category_name") or "") else "FD6"
@@ -660,12 +669,16 @@ def main():
     check_kakao()
     by_id = {c["p"]["id"]: c for c in pop}
     # 후보 2: 송도 전체 음식점·카페 (체인 제외) — 목록은 7일마다만 새로 받는다
-    pc = load_json(PLACES_CACHE, {})
+    allpc = load_json(PLACES_CACHE, {})
+    if "FD6" in allpc:  # 예전 형식(송도 하나)
+        allpc = {"songdo": allpc}
+    pc = allpc.get(AREA_ID, {})
     fresh = pc.get("d") and (dt.date.today() - dt.date.fromisoformat(pc["d"])).days < 7 and pc.get("area") == list(AREA)
     if not fresh:
         pc = {"d": dt.date.today().isoformat(), "area": list(AREA), "FD6": collect_places("FD6"), "CE7": collect_places("CE7")}
         check_kakao()   # 중간에 끊긴 목록은 저장하지 않는다 (멀쩡한 가게가 빠져 보이지 않게)
-        save_json(PLACES_CACHE, pc)
+        allpc[AREA_ID] = pc
+        save_json(PLACES_CACHE, allpc)
     else:
         print(f"가게 목록 재사용 ({pc['d']} 기준)")
     for code in ("FD6", "CE7"):
@@ -727,7 +740,9 @@ def main():
         used = usage.get(month, 0)
         ranked = set(prev.keys())
         pri = sorted(rows, key=lambda r: (r["pop"] > 0, r["est"]), reverse=True)
-        pri = [r for r in pri if r["pop"] > 0 or r["est"] >= 3 or str(r["p"]["id"]) in ranked][:600]
+        keep = [r for r in pri if str(r["p"]["id"]) in ranked]
+        rest = [r for r in pri if str(r["p"]["id"]) not in ranked and (r["pop"] > 0 or r["est"] >= 3)]
+        pri = keep + rest[:max(0, GOOGLE_PER_AREA - len(keep))]
         need = []
         for r in pri:
             pid = str(r["p"]["id"])
@@ -747,7 +762,7 @@ def main():
         need.sort(key=lambda t: (t[0], t[1]))
         new_calls, fails = 0, 0
         for _, _, r in need:
-            if new_calls >= GOOGLE_MAX or used + new_calls >= GOOGLE_MONTH:
+            if new_calls >= (GOOGLE_NEW_MAX if NEW_AREA else GOOGLE_MAX) or used + new_calls >= GOOGLE_MONTH:
                 break
             pid = str(r["p"]["id"])
             try:
@@ -882,7 +897,8 @@ def main():
           + " / 뷰: " + ", ".join(o["name"] for o in all_out if o.get("view")))
 
     data = {
-        "area": AREA_NAME,
+        "area": AREA_LABEL,
+        "area_id": AREA_ID,
         "updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
         "recent_days": RECENT_DAYS,
         "basis": "google" if use_google else "kakao",
@@ -896,8 +912,47 @@ def main():
     print(f"저장 완료: {len(all_out)}곳 ({os.path.getsize(OUT) // 1024}KB), 기준: {data['basis']}")
 
 
+def run_all():
+    """regions.json에서 collect가 켜진 동네를 차례로 모은다. 자료가 잘 나오면 그 동네를 앱에서 열 수 있게(ready) 한다."""
+    global AREA, AREA_NAME, AREA_ID, AREA_LABEL, EXTRA_Q, MUST, OUT, NEW_AREA
+    regions = load_json(REGIONS, {})
+    areas = [a for s in regions.get("sido", []) for a in s.get("areas", []) if a.get("collect")]
+    only = [x for x in os.environ.get("AREAS", "").split(",") if x]
+    if only:
+        areas = [a for a in areas if a["id"] in only]
+    for a in areas:
+        AREA = tuple(a["bbox"])
+        AREA_NAME = a.get("q") or a["name"]
+        AREA_ID = a["id"]
+        AREA_LABEL = a["name"]
+        EXTRA_Q = a.get("extra", [])
+        MUST = a.get("must", [])
+        OUT = os.path.join(DATA_DIR, f"{a['id']}.json")
+        NEW_AREA = not a.get("ready")
+        if NEW_AREA:
+            # 새 동네는 이번 달 구글 무료량이 넉넉히 남았을 때만 시작한다 (모자라면 다음 달 1일에 저절로 시작)
+            used = load_json(USAGE, {}).get(dt.date.today().strftime("%Y-%m"), 0)
+            if GOOGLE_MONTH - used < 120:
+                print(f"\n{a['name']}: 이번 달 구글 무료량이 {GOOGLE_MONTH - used}번 남아 다음 달에 시작합니다")
+                continue
+        KAKAO_FAILS[0] = 0
+        BLOG_UP[0] = True
+        print(f"\n========== {AREA_LABEL} ({AREA_ID}) {'처음 여는 동네' if NEW_AREA else ''} ==========")
+        try:
+            main()
+        except KakaoDown:
+            print("카카오가 응답하지 않아 이 동네는 여기서 멈춥니다. 앱에는 기존 자료가 그대로 보입니다.")
+            continue
+        try:
+            with open(OUT, encoding="utf-8") as f:
+                n = len(json.load(f).get("places", []))
+        except Exception:
+            n = 0
+        if n >= 10 and not a.get("ready"):
+            a["ready"] = True
+            print(f"{AREA_LABEL}: {n}곳 — 이제 앱에서 열 수 있습니다")
+    save_json(REGIONS, regions)
+
+
 if __name__ == "__main__":
-    try:
-        main()
-    except KakaoDown:
-        print("카카오가 응답하지 않아 이번 수집은 여기서 멈춥니다. 앱에는 기존 자료가 그대로 보입니다.")
+    run_all()
