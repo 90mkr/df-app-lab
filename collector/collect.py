@@ -358,6 +358,33 @@ def big_check(name):
     return near >= 2
 
 
+VIEW_KEYS = ("오션뷰", "바다뷰", "공원뷰", "호수뷰", "시티뷰", "센트럴파크뷰", "뷰맛집", "뷰카페", "뷰가좋", "뷰좋은", "전망좋", "전망이좋", "야경")
+
+
+def view_check(name):
+    """뷰 맛집·오션뷰 카페: 전망 이야기가 가게 이름 가까이 나오는 글이 2개 이상(또는 제목 1개)."""
+    base = base_name(name)
+    key = norm(base)
+    if len(key) < 3:
+        return False
+    q = urllib.parse.urlencode({"query": f"{base} {AREA_NAME} 뷰", "sort": "accuracy", "size": 50})
+    res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
+    near = 0
+    for d in res.get("documents", []):
+        title = norm(clean(d.get("title")))
+        text = title + "|" + norm(clean(d.get("contents")))
+        spots = [m.start() for m in re.finditer(re.escape(key), text)]
+        if not spots:
+            continue
+        if key in title and any(k in title for k in VIEW_KEYS):
+            return True
+        for k in VIEW_KEYS:
+            if any(abs(m.start() - sp) <= TV_NEAR for m in re.finditer(k, text) for sp in spots):
+                near += 1
+                break
+    return near >= 2
+
+
 def blog_home(url):
     """글 주소에서 블로그 첫 화면 주소를 뽑는다."""
     m = re.match(r"https?://(?:m\.)?blog\.naver\.com/([^/?#]+)", url or "")
@@ -563,33 +590,42 @@ def build_list(kind, rows, top_n, use_google):
             r["raw"] = 0.5 * (r["pop"] / max_pop) + 0.35 * b_ + 0.15 * v_
     rows.sort(key=lambda r: r["raw"], reverse=True)
     top = rows[0]["raw"] or 1
-    out = []
+    for r in rows:
+        r["score"] = round(100 * r["raw"] / top)
     for r in rows[:top_n]:
-        p = r["p"]
-        out.append({
-            "id": p["id"],
-            "kind": kind,
-            "name": p["place_name"],
-            "cat": short_category(p.get("category_name")),
-            "lat": float(p["y"]),
-            "lng": float(p["x"]),
-            "addr": p.get("road_address_name") or p.get("address_name"),
-            "tel": p.get("phone"),
-            "kakao": p.get("place_url"),
-            "home": r["home"],
-            "blog": r["est"],
-            "ads": r["ads"],
-            "grate": r["g"]["r"],
-            "greviews": r["g"]["n"],
-            "gurl": r["g"]["u"],
-            "score": round(100 * r["raw"] / top),
-            "posts": r["posts"][:6],
-            "vids": r["vids"],
-            "hours": r["g"].get("h", []),
-            "week": r["g"].get("w", []),
-            "feat": r["g"].get("f", []),
-        })
-    return out
+        r["top"] = True
+    return [to_out(r) for r in rows[:top_n]]
+
+
+def to_out(r):
+    p = r["p"]
+    return {
+        "id": p["id"],
+        "kind": r["kind"],
+        "name": p["place_name"],
+        "cat": short_category(p.get("category_name")),
+        "lat": float(p["y"]),
+        "lng": float(p["x"]),
+        "addr": p.get("road_address_name") or p.get("address_name"),
+        "tel": p.get("phone"),
+        "kakao": p.get("place_url"),
+        "home": r["home"],
+        "blog": r["est"],
+        "ads": r["ads"],
+        "grate": r["g"]["r"],
+        "greviews": r["g"]["n"],
+        "gurl": r["g"]["u"],
+        "score": r.get("score", 0),
+        "top": bool(r.get("top")),
+        "rise": bool(r.get("rise")),
+        "r30": r.get("r30", 0),
+        "rr": r.get("rr", 0),
+        "posts": r["posts"][:6],
+        "vids": r["vids"],
+        "hours": r["g"].get("h", []),
+        "week": r["g"].get("w", []),
+        "feat": r["g"].get("f", []),
+    }
 
 
 def main():
@@ -755,6 +791,36 @@ def main():
         print(f"블로그 상세 확인 {len(detail)}곳")
         check_kakao()
 
+    # 새로 뜨는 집: 최근 30일 글 수가 그 전(31~90일) 하루 평균보다 1.8배 이상 늘었거나, 그 전엔 글이 없다가 새로 생긴 집
+    if use_google and BLOG_UP[0]:
+        today_s = dt.date.today()
+        cand = []
+        for r in rows:
+            if r["g"]["n"] < MIN_REVIEWS or not r["posts"]:
+                continue
+            ds = sorted(dt.datetime.strptime(x["date"], "%Y%m%d").date() for x in r["posts"] if (x.get("date") or "").isdigit())
+            if not ds:
+                continue
+            span = min(RECENT_DAYS, (today_s - ds[0]).days)
+            r30 = sum(1 for x in ds if (today_s - x).days <= 30)
+            older = len(ds) - r30
+            r["r30"] = r30
+            if r30 < 6:
+                continue
+            if older == 0:
+                ratio = 9.9 if span <= 30 else 5.0  # 그 전엔 글이 없던 새 가게
+            elif span <= 40:
+                continue  # 글이 너무 많아 비교할 기간이 안 됨 (원래 인기 많은 집)
+            else:
+                ratio = (r30 / 30) / (older / (span - 30))
+            if ratio >= 1.8:
+                r["rr"] = round(ratio, 1)
+                cand.append(r)
+        cand.sort(key=lambda r: (r["rr"], r["r30"]), reverse=True)
+        for r in cand[:12]:
+            r["rise"] = True
+        print("새로 뜨는 집: " + ", ".join(f"{r['p']['place_name']}({r['r30']}건, {r['rr']}배)" for r in cand[:12]))
+
     # 유튜브: 종류별 상위 후보만 (하루 사용량 한도)
     if YOUTUBE_KEY:
         stop = False
@@ -782,6 +848,8 @@ def main():
                 o["home"] = o["home"] or old.get("home", "")
         all_out += out
         print(f"[{label}] " + " / ".join(f"{o['name']}({o['score']}, 구글 {o['greviews']})" for o in out))
+    tops = {o["id"] for o in all_out}
+    all_out += [to_out(r) for r in rows if r.get("rise") and r["p"]["id"] not in tops]
 
     # 방송 출연·대형 카페: 순위에 든 집만, 한 달에 한 번 (카카오가 멈추면 지난 결과를 그대로 씀)
     tvc = load_json(TV_CACHE, {})
@@ -789,22 +857,29 @@ def main():
     for o in all_out:
         pid = str(o["id"])
         h = tvc.get(pid)
+        if not o.get("top"):
+            o["tv"], o["big"], o["view"] = (h or {}).get("t", []), bool((h or {}).get("b")), bool((h or {}).get("v"))
+            continue
         stale = not (h and (dt.date.today() - dt.date.fromisoformat(h["d"])).days < TV_DAYS)
-        need_big = o["kind"] == "cafe" and (stale or "b" not in (h or {}))
-        if BLOG_UP[0] and (stale or need_big):
+        old = h or {}
+        need = stale or "v" not in old or (o["kind"] == "cafe" and "b" not in old)
+        if BLOG_UP[0] and need:
             try:
-                t = tv_check(o["name"]) if stale else h.get("t", [])
-                b = big_check(o["name"]) if o["kind"] == "cafe" else False
-                h = {"t": t, "b": b, "d": dt.date.today().isoformat() if stale else h["d"]}
+                t = tv_check(o["name"]) if (stale or "t" not in old) else old["t"]
+                b = (big_check(o["name"]) if (stale or "b" not in old) else old["b"]) if o["kind"] == "cafe" else False
+                v = view_check(o["name"]) if (stale or "v" not in old) else old["v"]
+                h = {"t": t, "b": b, "v": v, "d": dt.date.today().isoformat() if stale else old["d"]}
                 tvc[pid] = h
                 checked += 1
             except Exception as e:
-                print("방송·대형 확인 실패", o["name"], str(e)[:80])
+                print("방송·대형·뷰 확인 실패", o["name"], str(e)[:80])
         o["tv"] = (h or {}).get("t", [])
         o["big"] = bool((h or {}).get("b", False))
+        o["view"] = bool((h or {}).get("v", False))
     save_json(TV_CACHE, tvc)
     print(f"방송·대형 확인 {checked}곳 새로, 방송 나온 집: " + ", ".join(f"{o['name']}({'·'.join(o['tv'])})" for o in all_out if o["tv"])
-          + " / 대형 카페: " + ", ".join(o["name"] for o in all_out if o.get("big")))
+          + " / 대형 카페: " + ", ".join(o["name"] for o in all_out if o.get("big"))
+          + " / 뷰: " + ", ".join(o["name"] for o in all_out if o.get("view")))
 
     data = {
         "area": AREA_NAME,
