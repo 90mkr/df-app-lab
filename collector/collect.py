@@ -59,7 +59,7 @@ def save_json(path, data):
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def get_json(url, headers=None, tries=3):
+def get_json(url, headers=None, tries=4):
     for i in range(tries):
         try:
             req = urllib.request.Request(url, headers=headers or {})
@@ -73,7 +73,7 @@ def get_json(url, headers=None, tries=3):
             raise RuntimeError(f"{e.code} {url[:80]} {body}")
         except Exception:
             if i < tries - 1:
-                time.sleep(2)
+                time.sleep(3 + i * 4)
                 continue
             raise
 
@@ -360,7 +360,11 @@ def popular_candidates():
     for q in QUERIES:
         rank = 0
         for page in (1, 2, 3):
-            res = kakao_keyword(f"{AREA_NAME} {q}", page)
+            try:
+                res = kakao_keyword(f"{AREA_NAME} {q}", page)
+            except Exception as e:
+                print(f"  검색 건너뜀 ({q}):", str(e)[:80])
+                break
             for d in res.get("documents", []):
                 rank += 1
                 code = d.get("category_group_code")
