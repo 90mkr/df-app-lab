@@ -257,7 +257,15 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: log.append(f"[페이지 오류] {str(e)[:300]}"))
     try:
         pg.goto(URL, wait_until="load", timeout=120000)
-        time.sleep(12)
+        # 인트로: 첫 화면부터 앱이 뜰 때까지 짧게 여러 장
+        t0 = time.time()
+        for i in range(14):
+            time.sleep(0.45)
+            try:
+                pg.screenshot(path=f"{OUT}/00_인트로_{i:02d}.png")
+            except Exception:
+                pass
+        time.sleep(max(0, 12 - (time.time() - t0)))
         pg.evaluate("() => { const e = document.querySelector('flt-semantics-placeholder'); if (e) e.click(); }")
         time.sleep(2)
         run(pg)

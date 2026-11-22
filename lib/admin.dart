@@ -415,7 +415,7 @@ class _BannerTabState extends State<_BannerTab> {
                         ),
                         Text(period.isEmpty ? '기간 없음' : period, style: const TextStyle(fontSize: 12, color: kSub)),
                         const SizedBox(width: 10),
-                        Text(on ? '켜짐' : '꺼짐', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: on ? kBlue : kSub)),
+                        Text(on ? '켜짐' : '꺼짐', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: on ? kPointText : kSub)),
                       ]),
                     ),
                   );
@@ -729,7 +729,7 @@ class _PlaceTabState extends State<_PlaceTab> {
                         Text([dongOf(p), p.cat].where((x) => x.isNotEmpty).join(' · '), style: const TextStyle(fontSize: 12, color: kSub)),
                         if (g != null) ...[
                           const SizedBox(width: 8),
-                          if (g.protect) const Text('보호', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kBlue)),
+                          if (g.protect) const Text('보호', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kPointText)),
                           if (g.hidden) const Text(' 숨김', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kAccent)),
                           if (g.locks.isNotEmpty) Text(' 잠금 ${g.locks.length}', style: const TextStyle(fontSize: 12, color: kInk)),
                         ],
@@ -1061,7 +1061,7 @@ class _PicksTabState extends State<_PicksTab> {
                       Text('${cands[i]['addr']} · ${'${cands[i]['cat']}'.split(' > ').last}', style: const TextStyle(fontSize: 12, color: kSub)),
                     ]),
                   ),
-                  const Text('이 집', style: TextStyle(fontSize: 13, color: kBlue, fontWeight: FontWeight.w700)),
+                  const Text('이 집', style: TextStyle(fontSize: 13, color: kPointText, fontWeight: FontWeight.w700)),
                 ]),
               ),
             ),
@@ -1138,7 +1138,7 @@ class _PicksTabState extends State<_PicksTab> {
                         ]),
                       ),
                       if (dec.containsKey(key))
-                        Text('${dec[key]!['query'] ?? ''}', style: const TextStyle(fontSize: 12, color: kBlue))
+                        Text('${dec[key]!['query'] ?? ''}', style: const TextStyle(fontSize: 12, color: kPointText))
                       else
                         admBtn('직접 연결', () => wrong(key, {...it, 'name': '', 'cands': const []})),
                     ]),
@@ -1190,7 +1190,7 @@ class _PicksTabState extends State<_PicksTab> {
                                     'manual' => '직접 연결: ${d['query']}',
                                     _ => '${d['status']}',
                                   },
-                                  style: const TextStyle(fontSize: 12, color: kBlue, fontWeight: FontWeight.w600)),
+                                  style: const TextStyle(fontSize: 12, color: kPointText, fontWeight: FontWeight.w600)),
                             ),
                         ]),
                       ),
@@ -1281,7 +1281,7 @@ Future<void> leaveAccount(BuildContext context) async {
       content: const Text('계정과 계정에 저장한 콕한 집을 지우면 되돌릴 수 없어요. 이 휴대폰에 있는 목록은 그대로 남아요.', style: TextStyle(fontSize: 14, height: 1.45)),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
-        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('탈퇴하기', style: TextStyle(color: kAccent, fontWeight: FontWeight.w700))),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('탈퇴하기', style: TextStyle(color: kInk, fontWeight: FontWeight.w700))),
       ],
     ),
   );

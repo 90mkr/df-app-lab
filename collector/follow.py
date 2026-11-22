@@ -420,7 +420,23 @@ def build(chs, info, cache):
         out_ch.append({"id": cid, "name": info[cid]["name"], "short": c.get("name", ""), "handle": info[cid]["handle"],
                        "thumb": info[cid]["thumb"], "subs": info[cid]["subs"], "count": n})
     pl = sorted(places.values(), key=lambda o: o["vids"][0]["date"], reverse=True)
-    return {"updated": dt.date.today().isoformat(), "sido": SIDO_ONLY, "channels": out_ch, "places": pl}
+    return {"updated": dt.date.today().isoformat(), "sido": SIDO_ONLY, "channels": rank_channels(out_ch), "places": pl}
+
+
+def rank_channels(rows):
+    """따라가기 유튜버 순서: channel_rank.json 에 적은 이름 먼저 (대중 인지도 순), 나머지는 구독자 수 순."""
+    try:
+        order = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "channel_rank.json"), encoding="utf-8")).get("order", [])
+    except Exception:
+        order = []
+
+    def key(r):
+        nm = f"{r.get('short') or ''} {r.get('name') or ''}"
+        i = next((n for n, x in enumerate(order) if x and x in nm), len(order))
+        return (i, -int(r.get("subs") or 0))
+
+    rows.sort(key=key)
+    return rows
 
 
 def debug(pairs):

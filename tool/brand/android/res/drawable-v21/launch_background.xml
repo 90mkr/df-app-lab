@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 시작 화면 (안드로이드 11 이하): 주황 바탕 가운데 캐릭터 — 앱이 뜨면 같은 자리에서 인트로가 이어진다 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/kok_splash" />
+    <item>
+        <bitmap android:gravity="center" android:src="@drawable/splash_mark" />
+    </item>
+</layer-list>

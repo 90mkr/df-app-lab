@@ -507,13 +507,29 @@ def publish(cache, chans, dec):
             p["vids"].append(video)
         if cid and ch and cid not in rows:
             row = {"id": cid, "name": ch.get("name", ""), "short": ch.get("name", ""), "handle": "@" + ch.get("handle", ""),
-                   "thumb": ch.get("thumb", ""), "subs": 0, "count": 0}
+                   "thumb": ch.get("thumb", ""), "subs": ch.get("subs", 0), "count": 0}
             f["channels"].append(row)
             rows[cid] = row
     for c in f["channels"]:
         c["count"] = sum(1 for p in places if any(x.get("cid") == c.get("id") for x in p.get("vids", [])))
     save(FOLLOW, f)
     return added
+
+
+def rank_channels(rows):
+    """따라가기 유튜버 순서: channel_rank.json 에 적은 이름 먼저 (대중 인지도 순), 나머지는 구독자 수 순."""
+    try:
+        order = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "channel_rank.json"), encoding="utf-8")).get("order", [])
+    except Exception:
+        order = []
+
+    def key(r):
+        nm = f"{r.get('short') or ''} {r.get('name') or ''}"
+        i = next((n for n, x in enumerate(order) if x and x in nm), len(order))
+        return (i, -int(r.get("subs") or 0))
+
+    rows.sort(key=key)
+    return rows
 
 
 def main():
@@ -530,6 +546,11 @@ def main():
             h = channel(c, cache)
             n = new_videos(h, cache)
             c["id"], c["thumb"] = h["id"], h.get("thumb", "")
+            try:
+                st = (yt("channels", part="statistics", id=h["id"]).get("items") or [{}])[0].get("statistics", {})
+                c["subs"] = int(st.get("subscriberCount", 0) or 0) or c.get("subs", 0)
+            except Exception:
+                pass
             print(f"{c['name']}: 영상 {len(h.get('vids', []))}개 (새 영상 {len(n)})")
             rows += [(vid, c) for vid in h.get("vids", [])]
         except Exception as e:
@@ -763,6 +784,19 @@ def main():
             print(f"맞음으로 고른 집 {n}곳을 따라가기 지도에 붙임")
     except Exception as e:
         print("따라가기에 붙이기 실패:", str(e)[:160])
+    # 따라가기 유튜버 순서 (대중 인지도 순) + 구독자 수 채우기
+    try:
+        f = load(FOLLOW, {})
+        if f.get("channels"):
+            subs = {c.get("id"): c.get("subs") for c in chans if c.get("subs")}
+            for r in f["channels"]:
+                if subs.get(r.get("id")):
+                    r["subs"] = subs[r["id"]]
+            rank_channels(f["channels"])
+            save(FOLLOW, f)
+            print("유튜버 순서:", " → ".join(r.get("short") or r.get("name", "") for r in f["channels"]))
+    except Exception as e:
+        print("유튜버 순서 정리 실패:", str(e)[:120])
     save(CH_FILE, chans)
 
 

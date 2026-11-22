@@ -22,21 +22,25 @@ import 'package:url_launcher/url_launcher.dart';
 part 'home.dart';
 part 'fb.dart';
 part 'admin.dart';
+part 'intro.dart';
 
-const kBlue = Color(0xFF1F5BFF);
+const kPoint = kAccent; // 콕플 주색 (빨강주황): 단추·고른 탭·강조
+const kPointText = Color(0xFFDC3519); // 작은 강조 글씨 (흰 바탕에서 또렷하게 한 톤 진하게)
+const kGps = Color(0xFF1F5BFF); // 지도 위 내 위치 점만 파랑 (지도 앱 관례)
 const kInk = Color(0xFF1B1D22);
 const kGray = Color(0xFF7A808C);
 const kLine = Color(0xFFE3E6EC);
 const kDark = Color(0xFF262A31); // 검색 켜짐 등 진한 바탕
-const kRegion = Color(0xFF3A4D66); // 지역 단추·고른 시·도·동네 바탕 (채도 낮은 어두운 파랑)
+const kRegion = Color(0xFF34302E); // 지역 단추·고른 시·도·동네 바탕 (따뜻한 먹색)
 const kDataBase = 'https://90mkr.github.io/df-app-lab/data/'; // 안드로이드 앱이 자료를 받아 오는 곳
 const kTop = 20; // 종류별로 지도에 보이는 수
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   fbReady().then((ok) {
     if (ok) watchAuth();
   });
+  await introWarmUp(); // 시작 화면 그림을 먼저 읽어 첫 장면부터 바로 보이게
   runApp(const DfApp());
 }
 
@@ -51,9 +55,16 @@ class DfApp extends StatelessWidget {
       scrollBehavior: const MaterialScrollBehavior().copyWith(dragDevices: ui.PointerDeviceKind.values.toSet()),
       theme: ThemeData(
         fontFamily: 'Pretendard',
-        colorScheme: ColorScheme.fromSeed(seedColor: kBlue, primary: kBlue, surface: Colors.white),
+        colorScheme: ColorScheme.fromSeed(seedColor: kPoint, primary: kPoint, surface: Colors.white),
         scaffoldBackgroundColor: Colors.white,
         useMaterial3: true,
+      ),
+      // 인트로가 앱 위에 잠깐 덮였다가 사라진다 (그 사이 아래에서 자료를 받는다). 상태 표시줄 글씨는 흰 화면에 맞게 진하게.
+      builder: (context, child) => KokIntro(
+        child: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
+          child: child ?? const SizedBox(),
+        ),
       ),
       home: const MapPage(),
     );
@@ -413,7 +424,7 @@ Future<FollowData?> loadFollow({bool fresh = false}) async {
       names[id] = nm;
       if ((byCh[id] ?? []).isNotEmpty) chans.add(Chan(id, nm, '${c['thumb'] ?? ''}', ((c['subs'] ?? 0) as num).toInt(), byCh[id]!));
     }
-    chans.sort((a, b) => b.places.length.compareTo(a.places.length));
+    // 유튜버 순서는 자료 파일 순서 그대로 (모으는 쪽에서 대중 인지도 순으로 줄 세움)
     return FollowData(j['updated'] ?? '', chans, places, names);
   } catch (_) {
     return null;
@@ -1712,7 +1723,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 child: Row(children: [
                   SizedBox(
                     width: 30,
-                    child: Text('$i', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: i <= 3 ? kBlue : kGray)),
+                    child: Text('$i', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: i <= 3 ? kPointText : kGray)),
                   ),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1740,7 +1751,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 style: TextStyle(fontWeight: FontWeight.w600, color: kindTint(p.kind)),
                               ),
                             if (o != null)
-                              TextSpan(text: '${o.short}  ·  ', style: TextStyle(fontWeight: FontWeight.w600, color: o.open ? kBlue : kGray)),
+                              TextSpan(text: '${o.short}  ·  ', style: TextStyle(fontWeight: FontWeight.w600, color: o.open ? kPointText : kGray)),
                             TextSpan(text: '${p.cat}${p.greviews > 0 ? '  ·  ★${p.grate.toStringAsFixed(1)} (${commas(p.greviews)})' : ''}  ·  블로그 ${p.blog}'),
                           ]),
                           maxLines: 1,
@@ -1918,7 +1929,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         shape: BoxShape.circle,
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 6)],
                       ),
-                      child: Container(decoration: const BoxDecoration(color: kBlue, shape: BoxShape.circle)),
+                      child: Container(decoration: const BoxDecoration(color: kGps, shape: BoxShape.circle)),
                     ),
                   ),
               ],
@@ -2153,7 +2164,7 @@ class _Header extends StatelessWidget {
           onPressed: onRank,
           style: TextButton.styleFrom(
             foregroundColor: Colors.white,
-            backgroundColor: kBlue,
+            backgroundColor: kPoint,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
@@ -2195,7 +2206,7 @@ class _RegionPanelState extends State<RegionPanel> {
   late String sel = widget.current.sido;
   static const kSide = Color(0xFFF3F5F8);
   static const kOff = Color(0xFFA9AEB8);
-  static const kSoft = Color(0xFFB7C3D4); // 진한 파랑 위의 흐린 글
+  static const kSoft = Color(0xFFC9C0BA); // 진한 먹색 위의 흐린 글
 
   @override
   Widget build(BuildContext context) {
@@ -2221,7 +2232,7 @@ class _RegionPanelState extends State<RegionPanel> {
                 padding: const EdgeInsets.fromLTRB(9, 6, 12, 6),
                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: kLine, width: 1)),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.near_me_rounded, size: 15, color: kBlue),
+                  Icon(Icons.near_me_rounded, size: 15, color: kPoint),
                   SizedBox(width: 4),
                   Text('내 주변으로', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kInk)),
                 ]),
@@ -2784,11 +2795,11 @@ class ScoreTag extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: score >= 50 ? kBlue : kLine, width: 1),
+        border: Border.all(color: score >= 50 ? kPoint : kLine, width: 1),
       ),
       child: Text.rich(TextSpan(children: [
         const TextSpan(text: '화제 ', style: TextStyle(fontSize: 11, color: kGray)),
-        TextSpan(text: '$score', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: score >= 50 ? kBlue : kInk)),
+        TextSpan(text: '$score', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: score >= 50 ? kPointText : kInk)),
       ])),
     );
   }
@@ -2929,7 +2940,7 @@ class PlaceSheet extends StatelessWidget {
           if (open != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: Text(open.text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: open.open ? kBlue : kGray)),
+              child: Text(open.text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: open.open ? kPointText : kGray)),
             ),
           if (p.addr.isNotEmpty) Text(p.addr, style: const TextStyle(fontSize: 13, color: kInk, height: 1.4)),
               ]),
@@ -3076,7 +3087,7 @@ class _Quick extends StatelessWidget {
   const _Quick({required this.icon, required this.label, required this.onTap, this.strong = false});
   @override
   Widget build(BuildContext context) {
-    final c = strong ? kBlue : kInk;
+    final c = strong ? kPoint : kInk;
     return Semantics(
       button: true,
       label: label,
@@ -3093,7 +3104,7 @@ class _Quick extends StatelessWidget {
             height: 54,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: strong ? kBlue.withValues(alpha: 0.5) : kLine, width: 1),
+              border: Border.all(color: strong ? kPoint.withValues(alpha: 0.5) : kLine, width: 1),
             ),
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(icon, size: 21, color: c),
@@ -3127,9 +3138,9 @@ class _Btn extends StatelessWidget {
         height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: primary ? kBlue : Colors.white,
+          color: primary ? kPoint : Colors.white,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: primary ? kBlue : kLine, width: 1),
+          border: Border.all(color: primary ? kPoint : kLine, width: 1),
         ),
         child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: primary ? Colors.white : kInk)),
       ),

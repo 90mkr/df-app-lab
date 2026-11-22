@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 아이콘 바탕 주황 -->
+    <color name="kok_icon_bg">#FB5401</color>
+    <!-- 시작 화면 바탕 (인트로 그림 위쪽 색과 같게) -->
+    <color name="kok_splash">#F7721C</color>
+</resources>
