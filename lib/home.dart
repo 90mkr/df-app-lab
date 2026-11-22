@@ -2891,6 +2891,13 @@ class SettingsPage extends StatelessWidget {
                     if (u == null)
                       row('로그인 · 회원가입', sub: '구글 · 이메일 (카카오 준비 중)', onTap: () => openLogin(context))
                     else ...[
+                      if (adminUnverified)
+                        row('관리자 메일 인증',
+                            sub: '받은 메일의 링크를 누른 뒤 여기를 눌러 주세요',
+                            onTap: () async {
+                              final m = await checkVerify();
+                              if (context.mounted) admToast(context, m);
+                            }),
                       if (isAdmin)
                         row('관리자 화면',
                             sub: '배너 · 팝업 · 메인 순서 · 가게 관리',

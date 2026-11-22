@@ -19,7 +19,7 @@ class _LoginSheetState extends State<LoginSheet> {
     super.dispose();
   }
 
-  Future<void> run(Future<String?> Function() f) async {
+  Future<void> run(Future<String?> Function() f, {bool joined = false}) async {
     setState(() {
       busy = true;
       msg = '';
@@ -30,7 +30,7 @@ class _LoginSheetState extends State<LoginSheet> {
       busy = false;
       msg = e ?? '';
     });
-    if (e == null) Navigator.pop(context, true);
+    if (e == null) Navigator.pop(context, joined ? 'join' : 'ok');
   }
 
   @override
@@ -100,7 +100,7 @@ class _LoginSheetState extends State<LoginSheet> {
               width: double.infinity,
               height: 48,
               child: TextButton(
-                onPressed: busy ? null : () => run(() => signInEmail(email.text.trim(), pass.text, join: join)),
+                onPressed: busy ? null : () => run(() => signInEmail(email.text.trim(), pass.text, join: join), joined: join),
                 style: TextButton.styleFrom(backgroundColor: kInk, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 child: busy
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -151,14 +151,18 @@ Future<bool> openLogin(BuildContext context) async {
     return false;
   }
   if (!context.mounted) return false;
-  final ok = await showModalBottomSheet<bool>(
+  final ok = await showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.08),
     builder: (_) => const LoginSheet(),
   );
-  return ok == true;
+  if (ok == 'join' && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        duration: Duration(seconds: 6), content: Text('가입했어요. 메일함에 온 인증 링크를 눌러 주세요')));
+  }
+  return ok != null;
 }
 
 // ---------------- 관리자 화면 ----------------

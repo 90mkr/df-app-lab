@@ -3,13 +3,14 @@ part of 'main.dart';
 // ---------------- 파이어베이스: 관리자·회원·배너·팝업·가게 보호 ----------------
 // 콘솔에서 받은 공개 설정 값 (비밀번호가 아니라 앱마다 들어가는 값). 비어 있으면 파이어베이스 기능은 꺼진 채로 돈다.
 const kFb = <String, String>{
-  'apiKey': '',
-  'authDomain': '',
-  'projectId': '',
-  'storageBucket': '',
-  'messagingSenderId': '',
-  'webAppId': '',
-  'androidAppId': '',
+  'apiKey': 'AIzaSyCtAYeMr_86li7WmmkXUL6Nx0ae8xmG5ME', // 웹용 공개 키
+  'androidApiKey': 'AIzaSyB5wrd2GrSG7LqmrZqCvcWBBRWH7glm5Os', // 안드로이드용 공개 키
+  'authDomain': 'kokple.firebaseapp.com',
+  'projectId': 'kokple',
+  'storageBucket': 'kokple.firebasestorage.app',
+  'messagingSenderId': '233879188710',
+  'webAppId': '1:233879188710:web:543f8fd620c76f0685f727',
+  'androidAppId': '1:233879188710:android:35792ff90ca0509d85f727',
 };
 const kAdminEmails = ['dfmail@naver.com']; // 관리자 화면을 여는 계정 (쓰기 권한은 파이어베이스 규칙이 따로 막는다)
 
@@ -21,7 +22,7 @@ Future<bool> _fbInit() async {
   try {
     await fc.Firebase.initializeApp(
       options: fc.FirebaseOptions(
-        apiKey: kFb['apiKey']!,
+        apiKey: kIsWeb ? kFb['apiKey']! : kFb['androidApiKey']!,
         appId: kIsWeb ? kFb['webAppId']! : kFb['androidAppId']!,
         messagingSenderId: kFb['messagingSenderId']!,
         projectId: kFb['projectId']!,
@@ -39,7 +40,8 @@ Future<bool> _fbInit() async {
 fs.FirebaseFirestore get fsdb => fs.FirebaseFirestore.instance;
 fa.FirebaseAuth get fbAuth => fa.FirebaseAuth.instance;
 fa.User? get fbUser => fbOn ? fbAuth.currentUser : null;
-bool get isAdmin => kAdminEmails.contains(fbUser?.email?.toLowerCase());
+bool get isAdmin => kAdminEmails.contains(fbUser?.email?.toLowerCase()) && (fbUser?.emailVerified ?? false);
+bool get adminUnverified => kAdminEmails.contains(fbUser?.email?.toLowerCase()) && !(fbUser?.emailVerified ?? false);
 
 // 관리자 화면에서 쓰는 앱 쪽 연결 (지도 화면이 채운다)
 List<Place> Function() allPlaces = () => const [];
@@ -49,6 +51,7 @@ VoidCallback onAdminChanged = () {};
 final ValueNotifier<int> authTick = ValueNotifier(0);
 void watchAuth() {
   if (!fbOn) return;
+  fbAuth.setLanguageCode('ko').catchError((_) {}); // 인증·비밀번호 메일을 한국어로
   fbAuth.authStateChanges().listen((_) => authTick.value++);
 }
 
@@ -252,6 +255,27 @@ Future<String?> signInEmail(String email, String pass, {bool join = false}) asyn
     return authMsg(e.code);
   } catch (_) {
     return '로그인을 마치지 못했습니다';
+  }
+}
+
+// 관리자 메일 인증 확인: 메일의 링크를 누른 뒤 이걸 누르면 새 표시를 받아 관리자 화면이 열린다
+Future<String> checkVerify() async {
+  final u = fbAuth.currentUser;
+  if (u == null) return '먼저 로그인해 주세요';
+  try {
+    await u.reload();
+    final now = fbAuth.currentUser;
+    if (now != null && now.emailVerified) {
+      await now.getIdToken(true); // 새 표시가 들어간 출입증으로 바꿔야 쓰기 규칙이 통과한다
+      authTick.value++;
+      return '인증됐어요. 관리자 화면이 열렸어요';
+    }
+    await now?.sendEmailVerification();
+    return '인증 메일을 다시 보냈어요. 메일의 링크를 누른 뒤 한 번 더 눌러 주세요';
+  } on fa.FirebaseAuthException catch (e) {
+    return e.code == 'too-many-requests' ? '조금 뒤에 다시 눌러 주세요' : authMsg(e.code);
+  } catch (_) {
+    return '확인하지 못했어요. 잠시 뒤 다시 눌러 주세요';
   }
 }
 
