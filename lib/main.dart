@@ -318,6 +318,27 @@ class Sido {
   bool get ready => areas.any((a) => a.ready);
 }
 
+// 새로 뜨는 집: 최근 한 달 안에 유튜버 영상이 올라온 집 (영상 날짜 yyyy-mm-dd 또는 yyyymmdd)
+String ytLast(Place p) {
+  var last = '';
+  for (final v in p.vids) {
+    final d = v.date.replaceAll('-', '');
+    if (d.length == 8 && d.compareTo(last) > 0) last = d;
+  }
+  return last;
+}
+
+bool ytRecent(Place p, [int days = 30]) {
+  final last = ytLast(p);
+  if (last.isEmpty) return false;
+  final cut = DateTime.now().subtract(Duration(days: days));
+  final c = '${cut.year}${cut.month.toString().padLeft(2, '0')}${cut.day.toString().padLeft(2, '0')}';
+  return last.compareTo(c) >= 0;
+}
+
+String mdText(String yyyymmdd) =>
+    yyyymmdd.length == 8 ? '${int.parse(yyyymmdd.substring(4, 6))}월 ${int.parse(yyyymmdd.substring(6))}일' : '';
+
 // 지도 가운데가 어느 시·군·구인지: 콕플 자료 가게 주소로 어림한다 (돈 드는 지도 서비스를 쓰지 않음)
 String placeName(LatLng c, Iterable<Place> src, double zoom) {
   if (zoom < 8) return '전국';
@@ -515,7 +536,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   static const kSidoZoom = 9.0; // 이보다 넓게 보면 시·도별 숫자 묶음
   List<Area> get readyAreas => [for (final s in sidos) ...s.areas.where((a) => a.ready)];
   String? error;
-  String kind = 'all'; // all 전체, near 내 주변, open 영업 중, tv 방송탄, food 맛집, cafe 카페, big 대형 카페, view 뷰 맛집, rise 새로 뜨는 집
+  String kind = 'all'; // all 전체, near 내 주변, open 영업 중, food 맛집, cafe 카페, rise 새로 뜨는 집 (최근 한 달 안에 유튜버가 다녀간 집)
   final Set<String> feats = {}; // 편의 필터 (주차·아이 동반 등, 모두 갖춘 집만)
   LatLng? me; // 내 위치
   bool locating = false;
@@ -525,11 +546,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final b = switch (kind) {
       'cafe' => '카페',
       'food' => '맛집',
-      'tv' => '방송탄 집',
       'near' => '내 주변',
-      'big' => '대형 카페',
       'open' => '영업 중',
-      'view' => '뷰 맛집',
       'rise' => '새로 뜨는 집',
       _ => '맛집·카페',
     };
@@ -1529,11 +1547,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             ['all', '전체', '🏆'],
             ['near', '내 주변', '📍'],
             ['open', '영업 중', '⏰'],
-            ['tv', '방송탄', '📺'],
             ['food', '맛집', '🍽️'],
             ['cafe', '카페', '☕'],
-            ['big', '대형 카페', '🪴'],
-            ['view', '뷰 맛집', '🌇'],
             ['rise', '새로 뜨는 집', '🚀'],
           ])
             Padding(
@@ -1583,17 +1598,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       return all.where((p) => (p.top || p.rise) && p.name.replaceAll(' ', '').toLowerCase().contains(q)).toList()
         ..sort((a, b) => b.score.compareTo(a.score));
     }
-    var src = (kind == 'near' ? all : pool).where((p) => kind == 'rise' ? p.rise : (p.top && p.score > 0));
+    var src = (kind == 'near' ? all : pool).where((p) => kind == 'rise' ? ytRecent(p) : (p.top && p.score > 0));
     if (feats.isNotEmpty) src = src.where((p) => feats.every(p.feat.contains));
     if (cuisine.isNotEmpty) src = src.where((p) => cuisineOf(p) == cuisine);
     if (kind == 'open') src = src.where((p) => openInfo(p)?.open == true);
-    if (kind == 'view') src = src.where((p) => p.view);
     if (kind == 'rise') {
-      return src.toList()..sort((a, b) => b.rr.compareTo(a.rr));
+      return src.toList()..sort((a, b) => ytLast(b).compareTo(ytLast(a)));
     }
     if (kind == 'food' || kind == 'cafe') src = src.where((p) => p.kind == kind);
-    if (kind == 'tv') src = src.where((p) => p.tv.isNotEmpty);
-    if (kind == 'big') src = src.where((p) => p.kind == 'cafe' && p.big);
     if (kind == 'near') {
       final at = me;
       if (at == null) return [];
@@ -1665,14 +1677,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       if (feats.isNotEmpty) return '편의 필터에 맞는 집이 없습니다';
       if (cuisine.isNotEmpty) return '이 범위에는 $cuisine 집이 없어요 · 지도를 넓혀 보세요';
       return switch (kind) {
-        'big' => '대형 카페는 매일 저녁 새로 확인합니다',
-        'tv' => '방송탄 집은 매일 저녁 새로 확인합니다',
-        'view' => '뷰 맛집은 매일 저녁 새로 확인합니다',
-        'rise' => '새로 뜨는 집은 매일 저녁 새로 확인합니다',
+        'rise' => '최근 한 달 안에 유튜버가 다녀간 집이 아직 없습니다',
         'open' => '지금 문 연 집이 없습니다',
         _ => '아직 자료가 없습니다',
       };
     }
+    if (kind == 'rise') return '최근 한 달 안에 유튜버가 다녀간 $total곳  ·  최근 영상 순';
     return cards < total ? '$kindLabel 상위 $total곳 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $total곳  ·  ${d.updated} 기준';
   }
 
@@ -1777,8 +1787,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           TextSpan(children: [
                             if (kind == 'near' && me != null)
                               TextSpan(text: '${distText(meters(me!, p.point))}  ·  ', style: const TextStyle(fontWeight: FontWeight.w600, color: kInk)),
-                            if (kind == 'rise')
-                              TextSpan(text: '최근 30일 글 ${p.r30}건  ·  ', style: const TextStyle(fontWeight: FontWeight.w600, color: kFoodTint)),
+                            if (kind == 'rise' && ytLast(p).isNotEmpty)
+                              TextSpan(text: '${mdText(ytLast(p))} 영상  ·  ', style: const TextStyle(fontWeight: FontWeight.w600, color: kPointText)),
                             if (kind != 'food' && kind != 'cafe')
                               TextSpan(
                                 text: p.kind == 'cafe' ? '카페  ·  ' : '맛집  ·  ',
@@ -2072,7 +2082,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     ]),
             ),
           ),
-        if (data != null && !followOn && feats.isEmpty && const ['tv', 'big', 'view', 'rise'].contains(kind) && base.isEmpty)
+        if (data != null && !followOn && feats.isEmpty && kind == 'rise' && base.isEmpty)
           Center(
             child: Container(
               margin: const EdgeInsets.all(30),
@@ -2080,15 +2090,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               decoration: _card(),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Text(
-                    switch (kind) {
-                      'tv' => '방송 나온 집을 확인하고 있습니다',
-                      'big' => '대형 카페를 확인하고 있습니다',
-                      'view' => '뷰 맛집을 확인하고 있습니다',
-                      _ => '새로 뜨는 집을 확인하고 있습니다',
-                    },
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: kInk)),
+                    '최근 한 달 안에 유튜버가 다녀간 집이 아직 없습니다',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: kInk)),
                 const SizedBox(height: 4),
-                const Text('매일 새벽 블로그 글로 자동 확인합니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4)),
+                const Text('새 영상이 올라오면 매일 저녁 여기에 보입니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4)),
               ]),
             ),
           ),
