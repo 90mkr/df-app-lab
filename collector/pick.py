@@ -202,6 +202,7 @@ def ask_ai(model, v):
 PROMPT_V = """이 영상은 한국 먹방 유튜버가 음식점을 찾아간 영상이야. 영상 제목: %s
 화면의 간판·현수막·메뉴판·자막과 말소리에서 실제로 찾아간 가게 이름을 찾아.
 - 화면에 보이거나 말로 들린 이름만 적어. 추측해서 지어내지 마. 지나가다 보인 다른 가게 간판은 빼.
+- 집에서 먹는 장면, 배달·포장 음식, 편의점·마트, 밀키트·협찬 상품, 광고 속 브랜드는 찾아간 가게가 아니니 빼.
 - 지점명(○○점)이 보이면 이름에 같이 적어.
 - 지역 단서(시·구·동·역·시장 이름, 주소 일부)가 보이거나 들리면 같이 적어. 제목에 나온 지역도 써도 돼.
 - 여러 곳을 갔으면 모두.
@@ -393,6 +394,8 @@ def video_ok(p):
         return False
     if not any(w in (p.get("how") or "") for w in ("간판", "자막", "메뉴판")):
         return False
+    if re.search(r"집에서|집에 있|집에있|배달|편의점|밀키트|택배|홈쿡|만들어|직접 요리|급식", p.get("_t", "")):  # 찾아간 가게가 아닐 수 있는 영상
+        return False
     c = p["cands"][p["best"]]
     if tight(p.get("name", ""), c.get("name", "")) < 0.85:
         return False
@@ -401,8 +404,8 @@ def video_ok(p):
     rk = region_ok(p.get("region", ""), c.get("addr", "") + " " + c.get("jibun", ""))
     if rk is False:
         return False
-    if rk is None and len(p.get("cands") or []) != 1:  # 지역 단서가 없으면 카카오에 그 이름이 딱 한 곳일 때만
-        return False
+    if rk is None and (len(p.get("cands") or []) != 1 or tight(p.get("name", ""), c.get("name", "")) < 1.0):
+        return False  # 지역 단서가 없으면 카카오에 그 이름이 딱 한 곳이고 이름도 똑같을 때만
     return True
 
 
@@ -757,7 +760,7 @@ def main():
                     auto[key] = {**base, "place": hp[0], "by": "김부장 확인 (대표님 목록 주소 + 영상 " + ("화면)" if p.get("src") == "video" else "글)")}
                 elif auto_ok(p, v):  # 제목에 가게 이름이 그대로 나오는 확실한 것은 바로 맞음
                     auto[key] = {**base, "place": p["cands"][p["best"]], "by": "김부장 자동 확인 (제목에 가게 이름)"}
-                elif video_ok(p):  # 영상 간판·자막에서 읽고 카카오도 하나로 맞음
+                elif video_ok({**p, "_t": v.get("t", "")}):  # 영상 간판·자막에서 읽고 카카오도 하나로 맞음
                     auto[key] = {**base, "place": p["cands"][p["best"]], "by": "김부장 자동 확인 (영상 간판·자막)"}
                 elif seen_ok(p):  # 글로 찾은 가게를 영상 간판·자막으로도 확인
                     auto[key] = {**base, "place": p["cands"][p["best"]], "by": "김부장 자동 확인 (영상 간판·자막과 같음)"}

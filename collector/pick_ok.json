@@ -767,5 +767,189 @@
   "replace": [
    "AX-qyFkuDhk_0"
   ]
+ },
+ "VhtW-DbY0j8_1": {
+  "status": "ok",
+  "vid": "VhtW-DbY0j8",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "청량리 새벽 6시에 오픈런한 백반집🍚",
+  "place": {
+   "id": "243951269",
+   "name": "경동식당",
+   "addr": "서울 동대문구 왕산로 239",
+   "jibun": "서울 동대문구 청량리동 235-6",
+   "cat": "음식점 > 한식",
+   "g": "FD6",
+   "lat": 37.58302518090084,
+   "lng": 127.04821264600504,
+   "url": "http://place.map.kakao.com/243951269"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "vNNa3zLy01Q_0": {
+  "status": "ok",
+  "vid": "vNNa3zLy01Q",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "너무 맛있어서 재방문 후 곱창 22인분 먹었더니..🤣",
+  "place": {
+   "id": "1045804996",
+   "name": "오양별",
+   "addr": "서울 강동구 성내로 62",
+   "jibun": "서울 강동구 성내동 548-3",
+   "cat": "음식점 > 한식 > 육류,고기 > 곱창,막창",
+   "g": "FD6",
+   "lat": 37.5278260377425,
+   "lng": 127.126673443526,
+   "url": "http://place.map.kakao.com/1045804996"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "VYv06RZqe8k_0": {
+  "status": "ok",
+  "vid": "VYv06RZqe8k",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "24시 무인라면가게 털기🔥",
+  "place": {
+   "id": "1295648496",
+   "name": "요기라면&참참24",
+   "addr": "서울 영등포구 양평로14길 11",
+   "jibun": "서울 영등포구 양평동4가 278-2",
+   "cat": "가정,생활 > 식품판매 > 아이스크림판매",
+   "g": "",
+   "lat": 37.53634773464272,
+   "lng": 126.89960125161228,
+   "url": "http://place.map.kakao.com/1295648496"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "rTWmz8FmP-c_0": {
+  "status": "ok",
+  "vid": "rTWmz8FmP-c",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "분명 조금 시켰는데 양 실화..? 갑자기 도전먹방😨 아주대생들의 즉석떡볶이 성지 동떡이 먹방",
+  "place": {
+   "id": "26532037",
+   "name": "동떡이즉석떡볶이 아주대점",
+   "addr": "경기 수원시 영통구 아주로 22",
+   "jibun": "경기 수원시 영통구 원천동 25-12",
+   "cat": "음식점 > 분식 > 떡볶이",
+   "g": "FD6",
+   "lat": 37.276790100367904,
+   "lng": 127.04413224511131,
+   "url": "http://place.map.kakao.com/26532037"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "TkBA45C7r-w_0": {
+  "status": "skip",
+  "vid": "TkBA45C7r-w",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "영업정보도 없는 동네 숨은 정육점.. 다 떨어질때까지 먹었더니 사장님 반응이🤣 역대급 삼겹살에 김치 먹방",
+  "why": "어느 지역 가게인지 영상에서 확인 안 됨",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "_-uZD1Yep9Y_0": {
+  "status": "skip",
+  "vid": "_-uZD1Yep9Y",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "육수만 15번 추가했어요...(?)",
+  "why": "체인점 — 지점을 알 수 없음",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "vaHLBpVaabg_0": {
+  "status": "skip",
+  "vid": "vaHLBpVaabg",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "집에있는 밥통 다 털었습니다🔥 대왕 양푼 비빔밥과 삼겹살 칼국수 먹방",
+  "why": "집에서 먹은 영상 — 찾아간 가게가 아님",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "vaHLBpVaabg_1": {
+  "status": "skip",
+  "vid": "vaHLBpVaabg",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "집에있는 밥통 다 털었습니다🔥 대왕 양푼 비빔밥과 삼겹살 칼국수 먹방",
+  "why": "집에서 먹은 영상 — 찾아간 가게가 아님",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "vaHLBpVaabg_2": {
+  "status": "skip",
+  "vid": "vaHLBpVaabg",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "집에있는 밥통 다 털었습니다🔥 대왕 양푼 비빔밥과 삼겹살 칼국수 먹방",
+  "why": "집에서 먹은 영상 — 찾아간 가게가 아님",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "XKnsjvdI468_0": {
+  "status": "skip",
+  "vid": "XKnsjvdI468",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "의정부 지하던전..? 사장님이 50년동안 이런 손님은 처음이래요🤣 포장마차 라면 국밥 쫄면 먹방",
+  "why": "카카오에서 의정부 가게를 못 찾음 — 다른 지역 같은 이름",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "zkOBLQUSEr0_0": {
+  "status": "skip",
+  "vid": "zkOBLQUSEr0",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "오랜만에 편의점 털었습니다🔥 라면 김밥 만두 핫바 신상 디저트 먹방",
+  "why": "편의점 — 맛집이 아님",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "8UGfYqX9HbM_0": {
+  "status": "skip",
+  "vid": "8UGfYqX9HbM",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "여고 급식실에서 먹방했더니.. 학생들 반응이🤣",
+  "why": "학교 급식실 영상 — 찾아간 가게가 아님",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "DQB0zc9PBnA_0": {
+  "status": "skip",
+  "vid": "DQB0zc9PBnA",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "뭐가 올지 모르는 랜덤 배달음식?!🔥 과연 감당할수 있을까..?",
+  "why": "배달 음식 영상 — 찾아간 가게가 아님",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "VhtW-DbY0j8_0": {
+  "status": "skip",
+  "vid": "VhtW-DbY0j8",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "청량리 새벽 6시에 오픈런한 백반집🍚",
+  "why": "영상에서 확인한 가게(경동식당)로 바꿈",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "SFpOByAR_GQ_0": {
+  "status": "skip",
+  "vid": "SFpOByAR_GQ",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "떨어지면 돈 안받으신대요🤫 장미상가 숨은맛집 뭉티기 10접시 먹방",
+  "why": "상가 이름 — 영상 속 가게를 확인 못 함",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "xRf_bhPFZrY_0": {
+  "status": "skip",
+  "vid": "xRf_bhPFZrY",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "산처럼 쌓인 랍스타와 초대왕 가리비?!😱 대게 전복 해산물 파티! 인천 보일링크랩 먹방",
+  "why": "어느 지점인지 영상에서 확인 안 됨",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "tm4JNmIi-C0_0": {
+  "status": "skip",
+  "vid": "tm4JNmIi-C0",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "총 xx인분..?!😱 대식가 구독자 5명과 1vs5 삼겹살 대결🔥",
+  "why": "카카오에 같은 이름 가게 없음",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "pPSUUl7qU5I_0": {
+  "status": "skip",
+  "vid": "pPSUUl7qU5I",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "사장님과 요리 대결...?",
+  "why": "체인점 — 지점을 알 수 없음",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
  }
 }
