@@ -23,6 +23,7 @@ part 'home.dart';
 part 'fb.dart';
 part 'admin.dart';
 part 'intro.dart';
+part 'review.dart';
 
 const kPoint = kAccent; // 콕플 주색 (빨강주황): 단추·고른 탭·강조
 const kPointText = Color(0xFFDC3519); // 작은 강조 글씨 (흰 바탕에서 또렷하게 한 톤 진하게)
@@ -37,6 +38,7 @@ const kTop = 20; // 종류별로 지도에 보이는 수
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (kIsWeb && Uri.base.queryParameters['demo'] == '1') reviews.demo = true; // 화면 점검용 예시 후기
   fbReady().then((ok) {
     if (ok) watchAuth();
   });
@@ -839,6 +841,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   // 아래로 당겨 새로 고침
   Future<void> pullRefresh() async {
+    reviews.place.clear();
+    reviews.loadHome(force: true);
     var r = -1;
     try {
       r = await checkNew();
@@ -1880,6 +1884,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           follow: follow,
           onFollow: openFollow,
           onFollowPlace: openFollowPlace,
+          onReview: openKok,
         ),
         VideoView(
           onRefresh: pullRefresh,
@@ -2963,6 +2968,7 @@ class PlaceSheet extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(oneLine(p), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: kInk, height: 1.35)),
                 ],
+                ReviewRankLine(pid: p.id), // 후기 스티커 순위 (예: 또 올 집 32 · 가성비 굿 18)
               ]),
             ),
             if (p.score > 0) ScoreTag(score: p.score),
@@ -3098,6 +3104,8 @@ class PlaceSheet extends StatelessWidget {
             ),
             const SizedBox(height: 22),
           ],
+          PlaceReviews(place: p),
+          const SizedBox(height: 28),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             _Title(text: '최근 $recentDays일 블로그 ${p.blog}건'),
             const SizedBox(width: 8),

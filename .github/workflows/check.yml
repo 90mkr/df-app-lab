@@ -24,3 +24,70 @@ jobs:
           flutter create --org kr.designfeel --project-name df_app_lab --platforms android,web . > /dev/null
           flutter pub get > /dev/null
           flutter analyze --no-fatal-infos --no-fatal-warnings lib
+
+  rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 저장소 받기
+        uses: actions/checkout@v7
+
+      - name: 파이어베이스 규칙 시험 (가짜 저장소)
+        run: |
+          export JAVA_HOME="${JAVA_HOME_21_X64:-$JAVA_HOME}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          mkdir -p /tmp/rt && cp firestore.rules tool/rules_test.mjs /tmp/rt/ && cd /tmp/rt
+          echo '{"firestore":{"rules":"firestore.rules"},"emulators":{"firestore":{"port":8080},"ui":{"enabled":false}}}' > firebase.json
+          npm init -y > /dev/null
+          npm i --silent firebase-tools @firebase/rules-unit-testing firebase > /dev/null 2>&1
+          npx firebase emulators:exec --only firestore --project demo-kokple "node rules_test.mjs" 2>&1 | grep -v "^i \|^⚠\|^\s*$" | tail -80
+          test "${PIPESTATUS[0]}" = 0
+
+  # 커밋 글에 [화면]이 있으면: 웹을 만들어 이 컴퓨터 안에서 띄우고 후기 화면을 찍어 shots-check 갈래에 올림 (배포 안 함)
+  screens:
+    if: contains(github.event.head_commit.message, '[화면]')
+    needs: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - name: 저장소 받기
+        uses: actions/checkout@v7
+
+      - name: 플러터 준비
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 웹 만들기
+        run: |
+          flutter create --org kr.designfeel --project-name df_app_lab --platforms web . > /dev/null
+          python3 tool/brand.py web
+          flutter pub get > /dev/null
+          flutter build web --release --base-href /df-app-lab/
+          mkdir -p build/web/data build/web/policy /tmp/site
+          cp web/data/*.json build/web/data/
+          cp web/policy/*.html build/web/policy/
+          cp -r build/web /tmp/site/df-app-lab
+
+      - name: 브라우저 준비
+        run: |
+          pip install -q playwright
+          python -m playwright install --with-deps chromium > /dev/null
+
+      - name: 후기 화면 찍기
+        run: |
+          (cd /tmp/site && python3 -m http.server 8765 > /dev/null 2>&1 &)
+          sleep 2
+          python .github/shot/review_shot.py "http://localhost:8765/df-app-lab/?demo=1" shots
+
+      - name: 사진 올리기
+        if: always()
+        run: |
+          cd shots
+          git init -q -b shots-check
+          git add -A
+          git -c user.name="화면 확인" -c user.email="shot@users.noreply.github.com" commit -qm "후기 화면 점검 ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" shots-check

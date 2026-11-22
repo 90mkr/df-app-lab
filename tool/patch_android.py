@@ -88,3 +88,96 @@ if os.path.exists(grv):
         g = g.replace("signingConfig signingConfigs.debug", 'signingConfig file("upload.jks").exists() ? signingConfigs.upload : signingConfigs.debug', 1)
         open(grv, "w", encoding="utf-8").write(g)
 print("안드로이드 설정 완료")
+
+# 후기 사진: 방향 바로잡기 · 1080px로 줄이기 · 작은 사진(320px) · 얼굴이 크게 나온 사진 찾기 (안드로이드 기본 얼굴 찾기 — 따로 받는 부품 없음)
+import glob
+MAIN_KT = '''package {pkg}
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
+import android.media.FaceDetector
+import android.os.Handler
+import android.os.Looper
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
+
+class MainActivity : FlutterActivity() {{
+    private val pool = Executors.newSingleThreadExecutor()
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {{
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "kokple/photo").setMethodCallHandler {{ call, result ->
+            if (call.method != "prep") {{
+                result.notImplemented()
+                return@setMethodCallHandler
+            }}
+            val path = call.argument<String>("path") ?: ""
+            val full = call.argument<Int>("full") ?: 1080
+            val thumb = call.argument<Int>("thumb") ?: 320
+            pool.execute {{
+                val out = try {{ prep(path, full, thumb) }} catch (e: Throwable) {{ null }}
+                Handler(Looper.getMainLooper()).post {{
+                    if (out == null) result.error("prep", "photo", null) else result.success(out)
+                }}
+            }}
+        }}
+    }}
+
+    private fun prep(path: String, fullMax: Int, thumbMax: Int): Map<String, Any> {{
+        val bounds = BitmapFactory.Options().apply {{ inJustDecodeBounds = true }}
+        BitmapFactory.decodeFile(path, bounds)
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= fullMax && bounds.outHeight / (sample * 2) >= fullMax) sample *= 2
+        val src = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {{ inSampleSize = sample }}) ?: throw IllegalStateException("decode")
+        val ori = try {{
+            ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        }} catch (e: Exception) {{ ExifInterface.ORIENTATION_NORMAL }}
+        val m = Matrix()
+        when (ori) {{
+            ExifInterface.ORIENTATION_ROTATE_90 -> m.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> m.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> m.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {{ m.postRotate(90f); m.postScale(-1f, 1f) }}
+            ExifInterface.ORIENTATION_TRANSVERSE -> {{ m.postRotate(270f); m.postScale(-1f, 1f) }}
+        }}
+        val s = minOf(1f, fullMax.toFloat() / maxOf(src.width, src.height))
+        m.postScale(s, s)
+        val big = Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+
+        // 얼굴 찾기: 작게 줄인 사진에서 (가로는 짝수여야 함)
+        var fw = minOf(big.width, 640)
+        fw -= fw % 2
+        val fh = maxOf(2, (big.height.toFloat() * fw / big.width).toInt())
+        val small = Bitmap.createScaledBitmap(big, fw, fh, true).copy(Bitmap.Config.RGB_565, false)
+        val faces = arrayOfNulls<FaceDetector.Face>(5)
+        val n = try {{ FaceDetector(fw, fh, 5).findFaces(small, faces) }} catch (e: Throwable) {{ 0 }}
+        var eyes = 0f
+        for (i in 0 until n) {{
+            val f = faces[i] ?: continue
+            if (f.confidence() >= 0.4f) eyes = maxOf(eyes, f.eyesDistance())
+        }}
+        // 얼굴 폭 ≈ 눈 사이 × 2.4 → 사진 짧은 변의 22%를 넘으면 「얼굴이 크게 나온 사진」
+        val faceBig = eyes * 2.4f / minOf(fw, fh) >= 0.22f
+
+        val fullOut = ByteArrayOutputStream()
+        big.compress(Bitmap.CompressFormat.JPEG, 80, fullOut)
+        val side = minOf(big.width, big.height)
+        val sq = Bitmap.createBitmap(big, (big.width - side) / 2, (big.height - side) / 2, side, side)
+        val th = Bitmap.createScaledBitmap(sq, thumbMax, thumbMax, true)
+        val thumbOut = ByteArrayOutputStream()
+        th.compress(Bitmap.CompressFormat.JPEG, 72, thumbOut)
+        return mapOf("full" to fullOut.toByteArray(), "thumb" to thumbOut.toByteArray(), "faceBig" to faceBig, "faces" to n)
+    }}
+}}
+'''
+for kt in glob.glob("android/app/src/main/kotlin/**/MainActivity.kt", recursive=True):
+    old = open(kt, encoding="utf-8").read()
+    pkg = re.search(r"^package\s+([\w.]+)", old, re.M).group(1)
+    open(kt, "w", encoding="utf-8").write(MAIN_KT.format(pkg=pkg))

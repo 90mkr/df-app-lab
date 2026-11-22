@@ -817,7 +817,7 @@ Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLin
 
 // ---- 홈 ----
 // 메인 칸 순서 (나중에 관리자 화면에서 바꿀 수 있게 이름 목록)
-const kHomeOrder = ['hero', 'roulette', 'follow', 'courses', 'tops', 'fresh', 'creators', 'cuisine'];
+const kHomeOrder = ['hero', 'roulette', 'follow', 'reviews', 'courses', 'tops', 'fresh', 'creators', 'cuisine'];
 
 // 맨 위 큰 비주얼에 섞어 넘기는 배너 (관리자 화면에서 등록)
 class HomeBanner {
@@ -863,6 +863,7 @@ class HomeView extends StatelessWidget {
   final List<HomeBanner> banners; // 맨 위 비주얼에 섞을 배너
   final ValueChanged<HomeBanner>? onBanner;
   final List<String> order; // 칸 순서
+  final ValueChanged<Map<String, dynamic>>? onReview; // 후기 카드 → 그 집
   const HomeView({
     super.key,
     required this.data,
@@ -888,6 +889,7 @@ class HomeView extends StatelessWidget {
     this.banners = const [],
     this.onBanner,
     this.order = kHomeOrder,
+    this.onReview,
   });
 
   @override
@@ -931,6 +933,7 @@ class HomeView extends StatelessWidget {
             Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: RouletteBanner(onTap: onRoulette)),
           ],
         'follow' => [_follow()],
+        'reviews' => [if (onReview != null) ReviewStrip(onOpen: onReview!)],
         'courses' => [_courses(d)],
         'tops' => [_tops(d)],
         'fresh' => [_fresh()],
@@ -2726,7 +2729,7 @@ class SavedView extends StatefulWidget {
 }
 
 class _SavedViewState extends State<SavedView> {
-  int? which; // 0 콕한 집 · 1 최근 본 집 (안 골랐으면 콕한 집이 없을 때 최근 본 집부터)
+  int? which; // 0 콕한 집 · 1 최근 본 집 · 2 내가 쓴 후기 (안 골랐으면 콕한 집이 없을 때 최근 본 집부터)
   void openSettings(BuildContext context) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
 
   // 언제 봤는지: 오늘 · 어제 · 3일 전 · 11월 2일
@@ -2787,7 +2790,7 @@ class _SavedViewState extends State<SavedView> {
   Widget build(BuildContext context) {
     final koks = widget.koks, recents = widget.recents;
     final w = which ?? (koks.isEmpty && recents.isNotEmpty ? 1 : 0);
-    final list = w == 0 ? koks : recents;
+    final list = w == 0 ? koks : (w == 1 ? recents : const <Map<String, dynamic>>[]);
     return SafeArea(
       bottom: false,
       child: narrow(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2819,10 +2822,19 @@ class _SavedViewState extends State<SavedView> {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 12, 6),
           child: Row(children: [
-            _SegChip(label: koks.isEmpty ? '콕한 집' : '콕한 집 ${koks.length}', emoji: '📌', on: w == 0, onTap: () => setState(() => which = 0)),
-            const SizedBox(width: 6),
-            _SegChip(label: recents.isEmpty ? '최근 본 집' : '최근 본 집 ${recents.length}', emoji: '🕘', on: w == 1, onTap: () => setState(() => which = 1)),
-            const Spacer(),
+            // 작은 휴대폰에선 칸이 넘치지 않게 옆으로 밀어 보기
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: [
+                  _SegChip(label: koks.isEmpty ? '콕한 집' : '콕한 집 ${koks.length}', emoji: '📌', on: w == 0, onTap: () => setState(() => which = 0)),
+                  const SizedBox(width: 6),
+                  _SegChip(label: recents.isEmpty ? '최근 본 집' : '최근 본 집 ${recents.length}', emoji: '🕘', on: w == 1, onTap: () => setState(() => which = 1)),
+                  const SizedBox(width: 6),
+                  _SegChip(label: '내가 쓴 후기', lead: const StickerFace('again', size: 22), on: w == 2, onTap: () => setState(() => which = 2)),
+                ]),
+              ),
+            ),
             if (w == 1 && recents.isNotEmpty)
               Semantics(
                 button: true,
@@ -2838,7 +2850,9 @@ class _SavedViewState extends State<SavedView> {
           ]),
         ),
         Expanded(
-          child: list.isEmpty
+          child: w == 2
+              ? MyReviews(onOpen: widget.onOpen)
+              : list.isEmpty
               ? Center(
                   child: Text(
                       w == 0 ? '마음에 드는 집을 「콕」 눌러 저장해 두세요.\n가게 화면 오른쪽 위에 있습니다.' : '가게 화면을 열어 본 집이 여기에 차례로 쌓여요.\n휴대폰 안에만 남습니다.',

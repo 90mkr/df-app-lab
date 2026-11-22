@@ -177,7 +177,7 @@ class AdminPage extends StatefulWidget {
 
 class _AdminPageState extends State<AdminPage> {
   int tab = 0;
-  static const tabs = ['메인 순서', '배너', '팝업', '가게 관리', '확인 대기', '후보 확인'];
+  static const tabs = ['메인 순서', '배너', '팝업', '가게 관리', '확인 대기', '후보 확인', '후기 신고'];
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -228,7 +228,8 @@ class _AdminPageState extends State<AdminPage> {
                 2 => _PopupTab(onChanged: widget.onChanged),
                 3 => _PlaceTab(places: widget.places, onChanged: widget.onChanged),
                 4 => _PendingTab(places: widget.places, onChanged: widget.onChanged),
-                _ => const _PicksTab(),
+                5 => const _PicksTab(),
+                _ => const ReviewAdminTab(),
               },
             ),
           ]),
@@ -1278,7 +1279,7 @@ Future<void> leaveAccount(BuildContext context) async {
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('회원 탈퇴', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-      content: const Text('계정과 계정에 저장한 콕한 집을 지우면 되돌릴 수 없어요. 이 휴대폰에 있는 목록은 그대로 남아요.', style: TextStyle(fontSize: 14, height: 1.45)),
+      content: const Text('계정과 계정에 저장한 콕한 집, 내가 쓴 후기·사진을 모두 지워요. 되돌릴 수 없어요. 이 휴대폰에 있는 목록은 그대로 남아요.', style: TextStyle(fontSize: 14, height: 1.45)),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
         TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('탈퇴하기', style: TextStyle(color: kInk, fontWeight: FontWeight.w700))),
@@ -1287,8 +1288,7 @@ Future<void> leaveAccount(BuildContext context) async {
   );
   if (ok != true) return;
   try {
-    final uid = fbUser?.uid;
-    if (uid != null) await fsdb.collection('users').doc(uid).delete().catchError((_) {});
+    await reviews.wipeMine(); // 내가 쓴 후기·사진·공감·신고, 계정 문서까지
     await fbUser?.delete();
     if (context.mounted) admToast(context, '탈퇴했어요. 그동안 고마웠어요');
   } on fa.FirebaseAuthException catch (e) {

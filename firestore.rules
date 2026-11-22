@@ -1,11 +1,52 @@
 rules_version = '2';
 // 콕플 파이어베이스 규칙: 읽기는 모두(앱에 보이는 내용), 쓰기는 관리자만. 회원 자기 문서는 본인만.
+// 후기: 로그인한 회원이 자기 이름으로만 쓰고 고치고 지움 · 같은 가게는 하루 한 개 · 공감은 자기 것만 넣고 뺌 · 숨기기는 관리자
 service cloud.firestore {
   match /databases/{database}/documents {
     function isAdmin() {
       return request.auth != null && request.auth.token.email in ['dfmail@naver.com', 'dfmail2580@gmail.com']
         && request.auth.token.email_verified == true; // 메일 인증을 마친 관리자만 (구글 계정은 처음부터 인증됨)
     }
+    function signedIn() {
+      return request.auth != null;
+    }
+    // 한국 날짜를 20261122 같은 숫자로 (어제 날짜도 받아 줌: 밤 12시 언저리 휴대폰 시계 차이)
+    function dayNum(t) {
+      return t.year() * 10000 + t.month() * 100 + t.day();
+    }
+    function dayOk(d) {
+      return d == dayNum(request.time + duration.value(9, 'h')) || d == dayNum(request.time + duration.value(9, 'h') - duration.value(24, 'h'));
+    }
+    function thumbOk(th, i) {
+      return th.size() <= i || (th[i] is string && th[i].size() < 90000);
+    }
+    // 후기 내용: 스티커 1~5개(겹침 없이, 정해진 것만) · 메뉴 스티커면 메뉴 이름 · 별점 0~5 · 한 줄 평 80자 · 사진 0~3장
+    function bodyOk(d) {
+      return d.st is list && d.st.size() >= 1 && d.st.size() <= 5
+        && d.st.toSet().size() == d.st.size()
+        && d.st.toSet().difference(['yt_ok', 'again', 'life', 'meh', 'wait_ok', 'wait_no', 'big', 'value', 'solo', 'date', 'menu', 'kind'].toSet()).size() == 0
+        && d.menu is string && d.menu.size() <= 20
+        && (!('menu' in d.st) || d.menu.size() > 0)
+        && d.star is int && d.star >= 0 && d.star <= 5
+        && d.text is string && d.text.size() <= 80
+        && d.nick is string && d.nick.size() >= 1 && d.nick.size() <= 12
+        && d.ph is int && d.ph >= 0 && d.ph <= 3
+        && d.th is list && d.th.size() == d.ph
+        && thumbOk(d.th, 0) && thumbOk(d.th, 1) && thumbOk(d.th, 2);
+    }
+    // 공감: 내 표시 하나만 넣거나 빼고, 수는 표시 수와 같게
+    function likeOk() {
+      let b = resource.data.likes.toSet();
+      let a = request.resource.data.likes.toSet();
+      let added = a.difference(b);
+      let removed = b.difference(a);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'lc'])
+        && request.resource.data.likes.size() <= 20000
+        && request.resource.data.lc == request.resource.data.likes.size()
+        && ((added.size() == 1 && added.hasAll([request.auth.uid]) && removed.size() == 0)
+          || (removed.size() == 1 && removed.hasAll([request.auth.uid]) && added.size() == 0));
+    }
+
     match /config/{doc} { allow read: if true; allow write: if isAdmin(); }
     match /banners/{doc} { allow read: if true; allow write: if isAdmin(); }
     match /bannerImg/{doc} { allow read: if true; allow write: if isAdmin(); }
@@ -17,6 +58,55 @@ service cloud.firestore {
     match /picks/{id} { allow read: if true; allow write: if isAdmin(); }
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // 후기 (문서 이름 = 가게id_회원id_날짜 → 같은 가게는 하루 한 개)
+    match /reviews/{rid} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'nick', 'pid', 'pname', 'rec', 'st', 'menu', 'star', 'text', 'ph', 'th', 'likes', 'lc', 'hidden', 'at', 'day'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.pid is string && request.resource.data.pid.size() > 0 && request.resource.data.pid.size() <= 40
+        && request.resource.data.pname is string && request.resource.data.pname.size() <= 60
+        && request.resource.data.rec is map
+        && request.resource.data.day is int && dayOk(request.resource.data.day)
+        && rid == request.resource.data.pid + '_' + request.auth.uid + '_' + string(request.resource.data.day)
+        && request.resource.data.at == request.time
+        && request.resource.data.likes is list && request.resource.data.likes.size() == 0 && request.resource.data.lc == 0
+        && request.resource.data.hidden == false
+        && bodyOk(request.resource.data);
+      allow update: if signedIn() && (
+        (resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nick', 'st', 'menu', 'star', 'text', 'ph', 'th', 'ed'])
+          && request.resource.data.ed == request.time
+          && bodyOk(request.resource.data))
+        || likeOk()
+        || isAdmin());
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+    // 후기 사진 원본 (문서 이름 = 후기이름_0~2)
+    match /reviewImg/{id} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'rid', 'd'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.rid is string && request.resource.data.rid.matches('.+_' + request.auth.uid + '_[0-9]{8}')
+        && id in [request.resource.data.rid + '_0', request.resource.data.rid + '_1', request.resource.data.rid + '_2']
+        && request.resource.data.d is string && request.resource.data.d.size() < 950000;
+      allow update: if signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['d'])
+        && request.resource.data.d is string && request.resource.data.d.size() < 950000;
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+    // 후기 신고 (한 사람이 한 후기에 한 번) → 관리자가 보고 숨김
+    match /reports/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'rid', 'why', 'pname', 'text', 'at'])
+        && request.resource.data.uid == request.auth.uid
+        && id == request.resource.data.rid + '_' + request.auth.uid
+        && request.resource.data.why is string && request.resource.data.why.size() <= 40
+        && request.resource.data.at == request.time;
+      allow read, delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
     }
   }
 }

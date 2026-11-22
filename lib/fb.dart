@@ -52,7 +52,10 @@ final ValueNotifier<int> authTick = ValueNotifier(0);
 void watchAuth() {
   if (!fbOn) return;
   fbAuth.setLanguageCode('ko').catchError((_) {}); // 인증·비밀번호 메일을 한국어로
-  fbAuth.authStateChanges().listen((_) => authTick.value++);
+  fbAuth.authStateChanges().listen((_) {
+    reviews.onAuth(); // 내가 쓴 후기·닉네임은 로그인한 사람마다
+    authTick.value++;
+  });
 }
 
 // 기간 (YYYY-MM-DD 글자, 비면 제한 없음)
@@ -69,6 +72,7 @@ const kHomeNames = {
   'hero': '맨 위 큰 비주얼',
   'roulette': '오늘 뭐 먹지 룰렛',
   'follow': '유튜버 따라 먹기',
+  'reviews': '방금 올라온 후기',
   'courses': '테마 골라 보기',
   'tops': '유튜버가 많이 찾은 집',
   'fresh': '새로 올라온 영상',
@@ -85,8 +89,12 @@ class HomeRemote {
 
 List<String> fixOrder(List<dynamic> raw) {
   final out = [for (final e in raw) '$e'].where(kHomeOrder.contains).toList();
-  for (final k in kHomeOrder) {
-    if (!out.contains(k)) out.add(k);
+  // 새로 생긴 칸은 원래 자리(바로 앞 칸 뒤)에 끼워 넣는다
+  for (var i = 0; i < kHomeOrder.length; i++) {
+    final k = kHomeOrder[i];
+    if (out.contains(k)) continue;
+    final before = i == 0 ? -1 : out.indexOf(kHomeOrder[i - 1]);
+    out.insert(before < 0 ? (i == 0 ? 0 : out.length) : before + 1, k);
   }
   return out;
 }
