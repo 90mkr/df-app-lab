@@ -23,6 +23,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 CH_FILE = os.path.join(ROOT, "pick_channels.json")
 CACHE = os.path.join(ROOT, "pick_cache.json")
 FB_FILE = os.path.join(ROOT, "fb.json")
+# 먼저 볼 가게 이름 (대표님이 준 목록에서 쯔양 영상에 실제로 나오는 것만) — 목록을 그대로 올리지 않고, 그 이름이 나오는 영상을 먼저 AI로 본다
+HINTS = os.path.join(ROOT, "pick_hints.json")
 OUT = os.path.join(ROOT, "..", "web", "data", "picks.json")
 FOLLOW = os.path.join(ROOT, "..", "web", "data", "follow.json")
 YT = "https://www.googleapis.com/youtube/v3/"
@@ -385,10 +387,13 @@ def main():
         print("AI 모델:", model)
 
         # 아직 안 본 영상: 인천 먼저, 그다음 최근 영상부터 (1분 넘는 영상만 — 쇼츠는 정보가 거의 없음)
+        hints = [norm(h.get("name", "")) for h in load(HINTS, []) if norm(h.get("name", ""))]
+
         def key(vc):
             v = cache["v"].get(vc[0], {})
             text = v.get("t", "") + " " + v.get("d", "")[:600]
-            return (any(k in text for k in INCHEON), v.get("date", ""))
+            full = norm(v.get("t", "") + " " + v.get("d", ""))
+            return (any(h in full for h in hints), any(k in text for k in INCHEON), v.get("date", ""))
 
         todo = [vc for vc in rows if vc[0] in cache["v"] and vc[0] not in cache["ai"] and cache["v"][vc[0]].get("dur", 0) > 60]
         todo.sort(key=key, reverse=True)
