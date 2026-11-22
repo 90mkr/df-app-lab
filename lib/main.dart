@@ -318,6 +318,27 @@ class Sido {
   bool get ready => areas.any((a) => a.ready);
 }
 
+// 지도 가운데가 어느 시·군·구인지: 콕플 자료 가게 주소로 어림한다 (돈 드는 지도 서비스를 쓰지 않음)
+String placeName(LatLng c, Iterable<Place> src, double zoom) {
+  if (zoom < 8) return '전국';
+  Place? best;
+  var bd = double.infinity;
+  for (final p in src) {
+    final d = meters(c, p.point);
+    if (d < bd) {
+      bd = d;
+      best = p;
+    }
+  }
+  if (best == null || bd > 60000) return '전국';
+  final parts = best.addr.split(' ').where((x) => x.isNotEmpty).toList();
+  if (parts.isEmpty) return '전국';
+  var sido = parts[0].replaceAll(RegExp(r'(통합특별시|특별자치도|특별자치시|특별시|광역시)$'), '');
+  if (sido == '전남광주') sido = '광주·전남';
+  if (bd > 25000 || parts.length < 2 || !RegExp(r'(시|군|구)$').hasMatch(parts[1])) return sido;
+  return '$sido ${parts[1]}';
+}
+
 // 지역 목록을 못 받았을 때 쓰는 기본값 (송도만)
 final kDefaultArea = Area({'id': 'songdo', 'name': '송도/연수', 'gu': '연수구', 'lat': 37.3905, 'lng': 126.6430, 'zoom': 13, 'ready': true}, '인천');
 
@@ -468,6 +489,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   String cuisine = ''; // 음식 종류 고르기 (한식·중식 …, 비면 전체)
   FollowData? follow; // 유명 유튜버 따라가기 (전국)
   bool followOn = false; // 지도에서 따라가기 가게를 보는 중
+  String here = ''; // 따라가기 중 지도 가운데가 콕플 동네 밖일 때 머리말에 보일 지역 (예: 제주 제주시, 전국)
   String followCh = ''; // 그중 한 채널만 (비면 전체)
   List<Place> _fp = const [];
   String _fpKey = '#';
@@ -906,6 +928,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void setArea(Area a) {
     setState(() {
       followOn = false;
+      here = '';
       focus = null;
       regionOpen = false;
       area = a;
@@ -930,6 +953,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
     final inside = readyAreas.where((a) => a.contains(cam.center)).toList()
       ..sort((x, y) => meters(cam.center, x.center).compareTo(meters(cam.center, y.center)));
+    final h = (followOn && inside.isEmpty && follow != null) ? placeName(cam.center, follow!.places, cam.zoom) : '';
+    if (h != here) setState(() => here = h);
     if (inside.isNotEmpty && inside.first.id != area.id) {
       final a = inside.first;
       setState(() => area = a);
@@ -1099,12 +1124,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) => openPlace(p));
   }
 
-  void closeFollow() => setState(() {
-        followOn = false;
-        focus = null;
-        followCh = '';
-        _fpKey = '#';
-      });
+  void closeFollow() {
+    final away = here.isNotEmpty; // 지도가 아직 준비 중인 지역에 있음 → 고르신 동네로 돌아감
+    setState(() {
+      followOn = false;
+      focus = null;
+      followCh = '';
+      _fpKey = '#';
+      here = '';
+    });
+    if (away) map.move(area.center, area.zoom);
+  }
 
   // 따라가기: 지금 보이는 범위의 가게 (여러 채널이 다녀간 집 → 최근 영상 순)
   List<Place> followVisible() {
@@ -1893,6 +1923,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             initialZoom: 13,
             minZoom: 6,
             maxZoom: 19,
+            // 두 손가락에 지도가 돌아가지 않게 (맛집 지도는 늘 북쪽이 위)
+            interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
             onPositionChanged: (camera, hasGesture) {
               if ((camera.zoom - zoom).abs() >= 0.05) setState(() => zoom = camera.zoom);
               _sync?.cancel();
@@ -1956,6 +1988,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               _Header(
                 data: data,
                 area: area,
+                here: followOn ? here : '',
                 open: regionOpen,
                 onRegion: openRegion,
                 sub: subText(base.length, cards),
@@ -2093,6 +2126,7 @@ BoxDecoration _card({double r = 14}) => BoxDecoration(
 class _Header extends StatelessWidget {
   final SongdoData? data;
   final Area area;
+  final String here; // 비어 있지 않으면 동네 이름 대신 (따라가기 중 지금 보는 곳)
   final bool open;
   final VoidCallback onRegion;
   final String sub;
@@ -2103,6 +2137,7 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.data,
     required this.area,
+    this.here = '',
     required this.open,
     required this.onRegion,
     required this.sub,
@@ -2129,9 +2164,10 @@ class _Header extends StatelessWidget {
           child: open ? const _XGlyph(size: 16) : const PinGlyph(size: 24, color: Colors.white, bg: kRegion),
         ),
         const SizedBox(width: 10),
-        Text('${area.sido} ', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: kInk)),
+        Text(here.isNotEmpty ? (here.contains(' ') ? '${here.split(' ').first} ' : '') : '${area.sido} ',
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: kInk)),
         Flexible(
-          child: Text(area.name,
+          child: Text(here.isNotEmpty ? (here.contains(' ') ? here.substring(here.indexOf(' ') + 1) : here) : area.name,
               maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk)),
         ),
         Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 28, color: kInk),
