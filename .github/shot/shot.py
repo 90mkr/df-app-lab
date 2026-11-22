@@ -215,9 +215,14 @@ def run(pg):
         time.sleep(1.5)
     tap_text("내 콕")
     shot("내콕")
+    pg.set_viewport_size({"width": 360, "height": 780})
+    time.sleep(2)
+    shot("내콕_360")
+    pg.set_viewport_size({"width": W, "height": H})
+    time.sleep(2)
     if tap_text("최근 본 집", 1.5, exact=False):
         shot("내콕_최근")
-    if tap_text("콕한 집", 1.5, exact=False):
+    if tap_text("콕한 집", 1.5):
         shot("내콕_콕한집")
     if tap_text("설정", 2):
         shot("설정")

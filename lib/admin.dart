@@ -1430,46 +1430,62 @@ class AccountStrip extends StatelessWidget {
             boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 14)],
           );
           if (u == null) {
-            return Container(
-              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-              decoration: box,
-              child: Row(children: [
-                const UserAvatar(null, size: 40),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => openLogin(context),
-                    behavior: HitTestBehavior.opaque,
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text.rich(const TextSpan(children: [
-                        TextSpan(text: '로그인', style: TextStyle(fontWeight: FontWeight.w700)),
-                        TextSpan(text: '하고 콕한 집 지키기', style: TextStyle(fontWeight: FontWeight.w400)),
-                      ]), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14.5, color: kInk, letterSpacing: -0.3)),
-                      const SizedBox(height: 2),
-                      const Text('구글 · 이메일로도 돼요 ›', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: kSub)),
-                    ]),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Semantics(
+            // 두 줄: 위엔 왜 로그인하는지, 아래엔 카카오 바로 시작 + 다른 방법 (작은 휴대폰에서도 글이 잘리지 않게)
+            Widget btn(String label, VoidCallback onTap, {required bool kakao}) => Semantics(
                   button: true,
-                  label: '카카오로 로그인',
-                  onTap: () => quickKakao(context),
+                  label: kakao ? '카카오로 로그인' : '구글이나 이메일로 로그인',
+                  onTap: onTap,
                   excludeSemantics: true,
                   child: GestureDetector(
-                    onTap: () => quickKakao(context),
+                    onTap: onTap,
                     child: Container(
-                      height: 38,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(color: const Color(0xFFFEE500), borderRadius: BorderRadius.circular(19)),
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.chat_bubble_rounded, size: 15, color: Color(0xFF191919)),
-                        SizedBox(width: 6),
-                        Text('카카오 로그인', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF191919))),
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: kakao ? const Color(0xFFFEE500) : Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: kakao ? null : Border.all(color: kPillLine),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (kakao) ...[
+                          const Icon(Icons.chat_bubble_rounded, size: 15, color: Color(0xFF191919)),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(label,
+                            maxLines: 1,
+                            style: TextStyle(fontSize: 13.5, fontWeight: kakao ? FontWeight.w700 : FontWeight.w500, color: const Color(0xFF191919))),
                       ]),
                     ),
                   ),
-                ),
+                );
+            return Container(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              decoration: box,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Row(children: [
+                  UserAvatar(null, size: 40),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text.rich(
+                          TextSpan(children: [
+                            TextSpan(text: '로그인', style: TextStyle(fontWeight: FontWeight.w700)),
+                            TextSpan(text: '하고 콕한 집 지키기', style: TextStyle(fontWeight: FontWeight.w400)),
+                          ]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 15, color: kInk, letterSpacing: -0.3)),
+                      SizedBox(height: 2),
+                      Text('휴대폰을 바꿔도 그대로 볼 수 있어요', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: kSub)),
+                    ]),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(flex: 3, child: btn('카카오로 시작하기', () => quickKakao(context), kakao: true)),
+                  const SizedBox(width: 8),
+                  Expanded(flex: 2, child: btn('구글 · 이메일', () => openLogin(context), kakao: false)),
+                ]),
               ]),
             );
           }
@@ -1486,7 +1502,7 @@ class AccountStrip extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(userName(u), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: kInk)),
                     const SizedBox(height: 2),
-                    Text('${userSub(u)} · 콕한 집${koks > 0 ? ' $koks곳' : ''} 계정에 저장 중',
+                    Text(koks > 0 ? '콕한 집 $koks곳 저장 중' : '콕하면 계정에 저장돼요',
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: kSub)),
                   ]),
                 ),
