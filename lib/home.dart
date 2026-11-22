@@ -724,6 +724,33 @@ Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLin
     );
 
 // ---- 홈 ----
+// 메인 칸 순서 (나중에 관리자 화면에서 바꿀 수 있게 이름 목록)
+const kHomeOrder = ['hero', 'roulette', 'follow', 'courses', 'tops', 'fresh', 'creators', 'cuisine'];
+
+// 맨 위 큰 비주얼에 섞어 넘기는 배너 (관리자 화면에서 등록)
+class HomeBanner {
+  final String id, title, sub, image, link;
+  HomeBanner(Map<String, dynamic> j)
+      : id = '${j['id'] ?? ''}',
+        title = '${j['title'] ?? ''}',
+        sub = '${j['sub'] ?? ''}',
+        image = '${j['image'] ?? ''}',
+        link = '${j['link'] ?? ''}';
+}
+
+// 배너 그림: 주소이거나, 관리자 화면에서 올린 그림 글자(base64)
+Widget bannerImage(HomeBanner b) {
+  final fb = Container(color: const Color(0xFFE9E9EC));
+  if (b.image.startsWith('http')) {
+    return Image.network(b.image, fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => fb);
+  }
+  try {
+    return Image.memory(base64Decode(b.image.split(',').last), fit: BoxFit.cover, gaplessPlayback: true, errorBuilder: (_, __, ___) => fb);
+  } catch (_) {
+    return fb;
+  }
+}
+
 class HomeView extends StatelessWidget {
   final SongdoData? data;
   final String? error;
@@ -740,6 +767,10 @@ class HomeView extends StatelessWidget {
   final ValueChanged<String> onFollow; // 채널 id (비면 전체) → 지도
   final ValueChanged<Place> onFollowPlace; // 새로 올라온 영상 → 그 가게
   final Future<void> Function() onRefresh; // 아래로 당겨 새로 고침
+  final bool active; // 홈 탭을 보고 있는지 (맨 위 영상은 보일 때만 재생)
+  final List<HomeBanner> banners; // 맨 위 비주얼에 섞을 배너
+  final ValueChanged<HomeBanner>? onBanner;
+  final List<String> order; // 칸 순서
   const HomeView({
     super.key,
     required this.data,
@@ -761,12 +792,16 @@ class HomeView extends StatelessWidget {
     required this.onFollow,
     required this.onFollowPlace,
     required this.onRefresh,
+    this.active = true,
+    this.banners = const [],
+    this.onBanner,
+    this.order = kHomeOrder,
   });
 
   @override
   Widget build(BuildContext context) {
     final d = data;
-    // 머리말은 흰 띠, 그 아래는 옅은 회색 바탕 위에 흰 카드
+    // 머리말은 흰 띠, 그 아래는 옅은 회색 바탕 (흰 상자와 바탕 위 칸을 섞어서)
     return ColoredBox(
       color: Colors.white,
       child: SafeArea(
@@ -786,17 +821,8 @@ class HomeView extends StatelessWidget {
                   : RefreshIndicator(
                       onRefresh: onRefresh,
                       color: kAccent,
-                      child: ListView(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.only(top: 14, bottom: 36), children: [
-                        _hero(d),
-                        const SizedBox(height: 40), // 룰렛 판이 카드 위로 튀어나올 자리
-                        Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: RouletteBanner(onTap: onRoulette)),
-                        const SizedBox(height: 14),
-                        _find(),
-                        _follow(),
-                        _fresh(),
-                        _creators(d),
-                        _tops(d),
-                        _courses(d),
+                      child: ListView(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.only(bottom: 44), children: [
+                        for (final k in order) ..._section(k, d),
                       ]),
                     )),
             ),
@@ -806,165 +832,85 @@ class HomeView extends StatelessWidget {
     );
   }
 
-  // 무엇이 당기세요? — 찾기 칸 + 음식 종류
-  Widget _find() => homeCard(
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          sectionHead('무엇이 ', '당기세요?', pad: 18, size: 18),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: Semantics(
-              button: true,
-              label: '가게 찾기',
-              onTap: onSearch,
-              excludeSemantics: true,
-              child: GestureDetector(
-                onTap: onSearch,
-                child: Container(
-                  height: 52,
-                  padding: const EdgeInsets.only(left: 8, right: 16),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(26), border: Border.all(color: kInk, width: 1)),
-                  child: Row(children: [
-                    const Text('🍜', style: TextStyle(fontSize: 27, height: 1.1)),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(children: [
-                          TextSpan(text: area.name.split('/').first, style: const TextStyle(fontWeight: FontWeight.w700, color: kAccent)),
-                          const TextSpan(text: ' 맛집을 찾아보세요'),
-                        ]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 15.5, color: kInk),
-                      ),
-                    ),
-                    const LineIcon('search', size: 24),
-                  ]),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: CuisinePills(current: '', onPick: onCuisine)),
-        ]),
-        padding: const EdgeInsets.fromLTRB(0, 24, 0, 24),
-      );
+  List<Widget> _section(String k, SongdoData d) => switch (k) {
+        'hero' => [_hero(d)],
+        'roulette' => [
+            const SizedBox(height: 46), // 룰렛 판이 카드 위로 튀어나올 자리
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: RouletteBanner(onTap: onRoulette)),
+          ],
+        'follow' => [_follow()],
+        'courses' => [_courses(d)],
+        'tops' => [_tops(d)],
+        'fresh' => [_fresh()],
+        'creators' => [_creators(d)],
+        'cuisine' => [_cuisine()],
+        _ => const <Widget>[],
+      };
+
+  // 맨 위 영상: 이 동네 유튜버 순위에서 오늘의 집 → 영상이 없는 동네는 따라가기 자료에서 이 동네 최근 영상
+  (Place, Video?, bool)? _heroPick(SongdoData d) {
+    Video? vidOf(Place p) {
+      final l = p.vids.where((x) => !x.short).toList();
+      if (l.isEmpty) return null;
+      return l.firstWhere((x) => x.hd, orElse: () => l.first);
+    }
+
+    final p = todaysPlace(d);
+    if (p != null) {
+      final v = vidOf(p);
+      if (v != null) return (p, v, false);
+    }
+    final f = follow;
+    if (f != null) {
+      final near = [
+        for (final q in f.places)
+          if (area.contains(q.point) && vidOf(q) != null) q
+      ]..sort((a, b) => vidOf(b)!.date.compareTo(vidOf(a)!.date));
+      if (near.isNotEmpty) {
+        final t = nowKst();
+        final day = t.difference(DateTime.utc(t.year)).inDays;
+        final q = near[day % math.min(near.length, 7)];
+        return (q, vidOf(q), true);
+      }
+    }
+    return p == null ? null : (p, null, false);
+  }
 
   Widget _hero(SongdoData d) {
-    final p = todaysPlace(d);
-    if (p == null) return const SizedBox();
-    final v = p.vids.isEmpty
-        ? null
-        : p.vids.firstWhere((x) => x.hd && !x.short, orElse: () => p.vids.firstWhere((x) => !x.short, orElse: () => p.vids.first));
-    final n = ytCount(p);
-    final o = openInfo(p);
-    final tint = kindTint(p.kind);
-    final plain = Container(
-      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [tint, tint.withValues(alpha: 0.72)])),
-      alignment: Alignment.center,
-      child: KindGlyph(kind: p.kind, size: 64, bg: tint),
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        GestureDetector(
-          onTap: () {
-            if (v == null) {
-              onWhere(p);
-            } else {
-              openUrl('https://www.youtube.com/watch?v=${v.id}');
-            }
-          },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Stack(fit: StackFit.expand, children: [
-                if (v == null) plain else ytWide(v, fallback: plain),
-                if (n > 0)
-                  Positioned(
-                    left: 12,
-                    top: 12,
-                    child: Container(
-                      height: 22,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(11)),
-                      child: Text('유튜버 $n명 방문', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: kAccent)),
-                    ),
-                  ),
-                if (v != null)
-                  Center(
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), shape: BoxShape.circle),
-                      child: const LineIcon('play', size: 20),
-                    ),
-                  ),
-              ]),
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(v == null ? '오늘의 추천' : '오늘의 영상', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kAccent)),
-              const SizedBox(height: 4),
-              Text(p.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.5, height: 1.3)),
-              const SizedBox(height: 4),
-              Text([if (v != null) v.channel, if (dongOf(p).isNotEmpty) dongOf(p), if (v == null && p.cat.isNotEmpty) p.cat, if (o != null) o.short].where((x) => x.isNotEmpty).join(' · '),
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w400, color: kSub)),
-            ]),
-          ),
-          const SizedBox(width: 12),
-          Semantics(
-            button: true,
-            label: '이 집 어디야',
-            onTap: () => onWhere(p),
-            excludeSemantics: true,
-            child: GestureDetector(
-              onTap: () => onWhere(p),
-              child: Container(
-                height: 42,
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(21)),
-                child: const Text('이 집 어디야', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Colors.white)),
-              ),
-            ),
-          ),
-        ]),
-      ]),
+    final pick = _heroPick(d);
+    if (pick == null) return const SizedBox();
+    final (p, v, fromFollow) = pick;
+    return HomeHero(
+      key: ValueKey('hero-${area.id}-${p.id}-${v?.id ?? ''}'),
+      place: p,
+      video: v,
+      active: active,
+      banners: banners,
+      onWhere: () => fromFollow ? onFollowPlace(p) : onWhere(p),
+      onBanner: onBanner,
     );
   }
 
-  // 유튜버 따라 먹기 (전국): 큰 맛집 채널 → 누르면 지도에서 그 채널이 다녀간 집
+  // 유튜버 따라 먹기 (전국): 바탕 위에 큰 동그라미
   Widget _follow() {
     final f = follow;
     if (f == null || f.channels.isEmpty) return const SizedBox();
-    return homeCard(
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('유튜버 ', '따라 먹기', link: '전국 지도', onLink: () => onFollow(''), pad: 18, size: 18),
+    return Padding(
+      padding: const EdgeInsets.only(top: 34),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        sectionHead('유튜버 ', '따라 먹기', link: '전국 지도', onLink: () => onFollow('')),
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
-          child: Text('맛집 채널이 영상에 주소를 적어 둔 집 · 전국 ${commas(f.places.length)}곳',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: kSub)),
+          padding: const EdgeInsets.fromLTRB(20, 5, 20, 0),
+          child: Text('맛집 채널이 영상에 주소를 적어 둔 집 · 전국 ${commas(f.places.length)}곳', style: const TextStyle(fontSize: 13, color: kSub)),
         ),
         const SizedBox(height: 16),
         SizedBox(
-          height: 118,
+          height: 132,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: f.channels.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (_, i) {
               final c = f.channels[i];
               return Semantics(
@@ -972,64 +918,39 @@ class HomeView extends StatelessWidget {
                 label: '${c.name} 따라 먹기',
                 onTap: () => onFollow(c.id),
                 excludeSemantics: true,
-                child: GestureDetector(onTap: () => onFollow(c.id), child: ChanAvatar(c)),
+                child: GestureDetector(onTap: () => onFollow(c.id), child: ChanAvatar(c, size: 82, lift: true)),
               );
             },
           ),
         ),
       ]),
-      padding: const EdgeInsets.fromLTRB(0, 22, 0, 16),
     );
   }
 
-  // 새로 올라온 영상 (따라가는 채널들의 최근 영상 — 누르면 그 가게)
-  Widget _fresh() {
-    final f = follow;
-    if (f == null || f.fresh.isEmpty) return const SizedBox();
+  // 테마 골라 보기: 사진 한 장을 크게 깐 카드
+  Widget _courses(SongdoData d) {
+    final list = coursesOf(d, area);
+    if (list.isEmpty) return const SizedBox();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 14, 0, 22),
+      padding: const EdgeInsets.only(top: 30),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('새로 ', '올라온 영상', size: 18),
+        sectionHead('테마 ', '골라 보기'),
         const SizedBox(height: 14),
         SizedBox(
-          height: 232,
+          height: 200,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: f.fresh.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (_, i) {
-              final (v, p) = f.fresh[i];
-              return FreshCard(video: v, place: p, channel: f.names[v.cid] ?? v.channel, onTap: () => onFollowPlace(p));
-            },
-          ),
-        ),
-      ]),
-    );
-  }
-
-  Widget _creators(SongdoData d) {
-    final list = channelsOf(d).take(12).toList();
-    if (list.isEmpty) return const SizedBox();
-    return homeCard(
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('이 동네 ', '다녀간 유튜버', link: '전체 보기', onLink: onAllChannels, pad: 18, size: 18),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 118,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
-            itemBuilder: (_, i) => GestureDetector(onTap: () => onChannel(list[i]), child: ChanAvatar(list[i], ring: i == 0 ? kAccent : kPillLine)),
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, i) => ThemeCard(list[i], onTap: () => onCourse(list[i])),
           ),
         ),
       ]),
-      padding: const EdgeInsets.fromLTRB(0, 22, 0, 16),
     );
   }
 
+  // 유튜버가 많이 찾은 집: 흰 상자 안 줄 목록 (썸네일 크게)
   Widget _tops(SongdoData d) {
     final yt = ytRank(d);
     final list = (yt.isNotEmpty ? yt : popRank(d)).take(5).toList();
@@ -1037,44 +958,534 @@ class HomeView extends StatelessWidget {
     return homeCard(
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         yt.isNotEmpty
-            ? sectionHead('유튜버가 ', '많이 찾은 집', link: '순위 전체', onLink: onRankAll, pad: 18, size: 18)
-            : sectionHead('지금 ', '인기 많은 집', link: '순위 전체', onLink: onRankAll, pad: 18, size: 18),
+            ? sectionHead('유튜버가 ', '많이 찾은 집', link: '순위 전체', onLink: onRankAll, pad: 18)
+            : sectionHead('지금 ', '인기 많은 집', link: '순위 전체', onLink: onRankAll, pad: 18),
         if (yt.isEmpty)
           const Padding(
-            padding: EdgeInsets.fromLTRB(18, 4, 18, 0),
-            child: Text('이 동네 유튜브 영상은 모으는 중이라, 구글 별점·리뷰 순으로 보여 드려요', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
+            padding: EdgeInsets.fromLTRB(18, 5, 18, 0),
+            child: Text('이 동네 유튜브 영상은 모으는 중이라, 구글 별점·리뷰 순으로 보여 드려요', style: TextStyle(fontSize: 12, color: kSub)),
           ),
         const SizedBox(height: 6),
         for (var i = 0; i < list.length; i++) ...[
           if (i > 0) const Divider(height: 1, thickness: 1, color: kHair, indent: 18, endIndent: 18),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: YtRow(place: list[i], rank: i + 1, onTap: () => onWhere(list[i]))),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: YtRow(place: list[i], rank: i + 1, thumb: 118, onTap: () => onWhere(list[i]))),
         ],
       ]),
       padding: const EdgeInsets.fromLTRB(0, 22, 0, 8),
+      margin: const EdgeInsets.fromLTRB(14, 30, 14, 0),
     );
   }
 
-  Widget _courses(SongdoData d) {
-    final list = coursesOf(d, area);
-    if (list.isEmpty) return const SizedBox();
+  // 새로 올라온 영상: 바탕 위에 넓은 영상 카드
+  Widget _fresh() {
+    final f = follow;
+    if (f == null || f.fresh.isEmpty) return const SizedBox();
     return Padding(
-      padding: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.only(top: 32),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('테마 ', '골라 보기', size: 18),
+        sectionHead('새로 ', '올라온 영상'),
         const SizedBox(height: 14),
         SizedBox(
-          height: 178,
+          height: 262,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, i) => CourseCard(list[i], onTap: () => onCourse(list[i])),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: f.fresh.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) {
+              final (v, p) = f.fresh[i];
+              return FreshCard(video: v, place: p, channel: f.names[v.cid] ?? v.channel, width: 300, onTap: () => onFollowPlace(p));
+            },
           ),
         ),
       ]),
     );
   }
+
+  // 이 동네 다녀간 유튜버: 흰 상자 안 작은 알약 (위 큰 동그라미와 다르게)
+  Widget _creators(SongdoData d) {
+    final list = channelsOf(d).take(10).toList();
+    if (list.isEmpty) return const SizedBox();
+    return homeCard(
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        sectionHead('이 동네 ', '다녀간 유튜버', link: '전체 보기', onLink: onAllChannels, pad: 18),
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(spacing: 8, runSpacing: 8, children: [
+            for (var i = 0; i < list.length; i++) ChanChip(list[i], first: i == 0, onTap: () => onChannel(list[i])),
+          ]),
+        ),
+      ]),
+      padding: const EdgeInsets.fromLTRB(0, 22, 0, 20),
+      margin: const EdgeInsets.fromLTRB(14, 32, 14, 0),
+    );
+  }
+
+  // 무엇이 당기세요?: 작은 한 줄 가로 넘김
+  Widget _cuisine() => Padding(
+        padding: const EdgeInsets.only(top: 32),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          sectionHead('무엇이 ', '당기세요?', link: '가게 찾기', onLink: onSearch),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: kCuisines.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) => SmallChip(label: kCuisines[i], emoji: kCuisineEmoji[kCuisines[i]] ?? '', onTap: () => onCuisine(kCuisines[i])),
+            ),
+          ),
+        ]),
+      );
+}
+
+// 맨 위 큰 비주얼: 오늘의 영상(와이파이면 소리 없이 자동 재생) + 배너를 옆으로 넘김
+// 유튜브 규칙: 영상 위에는 글씨·표시를 올리지 않는다 · 화면에 보일 때만 자동 재생 · 한 화면에 하나
+class HomeHero extends StatefulWidget {
+  final Place place;
+  final Video? video;
+  final bool active;
+  final List<HomeBanner> banners;
+  final VoidCallback onWhere;
+  final ValueChanged<HomeBanner>? onBanner;
+  const HomeHero({super.key, required this.place, required this.video, required this.active, required this.banners, required this.onWhere, this.onBanner});
+  @override
+  State<HomeHero> createState() => _HomeHeroState();
+}
+
+class _HomeHeroState extends State<HomeHero> {
+  final page = PageController();
+  int index = 0;
+  YoutubePlayerController? yt;
+  bool auto = false; // 와이파이: 소리 없이 자동 재생
+  bool sound = false; // 눌러서 소리 켜고 보는 중
+  bool seen = true; // 영상이 화면에 절반 넘게 보이는지
+  ScrollPosition? _pos;
+  Timer? _flip;
+
+  bool get hasVideo => widget.video != null;
+  int get count => math.max(1, (hasVideo ? 1 : 0) + widget.banners.length);
+  bool get onVideo => hasVideo && index == 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _net();
+    _flip = Timer.periodic(const Duration(seconds: 6), (_) => _next());
+  }
+
+  // 와이파이(또는 유선)일 때만 소리 없이 자동 재생 — 휴대폰 데이터면 사진 + 재생 단추
+  Future<void> _net() async {
+    if (!hasVideo) return;
+    try {
+      final r = await Connectivity().checkConnectivity();
+      final wifi = r.contains(ConnectivityResult.wifi) || r.contains(ConnectivityResult.ethernet) || (kIsWeb && !r.contains(ConnectivityResult.mobile));
+      if (!mounted || !wifi || sound) return;
+      setState(() {
+        auto = true;
+        yt = _player(mute: true);
+      });
+    } catch (_) {}
+  }
+
+  YoutubePlayerController _player({required bool mute}) => YoutubePlayerController.fromVideoId(
+        videoId: widget.video!.id,
+        autoPlay: widget.active && seen,
+        params: YoutubePlayerParams(
+          mute: mute,
+          showControls: !mute,
+          showFullscreenButton: !mute,
+          playsInline: true,
+          strictRelatedVideos: true,
+          showVideoAnnotations: false,
+        ),
+      );
+
+  // 소리 켜고 처음부터 (누른 뒤에만 소리)
+  void playSound() {
+    if (!hasVideo) return;
+    if (index != 0 && page.hasClients) page.jumpToPage(0);
+    final old = yt;
+    setState(() {
+      sound = true;
+      yt = _player(mute: false);
+    });
+    old?.close();
+  }
+
+  // 보일 때만 재생: 안 보이면 멈추고, 다시 보이면 (소리 없는 미리보기만) 다시 재생
+  void _sync() {
+    final c = yt;
+    if (c == null) return;
+    final show = widget.active && seen && onVideo;
+    if (!show) {
+      c.pauseVideo().catchError((_) {});
+    } else if (!sound) {
+      c.playVideo().catchError((_) {});
+    }
+  }
+
+  void _next() {
+    if (!mounted || count < 2 || !page.hasClients) return;
+    if (onVideo && (auto || sound)) return; // 영상이 도는 동안은 넘기지 않음
+    page.animateToPage((index + 1) % count, duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final p = Scrollable.maybeOf(context)?.position;
+    if (!identical(p, _pos)) {
+      _pos?.removeListener(_onScroll);
+      _pos = p;
+      _pos?.addListener(_onScroll);
+    }
+  }
+
+  void _onScroll() {
+    final w = context.size?.width ?? 0;
+    final s = (_pos?.pixels ?? 0) < w * 9 / 16 / 2;
+    if (s != seen) {
+      seen = s;
+      _sync();
+    }
+  }
+
+  @override
+  void didUpdateWidget(HomeHero old) {
+    super.didUpdateWidget(old);
+    if (old.active != widget.active) _sync();
+  }
+
+  @override
+  void dispose() {
+    _pos?.removeListener(_onScroll);
+    _flip?.cancel();
+    yt?.close();
+    page.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.place, v = widget.video;
+    final tint = kindTint(p.kind);
+    final plain = Container(
+      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [tint, tint.withValues(alpha: 0.72)])),
+      alignment: Alignment.center,
+      child: KindGlyph(kind: p.kind, size: 64, bg: tint),
+    );
+    Widget videoSlide() {
+      final c = yt;
+      if (c != null) return YoutubePlayer(key: ValueKey(sound), controller: c, aspectRatio: 16 / 9);
+      // 사진 + 재생 단추 (누르면 소리 켜고 재생)
+      return Semantics(
+        button: true,
+        label: '영상 보기',
+        onTap: playSound,
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: playSound,
+          child: Stack(fit: StackFit.expand, children: [
+            ytWide(v!, fallback: plain),
+            Center(
+              child: Container(
+                width: 60,
+                height: 60,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), shape: BoxShape.circle),
+                child: const LineIcon('play', size: 22),
+              ),
+            ),
+          ]),
+        ),
+      );
+    }
+
+    final slides = <Widget>[
+      if (v != null) videoSlide(),
+      for (final b in widget.banners) GestureDetector(onTap: () => widget.onBanner?.call(b), child: bannerImage(b)),
+    ];
+    if (slides.isEmpty) slides.add(GestureDetector(onTap: widget.onWhere, child: plain));
+    final bi = index - (v != null ? 1 : 0);
+    final banner = bi >= 0 && bi < widget.banners.length ? widget.banners[bi] : null;
+    return ColoredBox(
+      color: Colors.white,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: PageView(
+            controller: page,
+            onPageChanged: (i) {
+              setState(() => index = i);
+              _sync();
+            },
+            children: slides,
+          ),
+        ),
+        if (slides.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              for (var i = 0; i < slides.length; i++)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  width: i == index ? 16 : 6,
+                  height: 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(color: i == index ? kInk : const Color(0xFFD5D7DC), borderRadius: BorderRadius.circular(3)),
+                ),
+            ]),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 16, 20),
+          child: banner != null ? _bannerInfo(banner) : _placeInfo(p, v),
+        ),
+      ]),
+    );
+  }
+
+  Widget _placeInfo(Place p, Video? v) {
+    final n = ytCount(p);
+    final o = openInfo(p);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text(v == null ? '오늘의 추천' : '오늘의 영상', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kAccent)),
+        if (n > 0) ...[
+          const SizedBox(width: 8),
+          Container(
+            height: 22,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: kAccentTint, borderRadius: BorderRadius.circular(11)),
+            child: Text('유튜버 $n명 방문', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: kAccent)),
+          ),
+        ],
+        const Spacer(),
+        if (v != null && !sound)
+          Semantics(
+            button: true,
+            label: '소리 켜고 보기',
+            onTap: playSound,
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: playSound,
+              behavior: HitTestBehavior.opaque,
+              child: const Padding(
+                padding: EdgeInsets.fromLTRB(10, 4, 4, 4),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.volume_up_rounded, size: 17, color: kSub),
+                  SizedBox(width: 3),
+                  Text('소리 켜고 보기', style: TextStyle(fontSize: 12.5, color: kSub)),
+                ]),
+              ),
+            ),
+          ),
+      ]),
+      const SizedBox(height: 7),
+      Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.name,
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.5, height: 1.25)),
+            const SizedBox(height: 4),
+            Text(
+                [
+                  if (v != null) v.channel,
+                  if (dongOf(p).isNotEmpty) dongOf(p) else if (p.gu.isNotEmpty) p.gu,
+                  if (v == null && p.cat.isNotEmpty) p.cat,
+                  if (o != null) o.short
+                ].where((x) => x.isNotEmpty).join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13.5, color: kSub)),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        Semantics(
+          button: true,
+          label: '이 집 어디야',
+          onTap: widget.onWhere,
+          excludeSemantics: true,
+          child: GestureDetector(
+            onTap: widget.onWhere,
+            child: Container(
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(21)),
+              child: const Text('이 집 어디야', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ),
+        ),
+      ]),
+    ]);
+  }
+
+  Widget _bannerInfo(HomeBanner b) => Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('콕플 소식', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kAccent)),
+            const SizedBox(height: 7),
+            Text(b.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.5, height: 1.25)),
+            if (b.sub.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(b.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, color: kSub)),
+            ],
+          ]),
+        ),
+        if (b.link.isNotEmpty) ...[
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: () => widget.onBanner?.call(b),
+            child: Container(
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: kInk, borderRadius: BorderRadius.circular(21)),
+              child: const Text('자세히 보기', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ),
+        ],
+      ]);
+}
+
+// 테마 카드: 사진 한 장을 크게 깔고 그 위에 글자 (아래쪽만 살짝 어둡게)
+class ThemeCard extends StatelessWidget {
+  final Course c;
+  final VoidCallback onTap;
+  const ThemeCard(this.c, {super.key, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    Video? cover;
+    Place? coverPlace;
+    for (final p in c.stops) {
+      final l = p.vids.where((x) => !x.short).toList();
+      if (l.isNotEmpty) {
+        cover = l.firstWhere((x) => x.hd, orElse: () => l.first);
+        coverPlace = p;
+        break;
+      }
+    }
+    final kind = (coverPlace ?? (c.stops.isNotEmpty ? c.stops.first : null))?.kind ?? 'food';
+    final tint = kindTint(kind);
+    final plain = Container(
+      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [tint, tint.withValues(alpha: 0.7)])),
+      alignment: Alignment.topRight,
+      padding: const EdgeInsets.all(18),
+      child: KindGlyph(kind: kind, size: 44, bg: tint),
+    );
+    return Semantics(
+      button: true,
+      label: c.name,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            width: 292,
+            height: 200,
+            child: Stack(fit: StackFit.expand, children: [
+              if (cover == null) plain else ytWide(cover, fallback: plain),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.42, 1.0],
+                    colors: [Color(0x00000000), Color(0x9E000000)],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 18,
+                right: 18,
+                bottom: 16,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: c.bold, style: const TextStyle(fontWeight: FontWeight.w800)),
+                      TextSpan(text: c.light, style: const TextStyle(fontWeight: FontWeight.w300)),
+                    ]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 21, color: Colors.white, letterSpacing: -0.5, height: 1.25),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(c.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: Color(0xE6FFFFFF))),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// 이 동네 다녀간 유튜버: 작은 알약 (사진 + 이름 + 가게 수)
+class ChanChip extends StatelessWidget {
+  final Chan c;
+  final bool first;
+  final VoidCallback onTap;
+  const ChanChip(this.c, {super.key, this.first = false, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: c.name,
+        onTap: onTap,
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.only(left: 4, right: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: first ? kAccent : kPillLine, width: 1),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              ChanAvatar(c, label: false, size: 32),
+              const SizedBox(width: 8),
+              Text(c.name, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: kInk)),
+              const SizedBox(width: 5),
+              Text('${c.places.length}', style: const TextStyle(fontSize: 12, color: kSub)),
+            ]),
+          ),
+        ),
+      );
+}
+
+// 작은 알약 단추 (그림 글자 + 이름) — 홈 맨 아래 음식 종류
+class SmallChip extends StatelessWidget {
+  final String label, emoji;
+  final VoidCallback onTap;
+  const SmallChip({super.key, required this.label, this.emoji = '', required this.onTap});
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: label,
+        onTap: onTap,
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: kPillLine, width: 1)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (emoji.isNotEmpty) ...[Text(emoji, style: const TextStyle(fontSize: 17, height: 1.1)), const SizedBox(width: 6)],
+              Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: kInk)),
+            ]),
+          ),
+        ),
+      );
 }
 
 // 오늘 뭐 먹지? (홈 띠)
@@ -1296,7 +1707,8 @@ class FreshCard extends StatelessWidget {
   final Place place;
   final String channel;
   final VoidCallback onTap;
-  const FreshCard({super.key, required this.video, required this.place, required this.channel, required this.onTap});
+  final double width;
+  const FreshCard({super.key, required this.video, required this.place, required this.channel, required this.onTap, this.width = 244});
   @override
   Widget build(BuildContext context) {
     final v = video;
@@ -1310,7 +1722,7 @@ class FreshCard extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: SizedBox(
-          width: 244,
+          width: width,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -1785,7 +2197,9 @@ class ChanAvatar extends StatelessWidget {
   final Chan c;
   final Color ring;
   final bool label;
-  const ChanAvatar(this.c, {super.key, this.ring = kPillLine, this.label = true});
+  final double size; // 동그라미 지름
+  final bool lift; // 회색 바탕 위: 흰 테 + 옅은 그림자
+  const ChanAvatar(this.c, {super.key, this.ring = kPillLine, this.label = true, this.size = 66, this.lift = false});
   static const _bgs = [Color(0xFF3D3D46), Color(0xFF5A4A3C), Color(0xFF46505A), Color(0xFF4F4652), Color(0xFF3F4D45)];
   @override
   Widget build(BuildContext context) {
@@ -1793,21 +2207,26 @@ class ChanAvatar extends StatelessWidget {
     final initial = Container(
       decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
       alignment: Alignment.center,
-      child: Text(c.initial, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+      child: Text(c.initial, style: TextStyle(fontSize: size * 0.24, fontWeight: FontWeight.w700, color: Colors.white)),
     );
     final circle = Container(
-      width: 66,
-      height: 66,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ring, width: 1)),
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(size >= 40 ? 2 : 0),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: lift ? Colors.white : null,
+        border: size >= 40 ? Border.all(color: lift ? Colors.white : ring, width: 1) : null,
+        boxShadow: lift ? [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 10)] : null,
+      ),
       child: c.thumb.isEmpty
           ? initial
           : ClipOval(
               child: Image.network(
                 c.thumb,
                 fit: BoxFit.cover,
-                width: 60,
-                height: 60,
+                width: size,
+                height: size,
                 webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
                 errorBuilder: (_, __, ___) => initial,
               ),
@@ -1815,7 +2234,7 @@ class ChanAvatar extends StatelessWidget {
     );
     if (!label) return circle;
     return SizedBox(
-      width: 72,
+      width: size + 8,
       child: Column(children: [
         circle,
         const SizedBox(height: 7),
@@ -1833,7 +2252,8 @@ class YtRow extends StatelessWidget {
   final Place place;
   final int rank;
   final VoidCallback onTap;
-  const YtRow({super.key, required this.place, required this.rank, required this.onTap});
+  final double thumb; // 썸네일 너비
+  const YtRow({super.key, required this.place, required this.rank, required this.onTap, this.thumb = 92});
   @override
   Widget build(BuildContext context) {
     final n = ytCount(place);
@@ -1847,7 +2267,7 @@ class YtRow extends StatelessWidget {
             child: Text('$rank', textAlign: TextAlign.center, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: rank == 1 ? kAccent : kInk)),
           ),
           const SizedBox(width: 10),
-          ytSmall(place, 92),
+          ytSmall(place, thumb),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

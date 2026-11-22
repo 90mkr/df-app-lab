@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart' show YoutubePlayer, YoutubePlayerController, YoutubePlayerParams;
+import 'package:connectivity_plus/connectivity_plus.dart' show Connectivity, ConnectivityResult;
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -1655,6 +1657,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       body: IndexedStack(index: tab, children: [
         HomeView(
           onRefresh: pullRefresh,
+          active: tab == 0,
           data: data,
           error: error,
           area: area,

@@ -63,6 +63,24 @@ def run(pg):
         pg.mouse.up()
         time.sleep(wait)
 
+    # 아래로 내려 가며 찾기 (아래 탭에 가리지 않는 자리까지)
+    def scroll_find(text, exact=True, step=350, tries=16):
+        for _ in range(tries):
+            b = find(text, exact)
+            if b and b["y"] + b["height"] < H - 90:
+                return b
+            wheel(195, 500, step, 0.8)
+        return None
+
+    def tap_scroll(text, wait=2.5, exact=True):
+        b = scroll_find(text, exact)
+        if not b:
+            log.append(f"못 찾음: {text}")
+            return False
+        pg.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+        time.sleep(wait)
+        return True
+
     def labels():
         try:
             return pg.evaluate("""() => Array.from(document.querySelectorAll('flt-semantics, [role]'))
@@ -77,11 +95,10 @@ def run(pg):
     shot("새로고침")
     time.sleep(2.5)
     shot("새로고침_끝")
-    wheel(195, 560, 700)
-    shot("홈_아래")
-    wheel(195, 560, 1500)
-    shot("홈_코스")
-    wheel(195, 400, -4000, 1)
+    for i in range(1, 7):
+        wheel(195, 560, 600, 1.6)
+        shot(f"홈_{i}")
+    wheel(195, 400, -9000, 1)
     # 오늘 뭐 먹지 룰렛
     if tap_text("오늘 뭐 먹지?", 2):
         shot("룰렛")
@@ -93,14 +110,13 @@ def run(pg):
         time.sleep(1.5)
     # 음식 종류: 홈에서 「양식」 → 지도
     tap_text("홈", 1.5)
-    wheel(195, 560, 500, 1.5)
-    if tap_text("양식", 5):
+    wheel(195, 400, -9000, 1)
+    if tap_scroll("양식", 5):
         shot("음식종류_양식_지도")
     # 테마 코스
     tap_text("홈", 1.5)
     wheel(195, 400, -4000, 1)
-    wheel(195, 560, 6000)
-    if tap_text("먹방 유튜버 코스", 5) or tap_text("인기 맛집 하루 코스", 5):
+    if tap_scroll("먹방 유튜버 코스", 5) or tap_scroll("인기 맛집 하루 코스", 5):
         shot("코스_지도")
         if tap_text("순서 보기", 2.5, exact=False):
             shot("코스_순서")
