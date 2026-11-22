@@ -692,6 +692,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
     if (!_koksReady || u.uid == _syncUid) return;
     _syncUid = u.uid;
+    _syncWatched(u.uid);
     final cloud = await cloudKoks();
     if (!mounted || cloud == null || (fbUser?.uid ?? '') != u.uid) return;
     String? last;
@@ -709,6 +710,22 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _saveList('koks', koks);
     SharedPreferences.getInstance().then((sp) => sp.setString('kok_uid', u.uid)).catchError((_) => false);
     if (last != u.uid) pushKoks(koks);
+  }
+
+  // 추천 영상 재생 기록: 휴대폰 기록 + 계정 기록을 합친다 (더 최근에 본 쪽을 남김)
+  Future<void> _syncWatched(String uid) async {
+    final cloud = await cloudWatched();
+    if (cloud == null || (fbUser?.uid ?? '') != uid) return;
+    var changed = false;
+    for (final e in cloud.entries) {
+      final mine = heroWatched[e.key];
+      if (mine == null || ((e.value['t'] ?? 0) as num) > ((mine['t'] ?? 0) as num)) {
+        heroWatched[e.key] = e.value;
+        changed = true;
+      }
+    }
+    final extra = heroWatched.keys.any((k) => !cloud.containsKey(k));
+    if (changed || extra) saveWatched(push: extra);
   }
 
   // 콕을 넣거나 뺄 때: 휴대폰에 바로 저장, 로그인했으면 잠시 뒤 계정에도

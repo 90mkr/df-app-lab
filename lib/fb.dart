@@ -305,6 +305,35 @@ Future<void> pushKoks(List<Map<String, dynamic>> koks) async {
   } catch (_) {}
 }
 
+// 추천 영상에서 재생한 가게 기록도 계정에 (휴대폰·PC가 같은 기록을 쓰게)
+Future<Map<String, Map<String, dynamic>>?> cloudWatched() async {
+  final u = fbUser;
+  if (u == null) return null;
+  try {
+    final d = await fsdb.collection('users').doc(u.uid).get();
+    final m = d.data()?['watched'];
+    if (m is! Map) return {};
+    return {
+      for (final e in m.entries)
+        if (e.value is Map) '${e.key}': Map<String, dynamic>.from(e.value as Map)
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+Timer? _watchPush;
+void pushWatched(Map<String, Map<String, dynamic>> w) {
+  final u = fbOn ? fbUser : null;
+  if (u == null) return;
+  _watchPush?.cancel();
+  _watchPush = Timer(const Duration(milliseconds: 1500), () async {
+    try {
+      await fsdb.collection('users').doc(u.uid).set({'watched': w, 'at': fs.FieldValue.serverTimestamp()}, fs.SetOptions(mergeFields: ['watched', 'at']));
+    } catch (_) {}
+  });
+}
+
 // 관리자 메일 인증 확인: 메일의 링크를 누른 뒤 이걸 누르면 새 표시를 받아 관리자 화면이 열린다
 Future<String> checkVerify() async {
   final u = fbAuth.currentUser;

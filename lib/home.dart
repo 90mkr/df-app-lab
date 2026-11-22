@@ -100,11 +100,44 @@ List<Place> popRank(SongdoData d) => d.places.where((p) => p.top && p.score > 0)
 final Map<String, String> heroChoice = {}; // 동네 → 이번에 뽑힌 가게
 List<String> heroSeen = []; // 최근에 맨 위에 보인 가게 (앱 시작 때 읽어 둠)
 
+// 추천 영상에서 재생한 가게: 그 집에 새 영상이 올라오기 전까지 다시 안 나옴 (로그인하면 계정에도 저장)
+Map<String, Map<String, dynamic>> heroWatched = {}; // 가게 id → {'d': 그때 가장 최근 영상 날짜, 't': 본 때}
+
 Future<void> loadHeroSeen() async {
   try {
     final sp = await SharedPreferences.getInstance();
     heroSeen = sp.getStringList('hero_seen') ?? [];
+    final w = sp.getString('hero_watched');
+    if (w != null) {
+      heroWatched = {
+        for (final e in (jsonDecode(w) as Map).entries)
+          if (e.value is Map) '${e.key}': Map<String, dynamic>.from(e.value as Map)
+      };
+    }
   } catch (_) {}
+}
+
+bool watchedNoNew(Place p) {
+  final w = heroWatched[p.id];
+  return w != null && ytLast(p).compareTo('${w['d'] ?? ''}') <= 0;
+}
+
+num _watchedAt(String id) => (heroWatched[id]?['t'] ?? 0) as num;
+
+void saveWatched({bool push = true}) {
+  if (heroWatched.length > 300) {
+    final ks = heroWatched.keys.toList()..sort((a, b) => _watchedAt(a).compareTo(_watchedAt(b)));
+    for (final k in ks.take(heroWatched.length - 300)) {
+      heroWatched.remove(k);
+    }
+  }
+  SharedPreferences.getInstance().then((sp) => sp.setString('hero_watched', jsonEncode(heroWatched))).catchError((_) => false);
+  if (push) pushWatched(heroWatched);
+}
+
+void markWatched(Place p) {
+  heroWatched[p.id] = {'d': ytLast(p), 't': DateTime.now().millisecondsSinceEpoch};
+  saveWatched();
 }
 
 Place? sessionPick(String key, List<Place> pool) {
@@ -114,8 +147,13 @@ Place? sessionPick(String key, List<Place> pool) {
     if (p != null) return p;
   }
   if (pool.isEmpty) return null;
-  final fresh = pool.where((p) => !heroSeen.contains(p.id)).toList();
-  final src = fresh.isNotEmpty ? fresh : pool;
+  final notWatched = pool.where((p) => !watchedNoNew(p)).toList();
+  final fresh = notWatched.where((p) => !heroSeen.contains(p.id)).toList();
+  var src = fresh.isNotEmpty ? fresh : notWatched;
+  if (src.isEmpty) {
+    // 동네 후보를 다 봤으면 오래전에 본 것부터 다시
+    src = ([...pool]..sort((a, b) => _watchedAt(a.id).compareTo(_watchedAt(b.id)))).take(3).toList();
+  }
   double w(Place p) => 1.0 + ytCount(p) + (ytRecent(p) ? 2.0 : 0.0);
   final total = src.fold<double>(0, (a, p) => a + w(p));
   var x = math.Random().nextDouble() * total;
@@ -1157,9 +1195,10 @@ class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin
         ),
       );
 
-  // 누르면 그때 소리 켜고 재생
+  // 누르면 그때 소리 켜고 재생 (재생한 가게는 다음부터 추천에서 뺀다 — 새 영상이 올라오면 다시)
   void playSound() {
     if (!hasVideo) return;
+    markWatched(widget.place);
     if (index != 0 && page.hasClients) page.jumpToPage(0);
     final old = yt;
     setState(() {
