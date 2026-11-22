@@ -48,17 +48,25 @@ class RegionIndex {
       if (c.isEmpty) continue;
       (spots['$s|$c'] ??= RegionSpot(s, c)).pts.add(p.point);
     }
-    // 자세한 동네: 그 동네 범위 안 가게가 가장 많은 시·군·구에 붙인다
-    for (final a in ready) {
-      final cnt = <String, int>{};
-      for (final p in places) {
-        if (!a.contains(p.point)) continue;
-        final k = '${sidoShort(p.sido)}|${cityOf(p.gu)}';
-        cnt[k] = (cnt[k] ?? 0) + 1;
+    // 자세한 동네 (대표님 지시 11-23 「수집된 지역은 자세히 표시」): 시·군·구마다 그 안 가게의 절반 이상이
+    // 들어가는 수집 끝난 동네를 붙인다 (가장 많이 겹치는 곳). 한 동네가 여러 구에 걸쳐도(청라 → 서해구·검단구)
+    // 모두 「자세히」가 붙고, 두 동네가 한 구를 나눠도(신포·주안 → 제물포구) 빠지는 구가 없다.
+    if (ready.isNotEmpty) {
+      for (final sp in spots.values) {
+        Area? best;
+        var bestN = 0;
+        for (final a in ready) {
+          var k = 0;
+          for (final pt in sp.pts) {
+            if (a.contains(pt)) k++;
+          }
+          if (k > bestN) {
+            bestN = k;
+            best = a;
+          }
+        }
+        if (best != null && bestN * 2 >= sp.n) sp.detail = best;
       }
-      if (cnt.isEmpty) continue;
-      final top = (cnt.entries.toList()..sort((x, y) => y.value.compareTo(x.value))).first.key;
-      spots[top]?.detail ??= a;
     }
     final by = <String, List<RegionSpot>>{};
     for (final sp in spots.values) {
