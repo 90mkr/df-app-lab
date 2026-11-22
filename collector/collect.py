@@ -639,6 +639,104 @@ def apply_fix(all_out):
     return out
 
 
+# ---- 가게 보호: 관리자 화면(파이어베이스)에서 고친 값·잠금·보호·숨김 ----
+# collector/fb.json 에 {"projectId": "...", "apiKey": "..."} 가 있으면 켜진다 (읽기는 공개, 쓰기는 관리자만)
+FB = load_json(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fb.json"), {})
+PENDING = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "data", "pending.json")
+
+
+def fs_value(v):
+    if "stringValue" in v:
+        return v["stringValue"]
+    if "booleanValue" in v:
+        return v["booleanValue"]
+    if "integerValue" in v:
+        return int(v["integerValue"])
+    if "doubleValue" in v:
+        return v["doubleValue"]
+    if "arrayValue" in v:
+        return [fs_value(x) for x in v["arrayValue"].get("values", [])]
+    if "mapValue" in v:
+        return {k: fs_value(x) for k, x in v["mapValue"].get("fields", {}).items()}
+    if "timestampValue" in v:
+        return v["timestampValue"]
+    return None
+
+
+def fs_docs(coll):
+    pid = FB.get("projectId")
+    if not pid:
+        return {}
+    out, token = {}, ""
+    for _ in range(40):
+        url = (f"https://firestore.googleapis.com/v1/projects/{pid}/databases/(default)/documents/{coll}?pageSize=300"
+               + (f"&key={FB['apiKey']}" if FB.get("apiKey") else "") + (f"&pageToken={urllib.parse.quote(token)}" if token else ""))
+        j = get_json(url)
+        for d in j.get("documents", []):
+            out[d["name"].rsplit("/", 1)[1]] = {k: fs_value(v) for k, v in d.get("fields", {}).items()}
+        token = j.get("nextPageToken", "")
+        if not token:
+            break
+    return out
+
+
+def apply_guard(all_out, prev_full, rows):
+    """관리자가 잠근 항목은 덮어쓰지 않고, 숨긴 가게는 빼고, 보호한 가게는 이번 수집에서 빠져도 지난 자료로 되살린다.
+    구글에 폐업·휴업으로 나온 가게는 바로 지우지 않고 「확인 대기」로 남긴다 (관리자가 보고 숨김/유지)."""
+    try:
+        g = fs_docs("places")
+    except Exception as e:
+        print("가게 보호 정보를 받지 못해 이번엔 건너뜀:", str(e)[:120])
+        g = {}
+
+    def lock(o, h):
+        for k in h.get("locks") or []:
+            if k in (h.get("ov") or {}):
+                o[k] = h["ov"][k]
+        if h.get("protect"):
+            o["prot"] = True
+        return o
+
+    out, ids = [], set()
+    for o in all_out:
+        h = g.get(str(o["id"]))
+        if h and h.get("hidden"):
+            continue
+        out.append(lock(o, h) if h else o)
+        ids.add(str(o["id"]))
+    back = 0
+    for pid, h in g.items():
+        if h.get("protect") and not h.get("hidden") and pid not in ids and pid in prev_full and prev_full[pid].get("area", AREA_ID) == AREA_ID:
+            out.append(lock(dict(prev_full[pid]), h))
+            ids.add(pid)
+            back += 1
+    # 폐업·휴업 의심: 지난번에 보이던 집이면 그대로 두고 확인 대기 목록에
+    today = dt.date.today().isoformat()
+    pend = []
+    old_pend = {str(e["id"]): e for e in load_json(PENDING, {}).get("items", []) if e.get("area") == AREA_ID}
+    for r in rows:
+        pid = str(r["p"]["id"])
+        if not r["g"].get("bs") or pid not in prev_full:
+            continue
+        h = g.get(pid) or {}
+        if h.get("hidden"):
+            continue
+        if pid not in ids:
+            o = lock(dict(prev_full[pid]), h) if h else dict(prev_full[pid])
+            out.append(o)
+            ids.add(pid)
+        if not h.get("protect"):
+            o = prev_full[pid]
+            pend.append({"id": pid, "name": o.get("name", ""), "area": AREA_ID, "why": "구글에 폐업·휴업으로 나옴",
+                         "since": old_pend.get(pid, {}).get("since", today), "lat": o.get("lat", 0), "lng": o.get("lng", 0)})
+    # 확인 대기 목록: 이 동네 것만 새로 쓰고 다른 동네 것은 그대로
+    allp = [e for e in load_json(PENDING, {}).get("items", []) if e.get("area") != AREA_ID] + pend
+    save_json(PENDING, {"updated": today, "items": allp})
+    if g or pend:
+        print(f"가게 보호: 고친 가게 {len(g)}곳 반영, 보호로 되살림 {back}곳, 확인 대기 {len(pend)}곳")
+    return out
+
+
 def insta_fill(all_out, gcache):
     """가게마다 인스타 계정 주소: 관리자가 넣은 것 > 구글 홈페이지가 인스타이거나 홈페이지에 적힌 것 (90일마다 다시 확인)."""
     ic = load_json(INSTA, {})
@@ -1186,6 +1284,7 @@ def main():
           + " / 뷰: " + ", ".join(o["name"] for o in all_out if o.get("view")))
 
     all_out = apply_fix(all_out)
+    all_out = apply_guard(all_out, prev_full, rows)
     try:
         model_fill(all_out)
     except Exception as e:

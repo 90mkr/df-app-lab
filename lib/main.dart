@@ -465,7 +465,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (f == null) return const [];
     if (_fpKey != followCh) {
       _fpKey = followCh;
-      _fp = followCh.isEmpty ? f.places : f.places.where((p) => p.vids.any((v) => v.cid == followCh)).toList();
+      final base = followCh.isEmpty ? f.places : f.places.where((p) => p.vids.any((v) => v.cid == followCh));
+      // 관리자가 숨긴 집은 빼고, 고친 값은 덮어서
+      _fp = [
+        for (final p in base)
+          if (guards[p.id]?.hidden != true) guarded(p)
+      ];
     }
     return _fp;
   }
@@ -672,6 +677,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void _reguard() {
     if (!mounted) return;
     setState(() {
+      _fpKey = '#';
       for (final e in orig.entries) {
         loaded[e.key] = _guard(e.value);
       }
