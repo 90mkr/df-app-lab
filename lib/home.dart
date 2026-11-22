@@ -2415,7 +2415,7 @@ class YtRow extends StatelessWidget {
 }
 
 // ---- 영상 ----
-class VideoView extends StatelessWidget {
+class VideoView extends StatefulWidget {
   final SongdoData? data;
   final Area area;
   final bool regionOpen;
@@ -2435,16 +2435,106 @@ class VideoView extends StatelessWidget {
     required this.onRefresh,
   });
   @override
+  State<VideoView> createState() => _VideoViewState();
+}
+
+// 영상 하나가 그 유튜버 것인지 (채널 id가 있으면 id로, 없으면 채널 이름으로)
+bool vidOfChan(Video v, Chan c) => (v.cid.isNotEmpty && v.cid == c.id) || v.channel == c.name;
+
+class _VideoViewState extends State<VideoView> {
+  String ch = ''; // 고른 유튜버 (비면 전체)
+
+  @override
+  void didUpdateWidget(VideoView old) {
+    super.didUpdateWidget(old);
+    if (old.area.id != widget.area.id) ch = ''; // 동네를 바꾸면 다시 전체
+  }
+
+  // 맨 위 유튜버 고르기 줄: 전체 + 이 동네 유튜버 동그라미 (누르면 그 유튜버 영상만)
+  Widget _chanStrip(List<(Chan, int)> chans, double side) {
+    Widget dot({required bool on, required Widget circle, required String name, required VoidCallback onTap}) => Semantics(
+          button: true,
+          selected: on,
+          label: name == '전체' ? '전체 영상' : '$name 영상만 보기',
+          onTap: onTap,
+          excludeSemantics: true,
+          child: GestureDetector(
+            onTap: onTap,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: 66,
+              child: Column(children: [
+                AnimatedScale(scale: on ? 1.0 : 0.94, duration: const Duration(milliseconds: 160), child: circle),
+                const SizedBox(height: 6),
+                Text(name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, fontWeight: on ? FontWeight.w700 : FontWeight.w400, color: on ? kInk : kSub, height: 1.2)),
+              ]),
+            ),
+          ),
+        );
+    return SizedBox(
+      height: 88,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.symmetric(horizontal: side - 5),
+        itemCount: chans.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(width: 2),
+        itemBuilder: (_, i) {
+          if (i == 0) {
+            final on = ch.isEmpty;
+            return dot(
+              on: on,
+              name: '전체',
+              onTap: () => setState(() => ch = ''),
+              circle: Container(
+                width: 58,
+                height: 58,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: kAccentTint, shape: BoxShape.circle, border: Border.all(color: on ? kAccent : kPillLine, width: 1)),
+                child: Image.asset(kIntroMark, height: 30, filterQuality: FilterQuality.medium),
+              ),
+            );
+          }
+          final (c, _) = chans[i - 1];
+          final on = ch == c.id;
+          return dot(
+            on: on,
+            name: c.name,
+            onTap: () => setState(() => ch = on ? '' : c.id),
+            circle: ChanAvatar(c, size: 58, label: false, ring: on ? kAccent : kPillLine),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final d = data;
-    final items = <(Video, Place)>[];
+    final d = widget.data;
+    final area = widget.area;
+    final onWhere = widget.onWhere;
+    final all = <(Video, Place)>[];
     final seen = <String>{};
     for (final p in d?.places.where((p) => p.top) ?? const <Place>[]) {
       for (final v in p.vids) {
-        if (seen.add(v.id)) items.add((v, p));
+        if (seen.add(v.id)) all.add((v, p));
       }
     }
-    items.sort((a, b) => b.$1.date.compareTo(a.$1.date));
+    all.sort((a, b) => b.$1.date.compareTo(a.$1.date));
+    // 이 동네 유튜버: 구독자 많은 순(알려진 유튜버 먼저) → 영상 많은 순
+    final chans = <(Chan, int)>[
+      for (final c in d == null ? const <Chan>[] : channelsOf(d))
+        (c, all.where((it) => vidOfChan(it.$1, c)).length),
+    ].where((x) => x.$2 > 0).toList()
+      ..sort((a, b) {
+        final s = b.$1.subs.compareTo(a.$1.subs);
+        return s != 0 ? s : b.$2.compareTo(a.$2);
+      });
+    final pick = chans.where((x) => x.$1.id == ch).firstOrNull?.$1;
+    final items = pick == null ? all : all.where((it) => vidOfChan(it.$1, pick)).toList();
     // 영상 카드: 위는 영상(누르면 재생), 아래는 가게(누르면 지도에서 그 집) — 지도로 이어지는 걸 한눈에 알게
     Widget item((Video, Place) it, bool phone) {
       final (v, p) = it;
@@ -2565,19 +2655,39 @@ class VideoView extends StatelessWidget {
             width: width,
             height: c.maxHeight,
             child: Column(children: [
-              KokHeader(area: area, open: regionOpen, onRegion: onRegion, onSearch: onSearch, title: '영상'),
-              if (regionOpen) Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: regionPanel),
+              KokHeader(area: area, open: widget.regionOpen, onRegion: widget.onRegion, onSearch: widget.onSearch, title: '영상'),
+              if (widget.regionOpen) Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: widget.regionPanel),
+              if (all.isNotEmpty) ...[
+                Padding(
+                  padding: EdgeInsets.fromLTRB(side + 2, 0, side, 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: pick?.name ?? area.name, style: const TextStyle(fontWeight: FontWeight.w600, color: kInk)),
+                        TextSpan(text: pick == null ? ' 유튜버 영상 ${items.length}개 · 최신순' : ' 영상 ${items.length}개 · 최신순'),
+                      ]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12.5, color: kSub, height: 1.3),
+                    ),
+                  ),
+                ),
+                if (chans.length > 1) _chanStrip(chans, side),
+                const SizedBox(height: 4),
+              ],
               Expanded(
                 child: items.isEmpty
                     ? Center(
                         child: Text(d == null ? '' : '${area.name} 유튜브 영상은 모으는 중입니다.', style: const TextStyle(fontSize: 13, color: kSub)),
                       )
                     : RefreshIndicator(
-                        onRefresh: onRefresh,
+                        onRefresh: widget.onRefresh,
                         color: kAccent,
                         child: GridView.builder(
+                        key: PageStorageKey('vid-${area.id}-$ch'),
                         physics: const AlwaysScrollableScrollPhysics(),
-                        padding: EdgeInsets.fromLTRB(side, 4, side, 24),
+                        padding: EdgeInsets.fromLTRB(side, 10, side, 24),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: cols,
                           crossAxisSpacing: gap,
