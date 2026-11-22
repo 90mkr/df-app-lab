@@ -219,6 +219,21 @@ Future<LatLng?> quietLocation() async {
   }
 }
 
+// 내 위치가 들어 있는 동네, 없으면 10km 안에서 가장 가까운 동네 (자료가 있는 동네만)
+Area? nearArea(List<Area> all, LatLng? at) {
+  if (at == null) return null;
+  Area? best;
+  var bd = 10000.0;
+  for (final a in all) {
+    final d = a.contains(at) ? 0.0 : meters(at, a.center);
+    if (d < bd || (d == 0 && best != null && meters(at, a.center) < meters(at, best.center))) {
+      bd = d;
+      best = a;
+    }
+  }
+  return best;
+}
+
 Future<LatLng?> myLocation() async {
   try {
     if (!kIsWeb && !await Geolocator.isLocationServiceEnabled()) return null;
@@ -649,9 +664,22 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (v != null && v != me && mounted) setState(() => me = v);
   }
 
+  // 처음 켤 때 위치: 허락해 둔 휴대폰은 조용히 받고, 허락을 묻는 건 처음 한 번만
+  Future<LatLng?> _firstLocation() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      if (!(sp.getBool('loc_asked') ?? false)) {
+        await sp.setBool('loc_asked', true);
+        return await myLocation();
+      }
+    } catch (_) {}
+    return quietLocation();
+  }
+
   Future<void> _start() async {
     myPos.addListener(_onPos);
-    quietLocation().then((at) {
+    final locF = _firstLocation();
+    locF.then((at) {
       if (at != null) myPos.value = at;
     });
     final list = await loadRegions();
@@ -672,11 +700,29 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         if (k.startsWith('{')) jsonDecode(k) as Map<String, dynamic>
     ];
     final all = [for (final s in list) ...s.areas.where((a) => a.ready)];
-    final pick = all.where((a) => a.id == saved).firstOrNull ?? all.where((a) => a.id == 'songdo').firstOrNull ?? (all.isNotEmpty ? all.first : kDefaultArea);
+    // 홈 첫 동네: 내 위치가 서비스 동네 안이나 근처면 그 동네, 아니면 마지막에 고른 동네 (위치는 잠깐만 기다림)
+    final at = await locF.timeout(const Duration(milliseconds: 1500), onTimeout: () => null);
+    final pick = nearArea(all, at) ??
+        all.where((a) => a.id == saved).firstOrNull ??
+        all.where((a) => a.id == 'songdo').firstOrNull ??
+        (all.isNotEmpty ? all.first : kDefaultArea);
     setState(() {
       sidos = list;
       area = pick;
     });
+    if (at == null) {
+      // 위치가 늦게 오면: 아직 홈에서 처음 동네를 보고 있을 때만 내 동네로 바꾼다
+      locF.then((late) {
+        final near = nearArea(readyAreas, late);
+        if (!mounted || near == null || near.id == pick.id) return;
+        if (area.id != pick.id || tab != 0 || regionOpen) return;
+        setState(() => area = near);
+        try {
+          map.move(near.center, near.zoom);
+        } catch (_) {}
+        _ensure(near.id);
+      });
+    }
     if (pick.id != kDefaultArea.id) {
       try {
         map.move(pick.center, pick.zoom);

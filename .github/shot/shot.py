@@ -250,6 +250,23 @@ with sync_playwright() as p:
         pg.screenshot(path=f"{OUT}/97_이용약관.png", full_page=True)
     except Exception as e:
         log.append(f"[약관] {e}")
+    # 내 위치가 영종도일 때 홈 첫 동네
+    try:
+        c2 = br.new_context(
+            viewport={"width": W, "height": H},
+            device_scale_factor=2,
+            locale="ko-KR",
+            timezone_id="Asia/Seoul",
+            geolocation={"latitude": 37.4920, "longitude": 126.4930},
+            permissions=["geolocation"],
+        )
+        p2 = c2.new_page()
+        p2.goto(URL, wait_until="load", timeout=120000)
+        time.sleep(14)
+        p2.screenshot(path=f"{OUT}/96_내위치_영종도.png")
+        c2.close()
+    except Exception as e:
+        log.append(f"[내 위치 영종도] {e}")
     br.close()
 
 with open(f"{OUT}/log.txt", "w", encoding="utf-8") as f:
