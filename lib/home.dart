@@ -933,6 +933,8 @@ class HomeView extends StatelessWidget {
     final list = coursesOf(d, area);
     if (list.isEmpty) return const SizedBox();
     final used = <String>{};
+    final hv = _heroPick(d)?.$2; // 맨 위 큰 사진과 같은 영상 표지는 테마 카드에 다시 쓰지 않는다
+    if (hv != null) used.add(hv.id);
     final covers = <Video?>[];
     for (final c in list) {
       Video? pick;
