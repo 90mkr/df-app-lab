@@ -36,8 +36,8 @@ KAKAO = os.environ.get("KAKAO_REST_KEY", "")
 GEM = os.environ.get("GEMINI_API_KEY", "")
 MAX = int(os.environ.get("PICK_MAX", "120") or 120)  # 한 번에 AI로 볼 영상 수 (무료 한도 안에서)
 GAP = float(os.environ.get("PICK_GAP", "4.5") or 4.5)  # AI 부르는 사이 쉬는 초 (무료 등급 분당 한도)
-MINUTES = float(os.environ.get("PICK_MIN", "30") or 30)
-VMAX = int(os.environ.get("PICK_VIDEO_MAX", "0") or 0)  # 글로 못 찾은 영상 중 한 번에 화면까지 볼 영상 수 (대표님 목록·확인 대기 영상은 따로 늘 봄)
+MINUTES = float(os.environ.get("PICK_MIN", "36") or 36)
+VMAX = int(os.environ.get("PICK_VIDEO_MAX", "40") or 40)  # 글로 못 찾은 영상 중 한 번에 화면까지 볼 영상 수 (대표님 목록·확인 대기 영상은 따로 늘 봄)
 VSECS = 300  # 한 집 영상은 앞 5분만 본다 (도착·간판이 보통 앞에 나옴)
 VER = 1
 START = time.time()
@@ -230,8 +230,9 @@ def ask_video(model, vid, v):
     for i in range(3):
         try:
             j = get(url, headers={"Content-Type": "application/json"}, data=body, tries=1, timeout=300)
-            t = j["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(t).get("places", [])
+            t = json.loads(j["candidates"][0]["content"]["parts"][0]["text"])
+            ps = t.get("places", []) if isinstance(t, dict) else t
+            return [x for x in ps if isinstance(x, dict)] if isinstance(ps, list) else []
         except RuntimeError as e:
             busy = str(e).startswith("503") or "UNAVAILABLE" in str(e)
             if str(e).startswith("429") or "RESOURCE_EXHAUSTED" in str(e) or busy:
@@ -259,6 +260,21 @@ def sim(a, b):
         return 0.0
     if a in b or b in a:
         return 1.0
+    sa, sb = set(a), set(b)
+    return len(sa & sb) / max(len(sa), len(sb))
+
+
+def tight(a, b):
+    """지점명을 떼고 비교: 같으면 1, 한쪽이 다른 쪽에 들어 있고 길이가 비슷하면 0.9, 아니면 글자 겹침."""
+    cut = lambda x: norm(re.sub(r"\s*[가-힣A-Za-z0-9]+점$", "", (x or "").strip()) or x)
+    a, b = cut(a), cut(b)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    sh, lo = sorted((a, b), key=len)
+    if sh in lo:
+        return 0.9 if len(sh) / len(lo) >= 0.6 else 0.5
     sa, sb = set(a), set(b)
     return len(sa & sb) / max(len(sa), len(sb))
 
@@ -357,7 +373,7 @@ def hint_pick(p, hints):
     """AI가 영상에서 읽은 이름이 대표님 목록의 가게와 같고, 카카오 후보 주소도 목록 주소와 맞으면 그 후보."""
     for h in hints:
         hn, ha = h.get("name", ""), h.get("addr", "")
-        if not hn or not ha or sim(p.get("name", ""), hn) < 0.75:
+        if not hn or not ha or max(sim(p.get("name", ""), hn), sim(p.get("vname", ""), hn)) < 0.75:
             continue
         br = re.search(r"([가-힣A-Za-z0-9]+)점$", hn.strip())  # 지점이 적힌 체인점은 영상에서도 그 지점 단서가 보여야
         if br and br.group(1) not in ("본", "직영") and br.group(1)[:2] not in (p.get("name", "") + p.get("region", "") + p.get("_t", "")):
@@ -366,7 +382,7 @@ def hint_pick(p, hints):
             if sim(c.get("name", ""), hn) < 0.75:
                 continue
             how = addr_close(ha, c)
-            if how == "same" or (how == "weak" and sim(c.get("name", ""), hn) >= 0.9 and sim(p.get("name", ""), hn) >= 0.9):
+            if how == "same" or (how == "weak" and tight(c.get("name", ""), hn) >= 0.85 and max(sim(p.get("name", ""), hn), sim(p.get("vname", ""), hn)) >= 0.9):
                 return c, h
     return None
 
@@ -375,19 +391,28 @@ def video_ok(p):
     """영상 화면에서 읽은 가게의 자동 맞음: 간판·자막·메뉴판에서 읽음 + 카카오 이름이 거의 같음 + 지역이 맞거나 같은 이름이 하나뿐."""
     if p.get("src") != "video" or p.get("check") or p.get("best", -1) < 0 or float(p.get("conf") or 0) < 0.8:
         return False
-    if p.get("how") not in ("간판", "자막", "메뉴판"):
+    if not any(w in (p.get("how") or "") for w in ("간판", "자막", "메뉴판")):
         return False
     c = p["cands"][p["best"]]
-    if sim(p.get("name", ""), c.get("name", "")) < 0.85:
+    if tight(p.get("name", ""), c.get("name", "")) < 0.85:
         return False
     if c.get("g") not in ("FD6", "CE7") and "시장" not in c.get("name", ""):
         return False
     rk = region_ok(p.get("region", ""), c.get("addr", "") + " " + c.get("jibun", ""))
     if rk is False:
         return False
-    if rk is None and sum(1 for x in p.get("cands", []) if sim(p.get("name", ""), x.get("name", "")) >= 0.9) >= 2:
+    if rk is None and len(p.get("cands") or []) != 1:  # 지역 단서가 없으면 카카오에 그 이름이 딱 한 곳일 때만
         return False
     return True
+
+
+def seen_ok(p):
+    """글로 찾은 후보를 영상 화면에서도 같은 가게(같은 카카오 장소)로 읽었고, 읽은 이름이 카카오 이름과 맞으면."""
+    if not p.get("vseen") or p.get("best", -1) < 0 or not any(w in p.get("vseen", "") for w in ("간판", "자막", "메뉴판")):
+        return False
+    if "지역이 다름" in (p.get("note") or "") or "같은 이름이 여러 곳" in (p.get("note") or ""):
+        return False
+    return tight(p.get("vname", ""), p["cands"][p["best"]].get("name", "")) >= 0.8
 
 
 def rescore(m):
@@ -670,7 +695,7 @@ def main():
                 m["src"], m["how"] = "video", (x.get("how") or "")[:6]
                 bid = m["cands"][m["best"]]["id"] if m.get("best", -1) >= 0 and m.get("cands") else None
                 if bid and bid in ids:  # 글로 찾은 것과 같은 가게 → 그 후보에 영상으로도 확인했다고 표시
-                    ids[bid]["vseen"] = m["how"] or "영상"
+                    ids[bid]["vseen"], ids[bid]["vname"] = m["how"] or "영상", (x.get("name") or "")[:40]
                     got.append(f"{x.get('name')}({m['how']}·글과 같음)")
                     continue
                 if not bid or sim(m["name"], m["cands"][m["best"]]["name"]) < 0.6:  # 카카오에 없거나 이름이 다르면 후보로 올리지 않고 기록만
@@ -713,6 +738,8 @@ def main():
                     auto[key] = {**base, "place": p["cands"][p["best"]], "by": "김부장 자동 확인 (제목에 가게 이름)"}
                 elif video_ok(p):  # 영상 간판·자막에서 읽고 카카오도 하나로 맞음
                     auto[key] = {**base, "place": p["cands"][p["best"]], "by": "김부장 자동 확인 (영상 간판·자막)"}
+                elif seen_ok(p):  # 글로 찾은 가게를 영상 간판·자막으로도 확인
+                    auto[key] = {**base, "place": p["cands"][p["best"]], "by": "김부장 자동 확인 (영상 간판·자막과 같음)"}
             if key in auto:  # 김부장이 대신 정한 것 — 관리자 화면에서 「정한 것」으로 보이게
                 a2 = auto[key]
                 it["auto"] = {"status": a2.get("status", "ok"), "by": a2.get("by", ""), "why": a2.get("why", ""), "place": a2.get("place")}

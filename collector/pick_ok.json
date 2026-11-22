@@ -585,5 +585,187 @@
   "replace": [
    "DncejNvRvTM_0"
   ]
+ },
+ "7YV9D3-fz9k_1": {
+  "status": "ok",
+  "vid": "7YV9D3-fz9k",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "수제비에 싸먹는 닭갈비?🤔 행당시장 숨은맛집 닭갈비 10인분 먹방",
+  "place": {
+   "id": "874989672",
+   "name": "수제비먹는닭갈비",
+   "addr": "서울 성동구 왕십리로21길 14",
+   "jibun": "서울 성동구 행당동 290-30",
+   "cat": "음식점 > 한식 > 육류,고기 > 닭요리",
+   "g": "FD6",
+   "lat": 37.56129755016058,
+   "lng": 127.03286471711164,
+   "url": "http://place.map.kakao.com/874989672"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "8hWQnvVvLHQ_0": {
+  "status": "ok",
+  "vid": "8hWQnvVvLHQ",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "하루 4시간만 영업하는 집?😳 인천 40년 전통 튀김칼국수 떡볶이 김치볶음밥 먹방",
+  "place": {
+   "id": "21373373",
+   "name": "맷돌손칼국수",
+   "addr": "인천 제물포구 신포로 32-16",
+   "cat": "음식점 > 한식 > 국수 > 칼국수",
+   "g": "FD6",
+   "lat": 37.4715145145904,
+   "lng": 126.625721190314,
+   "url": "http://place.map.kakao.com/21373373"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "zfgk125p558_0": {
+  "status": "ok",
+  "vid": "zfgk125p558",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "면발이 미쳤다는 수타우동..?😳 왕십리 1등이라는 우동집 먹방",
+  "place": {
+   "id": "204368427",
+   "name": "야마타니우동",
+   "addr": "서울 성동구 왕십리로21길 11",
+   "jibun": "서울 성동구 행당동 286-43",
+   "cat": "음식점 > 일식 > 돈까스,우동",
+   "g": "FD6",
+   "lat": 37.56127134438736,
+   "lng": 127.03313973825685,
+   "url": "http://place.map.kakao.com/204368427"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "rWkqKiqyOIA_0": {
+  "status": "ok",
+  "vid": "rWkqKiqyOIA",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "가게 기록 세웠습니다🔥행당동 굴찜 굴전 200개 도전ㅋㅋ",
+  "place": {
+   "id": "15278736",
+   "name": "굴과찜사랑 본사직영점",
+   "addr": "서울 성동구 행당로17길 23",
+   "jibun": "서울 성동구 행당동 298-50",
+   "cat": "음식점 > 한식 > 해물,생선 > 굴,전복",
+   "g": "FD6",
+   "lat": 37.56033886509209,
+   "lng": 127.03295257700374,
+   "url": "http://place.map.kakao.com/15278736"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "Ygwp9LZf1CU_0": {
+  "status": "ok",
+  "vid": "Ygwp9LZf1CU",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "이런맛은 처음이에요..😍대대로 놀라신 대전 유명한 막창순대 먹방",
+  "place": {
+   "id": "9707918",
+   "name": "대동순대",
+   "addr": "대전 중구 서문로43번길 70",
+   "jibun": "대전 중구 문화동 284-53",
+   "cat": "음식점 > 한식 > 순대",
+   "g": "FD6",
+   "lat": 36.31380363085679,
+   "lng": 127.40492240151768,
+   "url": "http://place.map.kakao.com/9707918"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "xONMxhv5514_0": {
+  "status": "ok",
+  "vid": "xONMxhv5514",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "여주에서 유명하다는 3대 막국수 털기🔥 천서리 막국수 어디가 맛있을까?🤔",
+  "place": {
+   "id": "10856045",
+   "name": "천서리막국수 본점",
+   "addr": "경기 여주시 대신면 여양로 1974",
+   "cat": "음식점 > 한식 > 국수",
+   "g": "FD6",
+   "lat": 37.4026332375503,
+   "lng": 127.546624494201,
+   "url": "http://place.map.kakao.com/10856045"
+  },
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "82O0kkLjo_w_0": {
+  "status": "skip",
+  "vid": "82O0kkLjo_w",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "다 먹을수 있을까...? 대왕 철판닭갈비 먹방",
+  "why": "같은 이름 가게가 여러 곳 — 영상 속 가게가 어디인지 확인 안 됨",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "SFpOByAR_GQ_1": {
+  "status": "skip",
+  "vid": "SFpOByAR_GQ",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "떨어지면 돈 안받으신대요🤫 장미상가 숨은맛집 뭉티기 10접시 먹방",
+  "why": "영상의 장미상가 가게와 다른 곳",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "7YV9D3-fz9k_0": {
+  "status": "skip",
+  "vid": "7YV9D3-fz9k",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "수제비에 싸먹는 닭갈비?🤔 행당시장 숨은맛집 닭갈비 10인분 먹방",
+  "why": "시장 대신 영상 속 가게(수제비먹는닭갈비)로 올림",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "O8ZNW9yaFA4_0": {
+  "status": "skip",
+  "vid": "O8ZNW9yaFA4",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "통닭이 2000원..?😱 숨은맛집 천국 청주시장 털기🔥 통고추만두 보리밥 청국장 떡볶이 돈까스",
+  "why": "시장 대신 시장 안 가게들로 올림",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "N5bkiunc3uw_0": {
+  "status": "skip",
+  "vid": "N5bkiunc3uw",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "연평도5탄) 이거 다먹으면 xx할수도 있대요😰 섬에 유일한 대왕매운족발과 김치우동 먹방",
+  "why": "연평도 가게가 카카오에 없음 — 다른 지역 같은 이름",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "J7jeKk3BNO0_0": {
+  "status": "skip",
+  "vid": "J7jeKk3BNO0",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "사장님이 접시가 모자라대요 😅 신림동 1200원 회전초밥 ○○○접시 먹방",
+  "why": "스시나마가 카카오에 없음 — 문을 닫았을 수 있음",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "2F1DQ2aaDQI_0": {
+  "status": "skip",
+  "vid": "2F1DQ2aaDQI",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "게장 20마리 시켰더니 사장님이 70년만에 처음이래요😂 3대째 전통을 이어온 게장 먹방",
+  "why": "어느 지점인지 영상에서 확인 안 됨",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "jkDzCwDpfV8_0": {
+  "status": "skip",
+  "vid": "jkDzCwDpfV8",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "주문즉시 망치로 두드리는 즉석돈까스?! 사장님이 저보고 생각보다 못먹는대요😭 순두부 쫄면 제육 명동식당",
+  "why": "어느 지역 명동식당인지 영상에서 확인 안 됨",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)"
+ },
+ "AX-qyFkuDhk_q": {
+  "status": "ok_query",
+  "vid": "AX-qyFkuDhk",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "이게 안맵다고요..???😰 맵고수vs맵찔이🔥 소유님과 송주불냉면 최고단계 도전",
+  "query": "송주불냉면 안양본점",
+  "addr": "안양",
+  "by": "김부장 (영상 화면 확인 · 2026-11-22)",
+  "replace": [
+   "AX-qyFkuDhk_0"
+  ]
  }
 }
