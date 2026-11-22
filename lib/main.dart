@@ -356,7 +356,7 @@ String placeName(LatLng c, Iterable<Place> src, double zoom) {
   if (parts.isEmpty) return '전국';
   var sido = parts[0].replaceAll(RegExp(r'(통합특별시|특별자치도|특별자치시|특별시|광역시)$'), '');
   if (sido == '전남광주') sido = '광주·전남';
-  if (bd > 25000 || parts.length < 2 || !RegExp(r'(시|군|구)$').hasMatch(parts[1])) return sido;
+  if (zoom < 10.5 || bd > 25000 || parts.length < 2 || !RegExp(r'(시|군|구)$').hasMatch(parts[1])) return sido;
   return '$sido ${parts[1]}';
 }
 
@@ -988,7 +988,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
     final inside = readyAreas.where((a) => a.contains(cam.center)).toList()
       ..sort((x, y) => meters(cam.center, x.center).compareTo(meters(cam.center, y.center)));
-    final h = (followOn && inside.isEmpty && follow != null) ? placeName(cam.center, follow!.places, cam.zoom) : '';
+    // 따라가기 중: 넓게 보면 시·도(또는 전국), 콕플 동네 밖이면 시·군·구까지 — 동네 안을 가까이 볼 때만 동네 이름
+    final h = (followOn && follow != null && (inside.isEmpty || cam.zoom < 10.5)) ? placeName(cam.center, follow!.places, cam.zoom) : '';
     if (h != here) setState(() => here = h);
     if (inside.isNotEmpty && inside.first.id != area.id) {
       final a = inside.first;
