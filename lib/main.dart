@@ -60,10 +60,14 @@ class DfApp extends StatelessWidget {
         useMaterial3: true,
       ),
       // 인트로가 앱 위에 잠깐 덮였다가 사라진다 (그 사이 아래에서 자료를 받는다). 상태 표시줄 글씨는 흰 화면에 맞게 진하게.
-      builder: (context, child) => KokIntro(
-        child: AnnotatedRegion<SystemUiOverlayStyle>(
-          value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
-          child: child ?? const SizedBox(),
+      // 휴대폰 글자 크기를 아주 크게 해도 화면이 깨지지 않게 1.3배까지만 키운다
+      builder: (context, child) => MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: KokIntro(
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
+            child: child ?? const SizedBox(),
+          ),
         ),
       ),
       home: const MapPage(),

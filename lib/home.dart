@@ -2663,7 +2663,9 @@ class KokNav extends StatelessWidget {
             ),
           ),
         );
-    return Container(
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.15,
+      child: Container(
       decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: kHair, width: 1))),
       child: SafeArea(
         top: false,
@@ -2696,6 +2698,7 @@ class KokNav extends StatelessWidget {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -2712,11 +2715,17 @@ class _CenterBtn extends StatelessWidget {
           gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFFFF3D5E), Color(0xFFFF7A2E)]),
           boxShadow: [BoxShadow(color: const Color(0xFFFF5A3C).withValues(alpha: 0.32), blurRadius: 16)],
         ),
-        child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Text('오늘', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xE6FFFFFF), height: 1.1)),
-          SizedBox(height: 1),
-          Text('뭐 먹지?', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white, height: 1.1, letterSpacing: -0.3)),
-        ]),
+        padding: const EdgeInsets.all(8),
+        child: MediaQuery.withNoTextScaling(
+          child: const FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('오늘', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xE6FFFFFF), height: 1.1)),
+              SizedBox(height: 1),
+              Text('뭐 먹지?', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white, height: 1.1, letterSpacing: -0.3)),
+            ]),
+          ),
+        ),
       );
 }
 
