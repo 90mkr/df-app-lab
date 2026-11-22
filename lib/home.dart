@@ -561,7 +561,8 @@ Widget ytWide(Video v, {Widget? fallback}) {
     fit: BoxFit.cover,
     width: double.infinity,
     height: double.infinity,
-    webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+    // 고화질 표지가 없는 영상은 유튜브가 404와 함께 작은 회색 그림을 준다 — 웹에서 그 그림을 띄우지 않고 바로 hq로 넘어가게
+    webHtmlElementStrategy: WebHtmlElementStrategy.never,
     loadingBuilder: (_, child, progress) => progress == null ? child : Container(color: const Color(0xFFEDEDF0)),
     errorBuilder: (_, __, ___) => v.short ? _shortFit(v.id, fb) : _hqCrop(v.id, fb),
   );
