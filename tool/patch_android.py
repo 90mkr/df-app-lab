@@ -36,4 +36,14 @@ if "android.intent.action.DIAL" not in s:
         s = s.replace("</manifest>", "    <queries>" + extra + "\n    </queries>\n</manifest>", 1)
 
 open(path, "w", encoding="utf-8").write(s)
+
+# 출시용 만들 때 린트 검사 끄기 (영상 재생 부품의 린트 도구가 깨져 제작이 멈춤)
+import os
+for gp, line in (("android/app/build.gradle.kts", "    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }\n"),
+                 ("android/app/build.gradle", "    lint {\n        checkReleaseBuilds false\n        abortOnError false\n    }\n")):
+    if os.path.exists(gp):
+        g = open(gp, encoding="utf-8").read()
+        if "checkReleaseBuilds" not in g:
+            g = g.replace("android {\n", "android {\n" + line, 1)
+            open(gp, "w", encoding="utf-8").write(g)
 print("안드로이드 설정 완료")
