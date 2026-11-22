@@ -5,6 +5,7 @@ part of 'main.dart';
 const kAccent = Color(0xFFFF4B2B); // 콕플 대표색 (시안)
 const kSub = Color(0xFF6B6B75); // 보조 글색 (시안)
 const kHair = Color(0xFFECECF0); // 가는 구분선
+const kNavOff = Color(0xFF858D98); // 아래 탭: 안 고른 아이콘·글
 const kPillLine = Color(0xFFDCDCE2);
 const kCardLine = Color(0xFFE4E4E9);
 const kAccentTint = Color(0xFFFFF1EE);
@@ -326,22 +327,24 @@ class LineIcon extends StatelessWidget {
   final String name; // home video map kok search pin play wheel
   final double size;
   final Color color;
-  const LineIcon(this.name, {super.key, this.size = 22, this.color = kInk});
+  final double? stroke; // 선 굵기 (24칸 기준, 비우면 1.7)
+  const LineIcon(this.name, {super.key, this.size = 22, this.color = kInk, this.stroke});
   @override
-  Widget build(BuildContext context) => CustomPaint(size: Size.square(size), painter: _LinePainter(name, color));
+  Widget build(BuildContext context) => CustomPaint(size: Size.square(size), painter: _LinePainter(name, color, stroke));
 }
 
 class _LinePainter extends CustomPainter {
   final String name;
   final Color color;
-  _LinePainter(this.name, this.color);
+  final double? stroke;
+  _LinePainter(this.name, this.color, this.stroke);
   @override
   void paint(Canvas c, Size s) {
     final k = s.width / 24;
     final p = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = (name == 'pin' ? 1.6 : 1.4) * k
+      ..strokeWidth = (stroke ?? (name == 'pin' ? 1.9 : 1.7)) * k
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
@@ -371,11 +374,11 @@ class _LinePainter extends CustomPainter {
         c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(6 * k, 3 * k, 12 * k, 18 * k), Radius.circular(2.5 * k)), p);
         c.drawPath(
             ui.Path()
-              ..moveTo(10.5 * k, 9.5 * k)
-              ..lineTo(10.5 * k, 14.5 * k)
-              ..lineTo(14.5 * k, 12 * k)
+              ..moveTo(10.3 * k, 9.2 * k)
+              ..lineTo(10.3 * k, 14.8 * k)
+              ..lineTo(14.8 * k, 12 * k)
               ..close(),
-            p);
+            Paint()..color = color);
       case 'map':
         c.drawPath(
             ui.Path()
@@ -445,7 +448,7 @@ class _LinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _LinePainter o) => o.name != name || o.color != color;
+  bool shouldRepaint(covariant _LinePainter o) => o.name != name || o.color != color || o.stroke != stroke;
 }
 
 // hqdefault(4:3)에는 16:9 영상 위아래로 검은 띠가 있어서, 띠를 빼고 영상 부분만 꽉 차게 자른다
@@ -1895,7 +1898,7 @@ class KokNav extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: kHomeMax),
             child: SizedBox(
-              height: 60,
+              height: 62,
               child: Row(children: [
                 for (var i = 0; i < items.length; i++)
                   Expanded(
@@ -1908,10 +1911,10 @@ class KokNav extends StatelessWidget {
                       child: InkWell(
                         onTap: () => onTap(i),
                         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          LineIcon(items[i].$1, size: 22, color: tab == i ? kAccent : kSub),
-                          const SizedBox(height: 3),
+                          LineIcon(items[i].$1, size: 26, stroke: tab == i ? 2.2 : 2.0, color: tab == i ? kAccent : kNavOff),
+                          const SizedBox(height: 4),
                           Text(items[i].$2,
-                              style: TextStyle(fontSize: 10, fontWeight: tab == i ? FontWeight.w700 : FontWeight.w400, color: tab == i ? kAccent : kSub)),
+                              style: TextStyle(fontSize: 11.5, fontWeight: tab == i ? FontWeight.w700 : FontWeight.w500, color: tab == i ? kAccent : kNavOff, height: 1.1)),
                         ]),
                       ),
                     ),
