@@ -9,7 +9,7 @@ const kNavOff = Color(0xFF858D98); // 아래 탭: 안 고른 아이콘·글
 const kPageBg = Color(0xFFF2F3F5); // 홈 바탕 (흰 카드 뒤 옅은 회색)
 
 // 홈 흰 카드 (회색 바탕 위에)
-Widget homeCard(Widget child, {EdgeInsets padding = const EdgeInsets.symmetric(vertical: 20), EdgeInsets margin = const EdgeInsets.fromLTRB(14, 0, 14, 12)}) => Container(
+Widget homeCard(Widget child, {EdgeInsets padding = const EdgeInsets.symmetric(vertical: 24), EdgeInsets margin = const EdgeInsets.fromLTRB(14, 0, 14, 14)}) => Container(
       margin: margin,
       padding: padding,
       clipBehavior: Clip.antiAlias,
@@ -36,6 +36,11 @@ BoxDecoration kokCard() => BoxDecoration(
     );
 
 // 넓은 화면에서는 가운데 좁은 폭으로
+// 머리말처럼 높이가 정해지지 않은 줄을 넓은 화면에서 가운데 좁게
+Widget narrowTop(Widget child) => LayoutBuilder(
+      builder: (_, c) => Align(alignment: Alignment.topCenter, child: SizedBox(width: math.min(c.maxWidth, kHomeMax), child: child)),
+    );
+
 Widget narrow(Widget child) => LayoutBuilder(
       builder: (_, c) => Align(
         alignment: Alignment.topCenter,
@@ -209,7 +214,7 @@ class CuisinePills extends StatelessWidget {
     return LayoutBuilder(builder: (_, box) {
       const gap = 6.0;
       final w = ((box.maxWidth - gap * (cols - 1)) / cols).floorToDouble();
-      return Wrap(spacing: gap, runSpacing: 8, children: [
+      return Wrap(spacing: gap, runSpacing: 9, children: [
         for (final (key, label, emoji) in items)
           SizedBox(width: w, child: _FillChip(label: label, emoji: emoji, on: current == key, onTap: () => onPick(key))),
       ]);
@@ -232,21 +237,21 @@ class _FillChip extends StatelessWidget {
         child: GestureDetector(
           onTap: onTap,
           child: Container(
-            height: 38,
+            height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: on ? kInk : Colors.white,
-              borderRadius: BorderRadius.circular(19),
+              borderRadius: BorderRadius.circular(22),
               border: Border.all(color: on ? kInk : kPillLine, width: 1),
             ),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              if (emoji.isNotEmpty) ...[Text(emoji, style: const TextStyle(fontSize: 16, height: 1.1)), const SizedBox(width: 4)],
+              if (emoji.isNotEmpty) ...[Text(emoji, style: const TextStyle(fontSize: 18, height: 1.1)), const SizedBox(width: 4)],
               Flexible(
                 child: Text(label,
                     maxLines: 1,
                     softWrap: false,
                     overflow: TextOverflow.fade,
-                    style: TextStyle(fontSize: 12.5, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : kInk)),
+                    style: TextStyle(fontSize: 14, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : kInk)),
               ),
             ]),
           ),
@@ -646,20 +651,20 @@ class KokHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 12, 10),
+      padding: const EdgeInsets.fromLTRB(18, 14, 10, 12),
       child: Row(children: [
         if (title == null) ...[
-          const Text('콕', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: kAccent, letterSpacing: -1, height: 1.1)),
-          const Text('플', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w300, color: kInk, letterSpacing: -1, height: 1.1)),
+          const Text('콕', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w900, color: kAccent, letterSpacing: -1, height: 1.1)),
+          const Text('플', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w300, color: kInk, letterSpacing: -1, height: 1.1)),
           const SizedBox(width: 8),
           const Expanded(
             child: Padding(
-              padding: EdgeInsets.only(top: 6),
-              child: Text('유튜브 맛집 지도', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: kSub)),
+              padding: EdgeInsets.only(top: 7),
+              child: Text('유튜브 맛집 지도', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: kSub)),
             ),
           ),
         ] else
-          Expanded(child: Text(title!, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.4))),
+          Expanded(child: Text(title!, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.4))),
         // 지역 (누르면 지역 메뉴)
         Semantics(
           button: true,
@@ -670,35 +675,35 @@ class KokHeader extends StatelessWidget {
             onTap: onRegion,
             borderRadius: BorderRadius.circular(16),
             child: Container(
-              height: 32,
-              constraints: const BoxConstraints(maxWidth: 200),
-              padding: const EdgeInsets.only(left: 12, right: 10),
+              height: 36,
+              constraints: const BoxConstraints(maxWidth: 210),
+              padding: const EdgeInsets.only(left: 13, right: 10),
               decoration: BoxDecoration(
                 color: open ? kInk : Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: open ? kInk : kPillLine, width: 1),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                LineIcon('pin', size: 14, color: open ? Colors.white : kInk),
-                const SizedBox(width: 4),
+                LineIcon('pin', size: 16, color: open ? Colors.white : kInk),
+                const SizedBox(width: 5),
                 Flexible(
                   child: Text('${area.sido} · ${area.name}',
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: open ? Colors.white : kInk)),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: open ? Colors.white : kInk)),
                 ),
-                Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 16, color: open ? Colors.white : kInk),
+                Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18, color: open ? Colors.white : kInk),
               ]),
             ),
           ),
         ),
         const SizedBox(width: 4),
-        IconButton(onPressed: onSearch, tooltip: '검색', icon: const LineIcon('search', size: 20)),
+        IconButton(onPressed: onSearch, tooltip: '검색', icon: const LineIcon('search', size: 24)),
       ]),
     );
   }
 }
 
 // 섹션 제목 줄 (굵은 앞말 + 가는 뒷말 + 오른쪽 작은 링크)
-Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLink, double pad = 20, double size = 15}) => Padding(
+Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLink, double pad = 20, double size = 18}) => Padding(
       padding: EdgeInsets.symmetric(horizontal: pad),
       child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
         mixTitle(bold, light, size: size),
@@ -712,7 +717,7 @@ Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLin
             child: GestureDetector(
               onTap: onLink,
               behavior: HitTestBehavior.opaque,
-              child: Padding(padding: const EdgeInsets.fromLTRB(10, 6, 0, 2), child: Text(link, style: const TextStyle(fontSize: 11, color: kSub))),
+              child: Padding(padding: const EdgeInsets.fromLTRB(10, 6, 0, 2), child: Text('$link  ›', style: const TextStyle(fontSize: 13, color: kSub))),
             ),
           ),
       ]),
@@ -734,6 +739,7 @@ class HomeView extends StatelessWidget {
   final FollowData? follow; // 유명 유튜버 따라가기 (전국)
   final ValueChanged<String> onFollow; // 채널 id (비면 전체) → 지도
   final ValueChanged<Place> onFollowPlace; // 새로 올라온 영상 → 그 가게
+  final Future<void> Function() onRefresh; // 아래로 당겨 새로 고침
   const HomeView({
     super.key,
     required this.data,
@@ -754,39 +760,48 @@ class HomeView extends StatelessWidget {
     this.follow,
     required this.onFollow,
     required this.onFollowPlace,
+    required this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
     final d = data;
+    // 머리말은 흰 띠, 그 아래는 옅은 회색 바탕 위에 흰 카드
     return ColoredBox(
-      color: kPageBg,
+      color: Colors.white,
       child: SafeArea(
-      bottom: false,
-      child: narrow(Column(children: [
-        KokHeader(area: area, open: regionOpen, onRegion: onRegion, onSearch: onSearch),
-        if (regionOpen) Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: regionPanel),
-        Expanded(
-          child: d == null
-              ? Center(
-                  child: error == null
-                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                      : TextButton(onPressed: onRetry, child: const Text('자료를 받지 못했습니다 · 다시 불러오기')),
-                )
-              : ListView(padding: const EdgeInsets.only(top: 4, bottom: 36), children: [
-                  _hero(d),
-                  const SizedBox(height: 40), // 룰렛 판이 카드 위로 튀어나올 자리
-                  Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: RouletteBanner(onTap: onRoulette)),
-                  const SizedBox(height: 12),
-                  _find(),
-                  _follow(),
-                  _fresh(),
-                  _creators(d),
-                  _tops(d),
-                  _courses(d),
-                ]),
-        ),
-      ])),
+        bottom: false,
+        child: Column(children: [
+          narrowTop(KokHeader(area: area, open: regionOpen, onRegion: onRegion, onSearch: onSearch)),
+          if (regionOpen) narrowTop(Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: regionPanel)),
+          Expanded(
+            child: ColoredBox(
+              color: kPageBg,
+              child: narrow(d == null
+                  ? Center(
+                      child: error == null
+                          ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                          : TextButton(onPressed: onRetry, child: const Text('자료를 받지 못했습니다 · 다시 불러오기')),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: onRefresh,
+                      color: kAccent,
+                      child: ListView(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.only(top: 14, bottom: 36), children: [
+                        _hero(d),
+                        const SizedBox(height: 40), // 룰렛 판이 카드 위로 튀어나올 자리
+                        Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: RouletteBanner(onTap: onRoulette)),
+                        const SizedBox(height: 14),
+                        _find(),
+                        _follow(),
+                        _fresh(),
+                        _creators(d),
+                        _tops(d),
+                        _courses(d),
+                      ]),
+                    )),
+            ),
+          ),
+        ]),
       ),
     );
   }
@@ -794,8 +809,8 @@ class HomeView extends StatelessWidget {
   // 무엇이 당기세요? — 찾기 칸 + 음식 종류
   Widget _find() => homeCard(
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          sectionHead('무엇이 ', '당기세요?', pad: 18, size: 16),
-          const SizedBox(height: 14),
+          sectionHead('무엇이 ', '당기세요?', pad: 18, size: 18),
+          const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Semantics(
@@ -806,12 +821,12 @@ class HomeView extends StatelessWidget {
               child: GestureDetector(
                 onTap: onSearch,
                 child: Container(
-                  height: 46,
-                  padding: const EdgeInsets.only(left: 6, right: 14),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(23), border: Border.all(color: kInk, width: 1)),
+                  height: 52,
+                  padding: const EdgeInsets.only(left: 8, right: 16),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(26), border: Border.all(color: kInk, width: 1)),
                   child: Row(children: [
-                    const Text('🍜', style: TextStyle(fontSize: 24, height: 1.1)),
-                    const SizedBox(width: 8),
+                    const Text('🍜', style: TextStyle(fontSize: 27, height: 1.1)),
+                    const SizedBox(width: 9),
                     Expanded(
                       child: Text.rich(
                         TextSpan(children: [
@@ -820,19 +835,19 @@ class HomeView extends StatelessWidget {
                         ]),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13.5, color: kInk),
+                        style: const TextStyle(fontSize: 15.5, color: kInk),
                       ),
                     ),
-                    const LineIcon('search', size: 21),
+                    const LineIcon('search', size: 24),
                   ]),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: CuisinePills(current: '', onPick: onCuisine)),
         ]),
-        padding: const EdgeInsets.fromLTRB(0, 22, 0, 22),
+        padding: const EdgeInsets.fromLTRB(0, 24, 0, 24),
       );
 
   Widget _hero(SongdoData d) {
@@ -897,15 +912,15 @@ class HomeView extends StatelessWidget {
           const SizedBox(width: 6),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(v == null ? '오늘의 추천' : '오늘의 영상', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: kAccent)),
-              const SizedBox(height: 3),
+              Text(v == null ? '오늘의 추천' : '오늘의 영상', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kAccent)),
+              const SizedBox(height: 4),
               Text(p.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.4, height: 1.3)),
-              const SizedBox(height: 3),
+                  style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.5, height: 1.3)),
+              const SizedBox(height: 4),
               Text([if (v != null) v.channel, if (dongOf(p).isNotEmpty) dongOf(p), if (v == null && p.cat.isNotEmpty) p.cat, if (o != null) o.short].where((x) => x.isNotEmpty).join(' · '),
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w300, color: kSub)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w400, color: kSub)),
             ]),
           ),
           const SizedBox(width: 12),
@@ -917,11 +932,11 @@ class HomeView extends StatelessWidget {
             child: GestureDetector(
               onTap: () => onWhere(p),
               child: Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 18),
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(17)),
-                child: const Text('이 집 어디야', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(21)),
+                child: const Text('이 집 어디야', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),
           ),
@@ -936,15 +951,15 @@ class HomeView extends StatelessWidget {
     if (f == null || f.channels.isEmpty) return const SizedBox();
     return homeCard(
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('유튜버 ', '따라 먹기', link: '전국 지도', onLink: () => onFollow(''), pad: 18, size: 16),
+        sectionHead('유튜버 ', '따라 먹기', link: '전국 지도', onLink: () => onFollow(''), pad: 18, size: 18),
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
           child: Text('맛집 채널이 영상에 주소를 적어 둔 집 · 전국 ${commas(f.places.length)}곳',
-              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: kSub)),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         SizedBox(
-          height: 100,
+          height: 118,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -974,10 +989,10 @@ class HomeView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 14, 0, 22),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('새로 ', '올라온 영상', size: 16),
-        const SizedBox(height: 12),
+        sectionHead('새로 ', '올라온 영상', size: 18),
+        const SizedBox(height: 14),
         SizedBox(
-          height: 196,
+          height: 232,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -998,10 +1013,10 @@ class HomeView extends StatelessWidget {
     if (list.isEmpty) return const SizedBox();
     return homeCard(
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('이 동네 ', '다녀간 유튜버', link: '전체 보기', onLink: onAllChannels, pad: 18, size: 16),
-        const SizedBox(height: 14),
+        sectionHead('이 동네 ', '다녀간 유튜버', link: '전체 보기', onLink: onAllChannels, pad: 18, size: 18),
+        const SizedBox(height: 16),
         SizedBox(
-          height: 100,
+          height: 118,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -1022,8 +1037,8 @@ class HomeView extends StatelessWidget {
     return homeCard(
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         yt.isNotEmpty
-            ? sectionHead('유튜버가 ', '많이 찾은 집', link: '순위 전체', onLink: onRankAll, pad: 18, size: 16)
-            : sectionHead('지금 ', '인기 많은 집', link: '순위 전체', onLink: onRankAll, pad: 18, size: 16),
+            ? sectionHead('유튜버가 ', '많이 찾은 집', link: '순위 전체', onLink: onRankAll, pad: 18, size: 18)
+            : sectionHead('지금 ', '인기 많은 집', link: '순위 전체', onLink: onRankAll, pad: 18, size: 18),
         if (yt.isEmpty)
           const Padding(
             padding: EdgeInsets.fromLTRB(18, 4, 18, 0),
@@ -1045,10 +1060,10 @@ class HomeView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('테마 ', '골라 보기', size: 16),
-        const SizedBox(height: 12),
+        sectionHead('테마 ', '골라 보기', size: 18),
+        const SizedBox(height: 14),
         SizedBox(
-          height: 150,
+          height: 178,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -1107,35 +1122,36 @@ class _RouletteBannerState extends State<RouletteBanner> with SingleTickerProvid
           onTap: widget.onTap,
           child: Stack(clipBehavior: Clip.none, children: [
             Container(
-              height: 118,
-              padding: const EdgeInsets.fromLTRB(20, 18, 150, 16),
+              width: double.infinity,
+              height: 132,
+              padding: const EdgeInsets.fromLTRB(22, 20, 150, 18),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
                 gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFE6DD), Color(0xFFFFF3E2)]),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('고민될 땐 돌려 보세요', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFFB4532F))),
-                const SizedBox(height: 3),
-                mixTitle('오늘 ', '뭐 먹지?', size: 20),
+                const Text('고민될 땐 돌려 보세요', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFFB4532F))),
+                const SizedBox(height: 4),
+                mixTitle('오늘 ', '뭐 먹지?', size: 23),
                 const Spacer(),
                 Container(
-                  height: 30,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(color: kInk, borderRadius: BorderRadius.circular(15)),
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(color: kInk, borderRadius: BorderRadius.circular(18)),
                   child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text('룰렛 돌리기', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                    Text('룰렛 돌리기', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Colors.white)),
                     SizedBox(width: 4),
-                    Icon(Icons.play_arrow_rounded, size: 16, color: Colors.white),
+                    Icon(Icons.play_arrow_rounded, size: 18, color: Colors.white),
                   ]),
                 ),
               ]),
             ),
             Positioned(
-              right: 4,
-              top: -34,
+              right: 2,
+              top: -30,
               child: AnimatedBuilder(
                 animation: ctl,
-                builder: (_, __) => SizedBox(width: 146, height: 150, child: CustomPaint(painter: _BannerWheel(angle))),
+                builder: (_, __) => SizedBox(width: 152, height: 158, child: CustomPaint(painter: _BannerWheel(angle))),
               ),
             ),
           ]),
@@ -1183,7 +1199,7 @@ class _BannerWheel extends CustomPainter {
     c.restore();
     // 테두리 점 (전구처럼)
     for (var i = 0; i < 16; i++) {
-      final a = i * math.pi / 8 + angle * 0.0;
+      final a = i * math.pi / 8;
       c.drawCircle(center + Offset(math.cos(a), math.sin(a)) * (r + 0.5), 1.6, Paint()..color = i.isEven ? const Color(0xFFFFE08A) : Colors.white);
     }
     // 가운데
@@ -1229,23 +1245,23 @@ class CourseCard extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 236,
-          padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
-          decoration: kokCard(),
+          width: 268,
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            mixTitle(c.bold, c.light, size: 14),
-            const SizedBox(height: 2),
-            Text(c.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
-            const SizedBox(height: 10),
+            mixTitle(c.bold, c.light, size: 17),
+            const SizedBox(height: 3),
+            Text(c.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w400, color: kSub)),
+            const SizedBox(height: 12),
             Row(children: [
               for (var i = 0; i < math.min(s.length, 4); i++) ...[
-                if (i > 0) const SizedBox(width: 4),
-                ytSmall(s[i], 48, r: 4),
+                if (i > 0) const SizedBox(width: 5),
+                ytSmall(s[i], 54, r: 6),
               ],
             ]),
-            const SizedBox(height: 9),
+            const SizedBox(height: 11),
             Text([for (var i = 0; i < math.min(s.length, 4); i++) '${i + 1} ${s[i].name}'].join('  '),
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: kInk, height: 1.3)),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: kInk, height: 1.3)),
           ]),
         ),
       ),
@@ -1294,7 +1310,7 @@ class FreshCard extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: SizedBox(
-          width: 216,
+          width: 244,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -1312,19 +1328,19 @@ class FreshCard extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.72), borderRadius: BorderRadius.circular(4)),
-                        child: Text(badge, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.white)),
+                        child: Text(badge, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white)),
                       ),
                     ),
                 ]),
               ),
             ),
-            const SizedBox(height: 7),
-            Text(v.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kInk, height: 1.3)),
-            const SizedBox(height: 3),
+            const SizedBox(height: 9),
+            Text(v.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kInk, height: 1.32)),
+            const SizedBox(height: 4),
             Text([channel, agoText(v.date)].where((x) => x.isNotEmpty).join(' · '),
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w400, color: kSub)),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: kSub)),
             Text([place.name, [sidoShort(place.sido), place.gu].where((x) => x.isNotEmpty).join(' ')].where((x) => x.isNotEmpty).join(' · '),
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: kSub)),
           ]),
         ),
       ),
@@ -1780,8 +1796,8 @@ class ChanAvatar extends StatelessWidget {
       child: Text(c.initial, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
     );
     final circle = Container(
-      width: 58,
-      height: 58,
+      width: 66,
+      height: 66,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ring, width: 1)),
       child: c.thumb.isEmpty
@@ -1790,8 +1806,8 @@ class ChanAvatar extends StatelessWidget {
               child: Image.network(
                 c.thumb,
                 fit: BoxFit.cover,
-                width: 52,
-                height: 52,
+                width: 60,
+                height: 60,
                 webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
                 errorBuilder: (_, __, ___) => initial,
               ),
@@ -1799,13 +1815,14 @@ class ChanAvatar extends StatelessWidget {
     );
     if (!label) return circle;
     return SizedBox(
-      width: 62,
+      width: 72,
       child: Column(children: [
         circle,
-        const SizedBox(height: 6),
+        const SizedBox(height: 7),
         Text(c.name,
-            maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: kInk)),
-        Text('${c.places.length}곳', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w300, color: kSub)),
+            maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kInk)),
+        const SizedBox(height: 1),
+        Text('${c.places.length}곳', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w400, color: kSub)),
       ]),
     );
   }
@@ -1823,25 +1840,25 @@ class YtRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Row(children: [
           SizedBox(
-            width: 18,
-            child: Text('$rank', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: rank == 1 ? kAccent : kInk)),
+            width: 20,
+            child: Text('$rank', textAlign: TextAlign.center, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: rank == 1 ? kAccent : kInk)),
           ),
           const SizedBox(width: 10),
-          ytSmall(place, 80),
+          ytSmall(place, 92),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(place.name,
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.3)),
-              const SizedBox(height: 2),
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.3)),
+              const SizedBox(height: 3),
               Text([if (myPos.value != null) distText(meters(myPos.value!, place.point)), metaOf(place)].join(' · '),
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w400, color: kSub)),
               if (oneLine(place).isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(oneLine(place), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: kInk)),
+                const SizedBox(height: 3),
+                Text(oneLine(place), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: kInk)),
               ],
             ]),
           ),
@@ -1864,6 +1881,7 @@ class VideoView extends StatelessWidget {
   final Widget regionPanel;
   final VoidCallback onRegion, onSearch;
   final ValueChanged<Place> onWhere;
+  final Future<void> Function() onRefresh; // 아래로 당겨 새로 고침
   const VideoView({
     super.key,
     required this.data,
@@ -1873,6 +1891,7 @@ class VideoView extends StatelessWidget {
     required this.onRegion,
     required this.onSearch,
     required this.onWhere,
+    required this.onRefresh,
   });
   @override
   Widget build(BuildContext context) {
@@ -1954,7 +1973,11 @@ class VideoView extends StatelessWidget {
                     ? Center(
                         child: Text(d == null ? '' : '${area.name} 유튜브 영상은 모으는 중입니다.', style: const TextStyle(fontSize: 13, color: kSub)),
                       )
-                    : GridView.builder(
+                    : RefreshIndicator(
+                        onRefresh: onRefresh,
+                        color: kAccent,
+                        child: GridView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: EdgeInsets.fromLTRB(side, 4, side, 24),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: cols,
@@ -1964,7 +1987,7 @@ class VideoView extends StatelessWidget {
                         ),
                         itemCount: items.length,
                         itemBuilder: (_, i) => item(items[i], phone),
-                      ),
+                      )),
               ),
             ]),
           ),
@@ -1979,6 +2002,7 @@ class SavedView extends StatefulWidget {
   final List<Map<String, dynamic>> koks, recents;
   final ValueChanged<Map<String, dynamic>> onOpen, onRemove, onRemoveRecent;
   final VoidCallback onClearRecents;
+  final Future<void> Function() onRefresh; // 아래로 당겨 새로 고침
   const SavedView(
       {super.key,
       required this.koks,
@@ -1986,7 +2010,8 @@ class SavedView extends StatefulWidget {
       required this.onOpen,
       required this.onRemove,
       required this.onRemoveRecent,
-      required this.onClearRecents});
+      required this.onClearRecents,
+      required this.onRefresh});
   @override
   State<SavedView> createState() => _SavedViewState();
 }
@@ -2107,14 +2132,18 @@ class _SavedViewState extends State<SavedView> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontSize: 13, color: kSub, height: 1.5)),
                 )
-              : ListView.separated(
+              : RefreshIndicator(
+                  onRefresh: widget.onRefresh,
+                  color: kAccent,
+                  child: ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                   itemCount: list.length,
                   separatorBuilder: (_, __) => const Divider(height: 1, thickness: 1, color: kHair),
                   itemBuilder: (_, i) => w == 0
                       ? row(list[i], onRemove: () => widget.onRemove(list[i]), removeTip: '콕 빼기')
                       : row(list[i], onRemove: () => widget.onRemoveRecent(list[i]), removeTip: '목록에서 지우기', when: true),
-                ),
+                )),
         ),
       ])),
     );
@@ -2169,7 +2198,7 @@ class KokNav extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(label,
                     style: TextStyle(
-                        fontSize: 12, fontWeight: tab == i ? FontWeight.w700 : FontWeight.w500, color: tab == i ? kInk : const Color(0xFF555A63), height: 1.1)),
+                        fontSize: 13, fontWeight: tab == i ? FontWeight.w700 : FontWeight.w500, color: tab == i ? kInk : const Color(0xFF555A63), height: 1.1)),
               ]),
             ),
           ),
@@ -2183,7 +2212,7 @@ class KokNav extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: kHomeMax),
             child: SizedBox(
-              height: 66,
+              height: 68,
               child: Row(children: [
                 item(0, 'home', '홈'),
                 item(1, 'video', '영상'),

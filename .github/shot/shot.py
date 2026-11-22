@@ -72,6 +72,11 @@ def run(pg):
 
     shot("홈")
     log.append("홈 글자: " + " / ".join(labels()[:80]))
+    # 아래로 당겨 새로 고침
+    drag(195, 240, 600, wait=0.35, steps=12)
+    shot("새로고침")
+    time.sleep(2.5)
+    shot("새로고침_끝")
     wheel(195, 560, 700)
     shot("홈_아래")
     wheel(195, 560, 1500)

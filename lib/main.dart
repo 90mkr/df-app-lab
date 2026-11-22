@@ -278,7 +278,16 @@ final kDefaultArea = Area({'id': 'songdo', 'name': '송도/연수', 'gu': '연�
 
 String dataUrl(String file) => kIsWeb ? Uri.base.resolve('data/$file').toString() : '$kDataBase$file';
 
-Future<List<Sido>> loadRegions() async {
+// 지도 위 한 점을 화면에서 dy 픽셀 아래로 옮긴 자리 (메르카토르, 경도는 그대로)
+LatLng shiftDown(LatLng p, double zoom, double dy) {
+  final scale = 256 * math.pow(2, zoom).toDouble();
+  final r = p.latitude * math.pi / 180;
+  final y = (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * scale + dy;
+  final n = math.pi - 2 * math.pi * y / scale;
+  return LatLng(180 / math.pi * math.atan(0.5 * (math.exp(n) - math.exp(-n))), p.longitude);
+}
+
+Future<List<Sido>> loadRegions({bool fallback = true}) async {
   try {
     final res = await http.get(Uri.parse('${dataUrl('regions.json')}?t=${DateTime.now().millisecondsSinceEpoch}'));
     if (res.statusCode == 200) {
@@ -292,6 +301,7 @@ Future<List<Sido>> loadRegions() async {
       if (out.isNotEmpty) return out;
     }
   } catch (_) {}
+  if (!fallback) return [];
   final sd = Sido({'name': '인천'});
   sd.areas.add(kDefaultArea);
   return [sd];
@@ -352,9 +362,10 @@ class FollowData {
   }();
 }
 
-Future<FollowData?> loadFollow() async {
+Future<FollowData?> loadFollow({bool fresh = false}) async {
   try {
-    final res = await http.get(Uri.parse('${dataUrl('follow.json')}?t=${DateTime.now().millisecondsSinceEpoch ~/ 3600000}'));
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final res = await http.get(Uri.parse('${dataUrl('follow.json')}?t=${fresh ? now : now ~/ 3600000}'));
     if (res.statusCode != 200) return null;
     final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     final places = ((j['places'] ?? []) as List).map((e) => Place(e as Map<String, dynamic>, 'follow')).toList();
@@ -395,7 +406,7 @@ class MapPage extends StatefulWidget {
   State<MapPage> createState() => _MapPageState();
 }
 
-class _MapPageState extends State<MapPage> {
+class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   final map = MapController();
   List<Sido> sidos = [];
   Area area = kDefaultArea; // 초점 동네 (머리말·홈·순위)
@@ -413,6 +424,9 @@ class _MapPageState extends State<MapPage> {
   String followCh = ''; // 그중 한 채널만 (비면 전체)
   List<Place> _fp = const [];
   String _fpKey = '#';
+  Place? focus; // 지금 연 가게: 순위가 낮거나 지금 분류에 없어도 지도에 빨간 큰 카드로
+  DateTime _checkedAt = DateTime.now(); // 마지막으로 새 정보를 확인한 때
+  Future<int>? _checking;
   List<Place> get followPlaces {
     final f = follow;
     if (f == null) return const [];
@@ -452,6 +466,7 @@ class _MapPageState extends State<MapPage> {
   void goCuisine(String c) {
     setState(() {
       followOn = false;
+      focus = null;
       tab = 2;
       regionOpen = false;
       kind = 'all';
@@ -478,6 +493,7 @@ class _MapPageState extends State<MapPage> {
   void pickCuisine(String c) => setState(() {
         cuisine = c;
         course = null;
+        focus = null;
       });
 
   void openCuisine() {
@@ -515,12 +531,16 @@ class _MapPageState extends State<MapPage> {
   // 분류 단추를 눌렀을 때: 내 주변은 위치부터 확인
   Future<void> pickKind(String k) async {
     if (k != 'near') {
-      setState(() => kind = k);
+      setState(() {
+        kind = k;
+        focus = null;
+      });
       return;
     }
     setState(() {
       kind = 'near';
       followOn = false;
+      focus = null;
       locating = true;
       course = null;
     });
@@ -546,7 +566,81 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _start();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    myPos.removeListener(_onPos);
+    _sync?.cancel();
+    super.dispose();
+  }
+
+  // 다른 앱에 갔다 돌아오면: 마지막 확인에서 10분이 지났으면 조용히 새 정보 확인
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (DateTime.now().difference(_checkedAt) < const Duration(minutes: 10)) return;
+    checkNew().then((r) {
+      if (r == 1 && mounted) _toast('새 맛집 정보로 바꿨어요');
+    }).catchError((_) {});
+  }
+
+  // 새 정보 확인: 작은 지역 목록만 다시 받아 판(updated)이 바뀐 동네만 새로 받고, 따라가기 자료도 다시 확인
+  // 1 바뀜 · 0 그대로 · -1 못 받음
+  Future<int> checkNew() => _checking ??= _checkNew().whenComplete(() => _checking = null);
+
+  Future<int> _checkNew() async {
+    _checkedAt = DateTime.now();
+    final list = await loadRegions(fallback: false);
+    if (list.isEmpty) return -1;
+    final before = {for (final a in readyAreas) a.id: a.updated};
+    final all = [for (final s in list) ...s.areas.where((a) => a.ready)];
+    final stale = [for (final a in all) if (loaded.containsKey(a.id) && before[a.id] != a.updated) a];
+    var changed = stale.isNotEmpty || all.any((a) => !before.containsKey(a.id));
+    if (!mounted) return 0;
+    setState(() {
+      sidos = list;
+      area = all.where((a) => a.id == area.id).firstOrNull ?? area;
+    });
+    for (final a in stale) {
+      try {
+        final d = await loadData(a.id, version: a.updated);
+        if (mounted) setState(() => loaded[a.id] = d);
+      } catch (_) {}
+    }
+    if (error != null) _load();
+    final f = await loadFollow(fresh: true);
+    if (f != null && mounted && f.updated != follow?.updated) {
+      changed = true;
+      setState(() {
+        follow = f;
+        _fpKey = '#';
+      });
+    }
+    return changed ? 1 : 0;
+  }
+
+  // 아래로 당겨 새로 고침
+  Future<void> pullRefresh() async {
+    var r = -1;
+    try {
+      r = await checkNew();
+    } catch (_) {}
+    if (!mounted) return;
+    _toast(switch (r) {
+      1 => '새 맛집 정보로 바꿨어요',
+      0 => '지금이 가장 새 정보예요',
+      _ => '새 정보를 확인하지 못했어요. 인터넷 연결을 확인해 주세요',
+    });
+  }
+
+  void _toast(String t) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(t), duration: const Duration(seconds: 2)));
   }
 
   // 지역 목록을 받고, 지난번에 본 동네를 다시 연다
@@ -621,6 +715,7 @@ class _MapPageState extends State<MapPage> {
   void setArea(Area a) {
     setState(() {
       followOn = false;
+      focus = null;
       regionOpen = false;
       area = a;
       course = null;
@@ -772,6 +867,7 @@ class _MapPageState extends State<MapPage> {
     if (follow == null) return;
     setState(() {
       followOn = true;
+      focus = null;
       followCh = ch;
       _fpKey = '#';
       course = null;
@@ -801,6 +897,7 @@ class _MapPageState extends State<MapPage> {
   void openFollowPlace(Place p) {
     setState(() {
       followOn = true;
+      focus = null;
       followCh = '';
       _fpKey = '#';
       course = null;
@@ -813,6 +910,7 @@ class _MapPageState extends State<MapPage> {
 
   void closeFollow() => setState(() {
         followOn = false;
+        focus = null;
         followCh = '';
         _fpKey = '#';
       });
@@ -878,6 +976,7 @@ class _MapPageState extends State<MapPage> {
   void openCourse(Course c) {
     setState(() {
       followOn = false;
+      focus = null;
       course = c;
       tab = 2;
       regionOpen = false;
@@ -932,6 +1031,7 @@ class _MapPageState extends State<MapPage> {
   void goWhere(Place p) {
     setState(() {
       followOn = false;
+      focus = null;
       tab = 2;
       regionOpen = false;
       course = null;
@@ -1137,7 +1237,10 @@ class _MapPageState extends State<MapPage> {
               for (final f in const ['park', 'kid', 'group', 'resv', 'take', 'deliv', 'out', 'wheel', 'dog'])
                 GestureDetector(
                   onTap: () {
-                    setState(() => feats.contains(f) ? feats.remove(f) : feats.add(f));
+                    setState(() {
+                      feats.contains(f) ? feats.remove(f) : feats.add(f);
+                      focus = null;
+                    });
                     setS(() {});
                   },
                   child: FeatTile(icon: kFeat[f]!.$1, label: kFeat[f]!.$2, color: kFeat[f]!.$3, on: feats.contains(f)),
@@ -1149,7 +1252,10 @@ class _MapPageState extends State<MapPage> {
                 child: _Btn(
                   label: '모두 해제',
                   onTap: () {
-                    setState(() => feats.clear());
+                    setState(() {
+                      feats.clear();
+                      focus = null;
+                    });
                     setS(() {});
                   },
                 ),
@@ -1171,6 +1277,7 @@ class _MapPageState extends State<MapPage> {
   void openSearch() => setState(() {
         searching = !searching;
         followOn = false;
+        focus = null;
         regionOpen = false;
         course = null;
         if (!searching) {
@@ -1284,7 +1391,7 @@ class _MapPageState extends State<MapPage> {
 
   // 순위 높은 집부터 자리를 잡는다. 겹치면 위 → 아래 → 오른쪽 → 왼쪽 자리를 찾아보고,
   // 그래도 없으면 한 단계 작게. 끝까지 확대하면(17.5 이상) 모두 카드로 보인다.
-  List<(int, int)> layout(List<Place> list) {
+  List<(int, int)> layout(List<Place> list, {int first = -1}) {
     final scale = 256 * math.pow(2, zoom).toDouble();
     Offset px(LatLng p) {
       final x = (p.longitude + 180) / 360 * scale;
@@ -1294,9 +1401,10 @@ class _MapPageState extends State<MapPage> {
     }
     final kept = <Rect>[];
     final out = List<(int, int)>.filled(list.length, (2, 0));
-    for (var i = 0; i < list.length; i++) {
+    // 지금 연 가게(first)가 먼저 자리를 잡는다
+    for (final i in [if (first >= 0) first, for (var k = 0; k < list.length; k++) if (k != first) k]) {
       final c = px(list[i].point);
-      final want = i < cardCount ? 0 : (i < cardCount + kPhotoCount ? 1 : 2);
+      final want = i == first ? 0 : (i < cardCount ? 0 : (i < cardCount + kPhotoCount ? 1 : 2));
       (int, int)? got;
       for (var t = want; t < 2 && got == null; t++) {
         for (var d = 0; d < 4 && got == null; d++) {
@@ -1307,7 +1415,7 @@ class _MapPageState extends State<MapPage> {
           }
         }
       }
-      if (got == null && zoom >= 17.5) {
+      if (got == null && (zoom >= 17.5 || i == first)) {
         kept.add(cardRect(i + 1, 0, 0, c));
         got = (0, 0);
       }
@@ -1347,7 +1455,7 @@ class _MapPageState extends State<MapPage> {
     return cards < total ? '$kindLabel 상위 $total곳 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $total곳  ·  ${d.updated} 기준';
   }
 
-  Marker markerFor(Place p, int i, int t, int d) {
+  Marker markerFor(Place p, int i, int t, int d, {bool focus = false, bool? numbered}) {
     if (t <= 1) {
       // 1·2단계는 같은 카드: 확대하면 접힌 카드가 펼쳐진다
       final w = cardFullW(i + 1), ch = cardImg(i + 1) + 12;
@@ -1358,7 +1466,7 @@ class _MapPageState extends State<MapPage> {
         width: side ? w + 6 : w,
         height: side ? ch : ch + 6,
         alignment: const [Alignment.topCenter, Alignment.bottomCenter, Alignment.centerRight, Alignment.centerLeft][d],
-        child: PlaceMarker(place: p, rank: i + 1, open: t == 0, dir: d, numbered: !followOn, onTap: () => openPlace(p)),
+        child: PlaceMarker(place: p, rank: i + 1, open: t == 0 || focus, dir: d, numbered: numbered ?? !followOn, focus: focus, onTap: () => openPlace(p)),
       );
     }
     return Marker(
@@ -1373,11 +1481,16 @@ class _MapPageState extends State<MapPage> {
 
   void openPlace(Place p) {
     noteRecent(p);
-    map.move(p.point, math.max(map.camera.zoom, 16));
-    // 처음엔 낮게: 이름 · 별점·거리·영업·주소 + 오른쪽 바로가기 (+ 편의 칸) 까지만, 끌어올리면 끝까지
+    // 처음엔 낮게: 이름 · 별점·거리·영업·주소 + 오른쪽 바로가기 (+ 편의 한 줄) 까지만, 끌어올리면 끝까지
     final mq = MediaQuery.of(context);
-    final px = 238.0 + (oneLine(p).isNotEmpty ? 24 : 0) + (p.feat.any(kFeat.containsKey) ? 74 : 0) + mq.padding.bottom;
+    final px = 238.0 + (oneLine(p).isNotEmpty ? 24 : 0) + (p.feat.any(kFeat.containsKey) ? 38 : 0) + mq.padding.bottom;
     final peek = (px / mq.size.height).clamp(0.26, 0.6).toDouble();
+    // 그 집이 아래 창에 가리지 않게: 위 머리말과 아래 창 사이 가운데쯤 오도록 지도를 옮긴다
+    final z = math.max(map.camera.zoom, 16.0);
+    final mid = (mq.size.height - 68 - mq.padding.bottom) / 2; // 지도 가운데 (아래 탭 위)
+    final want = (mq.padding.top + 130 + mq.size.height * (1 - peek)) / 2 + 30; // 카드는 점 위에 그려지니 조금 아래
+    map.move(shiftDown(p.point, z, mid - want), z);
+    setState(() => focus = p);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1487,6 +1600,7 @@ class _MapPageState extends State<MapPage> {
     );
     void toMapSearch() => setState(() {
           followOn = false;
+          focus = null;
           tab = 2;
           regionOpen = false;
           searching = true;
@@ -1494,6 +1608,7 @@ class _MapPageState extends State<MapPage> {
     return Scaffold(
       body: IndexedStack(index: tab, children: [
         HomeView(
+          onRefresh: pullRefresh,
           data: data,
           error: error,
           area: area,
@@ -1514,6 +1629,7 @@ class _MapPageState extends State<MapPage> {
           onFollowPlace: openFollowPlace,
         ),
         VideoView(
+          onRefresh: pullRefresh,
           data: data,
           area: area,
           regionOpen: regionOpen && tab == 1,
@@ -1524,6 +1640,7 @@ class _MapPageState extends State<MapPage> {
         ),
         _mapTab(context),
         SavedView(
+          onRefresh: pullRefresh,
           koks: koks,
           recents: recents,
           onOpen: openKok,
@@ -1553,16 +1670,26 @@ class _MapPageState extends State<MapPage> {
   }
 
   Widget _mapTab(BuildContext context) {
-    final list = visible;
+    final base = visible;
+    // 지금 연 가게: 순위가 낮거나 지금 분류에 없어도 큰 카드로, 맨 위에 (번호는 원래 순위, 목록에 없으면 번호 없이)
+    final f = focus;
+    var fi = f == null ? -1 : base.indexWhere((x) => x.id == f.id);
+    final extra = f != null && fi < 0 && course == null;
+    final list = extra ? [...base, f!] : base;
+    if (extra) fi = list.length - 1;
     final wide = MediaQuery.of(context).size.width >= 760; // 넓은 화면: 분류 단추를 머리말 오른쪽에
-    final place = layout(list);
+    final place = layout(list, first: fi);
     final cards = place.where((x) => x.$1 == 0).length;
-    // 작은 것부터 깔고 큰 카드를 위에 (같은 단계는 높은 순위가 위)
+    // 작은 것부터 깔고 큰 카드를 위에 (같은 단계는 높은 순위가 위), 지금 연 가게는 맨 위
     final order = [
       for (final t in const [2, 1, 0])
         for (var i = list.length - 1; i >= 0; i--)
           if (place[i].$1 == t) i
     ];
+    if (fi >= 0) {
+      order.remove(fi);
+      order.add(fi);
+    }
     return Stack(children: [
         FlutterMap(
           mapController: map,
@@ -1597,7 +1724,7 @@ class _MapPageState extends State<MapPage> {
                 if (zoom < kClusterZoom && course == null)
                   ...(followOn ? followClusters() : clusterMarkers())
                 else
-                  for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2),
+                  for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2, focus: i == fi, numbered: extra && i == fi ? false : null),
                 if (me != null)
                   Marker(
                     key: const ValueKey('me'),
@@ -1636,7 +1763,7 @@ class _MapPageState extends State<MapPage> {
                 area: area,
                 open: regionOpen,
                 onRegion: openRegion,
-                sub: subText(list.length, cards),
+                sub: subText(base.length, cards),
                 onRank: data == null ? null : openRank,
                 onSearch: openSearch,
                 searching: searching,
@@ -1717,7 +1844,7 @@ class _MapPageState extends State<MapPage> {
                     ]),
             ),
           ),
-        if (data != null && !followOn && feats.isEmpty && const ['tv', 'big', 'view', 'rise'].contains(kind) && list.isEmpty)
+        if (data != null && !followOn && feats.isEmpty && const ['tv', 'big', 'view', 'rise'].contains(kind) && base.isEmpty)
           Center(
             child: Container(
               margin: const EdgeInsets.all(30),
@@ -2091,7 +2218,8 @@ class PlaceMarker extends StatelessWidget {
   final int dir; // 0 가게 위, 1 아래, 2 오른쪽, 3 왼쪽
   final VoidCallback onTap;
   final bool numbered; // 순위 번호 (따라가기 지도는 순위가 아니라 번호 없이)
-  const PlaceMarker({super.key, required this.place, required this.rank, required this.open, this.dir = 0, this.numbered = true, required this.onTap});
+  final bool focus; // 지금 연 가게: 빨간 바탕 + 흰 글
+  const PlaceMarker({super.key, required this.place, required this.rank, required this.open, this.dir = 0, this.numbered = true, this.focus = false, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -2109,10 +2237,10 @@ class PlaceMarker extends StatelessWidget {
             padding: const EdgeInsets.all(5),
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: focus ? kAccent : Colors.white,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: line, width: 1),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10)],
+              border: Border.all(color: focus ? kAccent : line, width: 1),
+              boxShadow: [focus ? BoxShadow(color: kAccent.withValues(alpha: 0.45), blurRadius: 16, spreadRadius: 1) : BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10)],
             ),
             child: OverflowBox(
               alignment: Alignment.centerLeft,
@@ -2139,13 +2267,16 @@ class PlaceMarker extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
                     Text.rich(
                       TextSpan(children: [
-                        if (numbered) TextSpan(text: '$rank ', style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: big ? kindLine(place.kind) : kGray)),
+                        if (numbered)
+                          TextSpan(
+                              text: '$rank ',
+                              style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: focus ? Colors.white : (big ? kindLine(place.kind) : kGray))),
                         if (place.tv.isNotEmpty)
-                          const WidgetSpan(
+                          WidgetSpan(
                             alignment: PlaceholderAlignment.middle,
-                            child: Padding(padding: EdgeInsets.only(right: 3), child: Icon(Icons.live_tv_outlined, size: 12, color: kInk)),
+                            child: Padding(padding: const EdgeInsets.only(right: 3), child: Icon(Icons.live_tv_outlined, size: 12, color: focus ? Colors.white : kInk)),
                           ),
-                        TextSpan(text: place.name, style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: kInk)),
+                        TextSpan(text: place.name, style: TextStyle(fontSize: big ? 12 : 11, fontWeight: FontWeight.w700, color: focus ? Colors.white : kInk)),
                       ]),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -2153,12 +2284,12 @@ class PlaceMarker extends StatelessWidget {
                     const SizedBox(height: 2),
                     if (place.greviews > 0)
                       Text.rich(TextSpan(children: [
-                        const TextSpan(text: '★ ', style: TextStyle(fontSize: 10.5, color: Color(0xFFF5A623))),
-                        TextSpan(text: place.grate.toStringAsFixed(1), style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: kInk)),
-                        TextSpan(text: ' · 리뷰 ${commas(place.greviews)}', style: const TextStyle(fontSize: 10, color: kGray)),
+                        TextSpan(text: '★ ', style: TextStyle(fontSize: 10.5, color: focus ? Colors.white : const Color(0xFFF5A623))),
+                        TextSpan(text: place.grate.toStringAsFixed(1), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: focus ? Colors.white : kInk)),
+                        TextSpan(text: ' · 리뷰 ${commas(place.greviews)}', style: TextStyle(fontSize: 10, color: focus ? Colors.white.withValues(alpha: 0.85) : kGray)),
                       ]), maxLines: 1)
                     else
-                      Text(place.cat, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: kGray)),
+                      Text(place.cat, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: focus ? Colors.white.withValues(alpha: 0.85) : kGray)),
                   ]),
                 ),
               ]),
@@ -2174,7 +2305,7 @@ class PlaceMarker extends StatelessWidget {
         ]);
     // 꼬리: 가게 위치를 가리킨다 (기본 그림은 아래쪽 뾰족)
     Widget tail(int turns, Offset nudge) =>
-        Transform.translate(offset: nudge, child: RotatedBox(quarterTurns: turns, child: CustomPaint(size: const Size(12, 6), painter: _Tail(line))));
+        Transform.translate(offset: nudge, child: RotatedBox(quarterTurns: turns, child: CustomPaint(size: const Size(12, 6), painter: _Tail(focus ? kAccent : line, fill: focus ? kAccent : Colors.white))));
     final Widget body = switch (dir) {
       1 => Column(mainAxisAlignment: MainAxisAlignment.start, children: [tail(2, const Offset(0, 1)), card]),
       2 => Row(mainAxisAlignment: MainAxisAlignment.start, children: [tail(1, const Offset(1, 0)), card]),
@@ -2197,6 +2328,50 @@ const kFeat = <String, (IconData, String, Color)>{
   'group': (Icons.groups_rounded, '단체석', Color(0xFF5B6B86)),
   'wheel': (Icons.accessible_rounded, '휠체어', Color(0xFF2F6BFF)),
 };
+
+// 가게 화면의 편의 정보: 작은 무채색 아이콘 한 줄 (자리가 모자라면 글 없이 아이콘만, 길게 누르면 이름)
+class FeatRow extends StatelessWidget {
+  final Iterable<String> feats;
+  const FeatRow(this.feats, {super.key});
+  static const _line = Color(0xFFE8EAEE), _icon = Color(0xFF8B919B), _text = Color(0xFF5F6670);
+  @override
+  Widget build(BuildContext context) {
+    final items = [for (final f in feats) if (kFeat[f] != null) kFeat[f]!];
+    return LayoutBuilder(builder: (_, c) {
+      // 글까지 넣었을 때 너비 (넉넉히 셈): 아이콘 14 + 사이 3 + 글자 11 + 안쪽 여백 16 + 테두리 2, 칸 사이 6
+      final need = items.fold<double>(0, (s, it) => s + 35 + it.$2.length * 11.0) + 6.0 * (items.length - 1);
+      final withText = need <= c.maxWidth;
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const ClampingScrollPhysics(),
+        child: Row(children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(width: 6),
+            Tooltip(
+              message: items[i].$2,
+              child: Semantics(
+                label: items[i].$2,
+                excludeSemantics: true,
+                child: Container(
+                  height: 26,
+                  padding: EdgeInsets.symmetric(horizontal: withText ? 9 : 6),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(13), border: Border.all(color: _line, width: 1)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(items[i].$1, size: 14, color: _icon),
+                    if (withText) ...[
+                      const SizedBox(width: 3),
+                      Text(items[i].$2, maxLines: 1, style: const TextStyle(fontSize: 11.5, color: _text, height: 1.1)),
+                    ],
+                  ]),
+                ),
+              ),
+            ),
+          ],
+        ]),
+      );
+    });
+  }
+}
 
 class FeatTile extends StatelessWidget {
   final IconData icon;
@@ -2584,10 +2759,7 @@ class PlaceSheet extends StatelessWidget {
           ]),
           if (p.feat.any(kFeat.containsKey)) ...[
             const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final f in p.feat)
-                if (kFeat[f] != null) FeatTile(icon: kFeat[f]!.$1, label: kFeat[f]!.$2, color: kFeat[f]!.$3),
-            ]),
+            FeatRow(p.feat),
           ],
           const SizedBox(height: 22),
           const _Title(text: '영업시간'),
