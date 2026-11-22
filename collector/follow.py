@@ -475,7 +475,7 @@ def durations(vids, cache):
 CLOSED = re.compile(r"폐업|휴업|영업\s*종료|문\s*닫")
 
 # 카카오에 가게로 안 잡힌 집은 설명란 글을 이름으로 쓰는데, 그 글이 「식당」 「11am ~ 10pm」 「역대급 …!」 같은 조각일 때가 있다
-GENERIC = {"식당", "맛집", "가게", "음식점", "카페", "본점", "매장", "위치", "주소", "장소", "메뉴", "가격", "무휴", "연중무휴", "휴무",
+TIDY_GENERIC = {"식당", "맛집", "가게", "음식점", "카페", "본점", "매장", "위치", "주소", "장소", "메뉴", "가격", "무휴", "연중무휴", "휴무",
            "정기휴무", "영업", "전화", "상호", "정보", "식당정보", "가게정보", "촬영협조", "협찬", "길거리음식"}
 JUNK_NAME = re.compile(r"\d\s*(am|pm)\b|~|영업\s*시간|브레이크|라스트\s*오더|[!?]|\+\+|먹방|역대급|최고의|최고급|대한민국|맛집\s*추천|몰아\s*보기"
                        r"|top\s*\d|subscribe|구독|좋아요|문의|협찬|광고|https?:|www\.|재료\s*소진|조기\s*마감", re.I)
@@ -504,7 +504,7 @@ def tidy(pl):
             out.append(o)
             continue
         nm = tidy_name(o["name"])
-        if len(nm) < 2 or len(nm) > 20 or re.sub(r"\s", "", nm) in GENERIC or JUNK_NAME.search(nm):
+        if len(nm) < 2 or len(nm) > 20 or re.sub(r"\s", "", nm) in TIDY_GENERIC or JUNK_NAME.search(nm):
             drop += 1
             continue
         o["name"] = nm
