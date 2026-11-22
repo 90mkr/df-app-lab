@@ -1,0 +1,1066 @@
+part of 'main.dart';
+
+// ---------------- 로그인 · 회원가입 ----------------
+class LoginSheet extends StatefulWidget {
+  const LoginSheet({super.key});
+  @override
+  State<LoginSheet> createState() => _LoginSheetState();
+}
+
+class _LoginSheetState extends State<LoginSheet> {
+  final email = TextEditingController(), pass = TextEditingController();
+  bool join = false, busy = false;
+  String msg = '';
+
+  @override
+  void dispose() {
+    email.dispose();
+    pass.dispose();
+    super.dispose();
+  }
+
+  Future<void> run(Future<String?> Function() f) async {
+    setState(() {
+      busy = true;
+      msg = '';
+    });
+    final e = await f();
+    if (!mounted) return;
+    setState(() {
+      busy = false;
+      msg = e ?? '';
+    });
+    if (e == null) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom;
+    InputDecoration deco(String hint) => InputDecoration(
+          hintText: hint,
+          isDense: true,
+          filled: true,
+          fillColor: const Color(0xFFF6F6F8),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+        );
+    Widget social(String label, Color bg, Color fg, Widget icon, VoidCallback? onTap, {Color? line}) => SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: TextButton(
+            onPressed: busy ? null : onTap,
+            style: TextButton.styleFrom(
+              backgroundColor: bg,
+              foregroundColor: fg,
+              disabledForegroundColor: fg.withValues(alpha: 0.5),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: line == null ? BorderSide.none : BorderSide(color: line)),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              icon,
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        );
+    return Align(
+      alignment: Alignment.bottomCenter,
+      heightFactor: 1,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(22, 22, 22, 22 + bottom),
+          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            mixTitle(join ? '콕플 ' : '콕플에 ', join ? '회원가입' : '로그인', size: 19),
+            const SizedBox(height: 6),
+            const Text('콕한 집을 다른 휴대폰에서도 보고, 후기를 남길 수 있어요', style: TextStyle(fontSize: 13, color: kSub)),
+            const SizedBox(height: 18),
+            social('카카오로 계속하기 (준비 중)', const Color(0xFFFEE500), const Color(0xFF191919), const Icon(Icons.chat_bubble_rounded, size: 18), null),
+            const SizedBox(height: 8),
+            social('구글로 계속하기', Colors.white, kInk, const Text('G', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
+                () => run(signInGoogle),
+                line: kPillLine),
+            const SizedBox(height: 18),
+            const Row(children: [
+              Expanded(child: Divider(color: kHair)),
+              Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text('이메일로', style: TextStyle(fontSize: 12, color: kSub))),
+              Expanded(child: Divider(color: kHair)),
+            ]),
+            const SizedBox(height: 12),
+            TextField(controller: email, keyboardType: TextInputType.emailAddress, autofillHints: const [AutofillHints.email], decoration: deco('이메일')),
+            const SizedBox(height: 8),
+            TextField(controller: pass, obscureText: true, autofillHints: const [AutofillHints.password], decoration: deco(join ? '비밀번호 (6자 넘게)' : '비밀번호')),
+            if (msg.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(msg, style: const TextStyle(fontSize: 12.5, color: kAccent)),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: TextButton(
+                onPressed: busy ? null : () => run(() => signInEmail(email.text.trim(), pass.text, join: join)),
+                style: TextButton.styleFrom(backgroundColor: kInk, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                child: busy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text(join ? '가입하기' : '로그인', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(children: [
+              TextButton(
+                onPressed: () => setState(() {
+                  join = !join;
+                  msg = '';
+                }),
+                child: Text(join ? '이미 가입했어요 · 로그인' : '처음이에요 · 회원가입', style: const TextStyle(fontSize: 13, color: kInk)),
+              ),
+              const Spacer(),
+              if (!join)
+                TextButton(
+                  onPressed: () async {
+                    final e = email.text.trim();
+                    if (e.isEmpty) {
+                      setState(() => msg = '이메일을 먼저 넣어 주세요');
+                      return;
+                    }
+                    try {
+                      await fbAuth.sendPasswordResetEmail(email: e);
+                      setState(() => msg = '비밀번호를 새로 정하는 메일을 보냈어요');
+                    } on fa.FirebaseAuthException catch (x) {
+                      setState(() => msg = authMsg(x.code));
+                    }
+                  },
+                  child: const Text('비밀번호 찾기', style: TextStyle(fontSize: 13, color: kSub)),
+                ),
+            ]),
+            const Text('가입하면 서비스 이용약관과 개인정보처리방침에 동의하는 것으로 봅니다.', style: TextStyle(fontSize: 11, color: kSub)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+Future<bool> openLogin(BuildContext context) async {
+  if (!await fbReady()) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('로그인은 준비 중이에요')));
+    }
+    return false;
+  }
+  if (!context.mounted) return false;
+  final ok = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.08),
+    builder: (_) => const LoginSheet(),
+  );
+  return ok == true;
+}
+
+// ---------------- 관리자 화면 ----------------
+// 촘촘한 표처럼: 한 줄에 하나, 위에 칸 고르기
+class AdminPage extends StatefulWidget {
+  final List<Place> places; // 지금 받아 둔 모든 동네 가게 (가게 관리에서 찾기)
+  final VoidCallback onChanged; // 저장 뒤 앱 화면을 다시 그리게
+  const AdminPage({super.key, required this.places, required this.onChanged});
+  @override
+  State<AdminPage> createState() => _AdminPageState();
+}
+
+class _AdminPageState extends State<AdminPage> {
+  int tab = 0;
+  static const tabs = ['메인 순서', '배너', '팝업', '가게 관리', '확인 대기', '후보 확인'];
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 8, 16, 6),
+              child: Row(children: [
+                IconButton(onPressed: () => Navigator.pop(context), tooltip: '뒤로', icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: kInk)),
+                const Text('관리자', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.4)),
+                const Spacer(),
+                Text(fbUser?.email ?? '', style: const TextStyle(fontSize: 12, color: kSub)),
+              ]),
+            ),
+            // 칸 고르기: 네모 칸을 붙여서 (그누보드식)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                for (var i = 0; i < tabs.length; i++)
+                  GestureDetector(
+                    onTap: () => setState(() => tab = i),
+                    child: Container(
+                      height: 38,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: tab == i ? kInk : Colors.white,
+                        border: Border(
+                          top: const BorderSide(color: kPillLine),
+                          bottom: const BorderSide(color: kPillLine),
+                          left: i == 0 ? const BorderSide(color: kPillLine) : BorderSide.none,
+                          right: const BorderSide(color: kPillLine),
+                        ),
+                      ),
+                      child: Text(tabs[i], style: TextStyle(fontSize: 13.5, fontWeight: tab == i ? FontWeight.w700 : FontWeight.w500, color: tab == i ? Colors.white : kInk)),
+                    ),
+                  ),
+              ]),
+            ),
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: kHair),
+            Expanded(
+              child: switch (tab) {
+                0 => _OrderTab(onChanged: widget.onChanged),
+                1 => _BannerTab(onChanged: widget.onChanged),
+                2 => _PopupTab(onChanged: widget.onChanged),
+                3 => _PlaceTab(places: widget.places, onChanged: widget.onChanged),
+                4 => _PendingTab(places: widget.places, onChanged: widget.onChanged),
+                _ => const _PicksTab(),
+              },
+            ),
+          ]),
+        ),
+      );
+}
+
+// 공용: 작은 단추 · 입력칸 · 알림
+Widget admBtn(String label, VoidCallback? onTap, {bool strong = false, bool danger = false}) => SizedBox(
+      height: 34,
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          backgroundColor: strong ? kInk : Colors.white,
+          foregroundColor: strong ? Colors.white : (danger ? kAccent : kInk),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6), side: strong ? BorderSide.none : const BorderSide(color: kPillLine)),
+        ),
+        child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      ),
+    );
+
+InputDecoration admDeco(String label) => InputDecoration(
+      labelText: label,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: kPillLine)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: kPillLine)),
+    );
+
+void admToast(BuildContext context, String t) =>
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t), duration: const Duration(seconds: 2)));
+
+// 그림 고르기 → 줄여서 글자(base64)로 (파이어베이스 무료 요금제는 파일 보관함이 없어 문서에 넣는다)
+Future<String?> pickImageData() async {
+  final x = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1280, maxHeight: 1280, imageQuality: 80);
+  if (x == null) return null;
+  final b = await x.readAsBytes();
+  if (b.length > 700 * 1024) return '';
+  return 'data:image/jpeg;base64,${base64Encode(b)}';
+}
+
+// ---- 메인 칸 순서 ----
+class _OrderTab extends StatefulWidget {
+  final VoidCallback onChanged;
+  const _OrderTab({required this.onChanged});
+  @override
+  State<_OrderTab> createState() => _OrderTabState();
+}
+
+class _OrderTabState extends State<_OrderTab> {
+  List<String>? order;
+  @override
+  void initState() {
+    super.initState();
+    fsdb.doc('config/home').get().then((d) {
+      if (mounted) setState(() => order = fixOrder((d.data()?['order'] ?? []) as List));
+    }).catchError((_) {
+      if (mounted) setState(() => order = [...kHomeOrder]);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final o = order;
+    if (o == null) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    return Column(children: [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Text('끌어서 순서를 바꾸고 저장하면 앱 홈에 바로 반영돼요', style: TextStyle(fontSize: 12.5, color: kSub)),
+      ),
+      Expanded(
+        child: ReorderableListView(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          onReorder: (a, b) => setState(() {
+            if (b > a) b--;
+            o.insert(b, o.removeAt(a));
+          }),
+          children: [
+            for (var i = 0; i < o.length; i++)
+              Container(
+                key: ValueKey(o[i]),
+                height: 48,
+                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: kHair))),
+                child: Row(children: [
+                  SizedBox(width: 28, child: Text('${i + 1}', style: const TextStyle(fontSize: 13, color: kSub))),
+                  Expanded(child: Text(kHomeNames[o[i]] ?? o[i], style: const TextStyle(fontSize: 14, color: kInk))),
+                  const Icon(Icons.drag_handle_rounded, color: kSub, size: 20),
+                ]),
+              ),
+          ],
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(children: [
+          admBtn('처음 순서로', () => setState(() => order = [...kHomeOrder])),
+          const Spacer(),
+          admBtn('저장', () async {
+            try {
+              await fsdb.doc('config/home').set({'order': o, 'at': fs.FieldValue.serverTimestamp()}, fs.SetOptions(merge: true));
+              widget.onChanged();
+              if (context.mounted) admToast(context, '순서를 저장했어요');
+            } catch (e) {
+              if (context.mounted) admToast(context, '저장하지 못했어요: $e');
+            }
+          }, strong: true),
+        ]),
+      ),
+    ]);
+  }
+}
+
+// ---- 배너 ----
+class _BannerTab extends StatefulWidget {
+  final VoidCallback onChanged;
+  const _BannerTab({required this.onChanged});
+  @override
+  State<_BannerTab> createState() => _BannerTabState();
+}
+
+class _BannerTabState extends State<_BannerTab> {
+  List<fs.QueryDocumentSnapshot<Map<String, dynamic>>>? docs;
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    try {
+      final q = await fsdb.collection('banners').get();
+      final l = q.docs.toList()..sort((a, b) => ((a.data()['order'] ?? 0) as num).compareTo((b.data()['order'] ?? 0) as num));
+      if (mounted) setState(() => docs = l);
+    } catch (_) {
+      if (mounted) setState(() => docs = []);
+    }
+  }
+
+  Future<void> edit([fs.QueryDocumentSnapshot<Map<String, dynamic>>? d]) async {
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (_) => _BannerEdit(id: d?.id, data: d?.data(), nextOrder: (docs?.length ?? 0) + 1),
+    );
+    if (ok == true) {
+      await load();
+      widget.onChanged();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = docs;
+    if (l == null) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Row(children: [
+          const Expanded(child: Text('맨 위 큰 비주얼에 오늘의 영상과 섞여 옆으로 넘어가요 (16:9 그림)', style: TextStyle(fontSize: 12.5, color: kSub))),
+          admBtn('배너 추가', () => edit(), strong: true),
+        ]),
+      ),
+      const Divider(height: 1, color: kHair),
+      Expanded(
+        child: l.isEmpty
+            ? const Center(child: Text('등록한 배너가 없어요', style: TextStyle(fontSize: 13, color: kSub)))
+            : ListView.separated(
+                itemCount: l.length,
+                separatorBuilder: (_, __) => const Divider(height: 1, color: kHair),
+                itemBuilder: (_, i) {
+                  final j = l[i].data();
+                  final on = j['on'] == true;
+                  final period = [j['start'] ?? '', j['end'] ?? ''].where((x) => '$x'.isNotEmpty).join(' ~ ');
+                  return InkWell(
+                    onTap: () => edit(l[i]),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(children: [
+                        SizedBox(width: 26, child: Text('${j['order'] ?? i + 1}', style: const TextStyle(fontSize: 13, color: kSub))),
+                        Expanded(
+                          child: Text('${j['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, color: kInk)),
+                        ),
+                        Text(period.isEmpty ? '기간 없음' : period, style: const TextStyle(fontSize: 12, color: kSub)),
+                        const SizedBox(width: 10),
+                        Text(on ? '켜짐' : '꺼짐', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: on ? kBlue : kSub)),
+                      ]),
+                    ),
+                  );
+                },
+              ),
+      ),
+    ]);
+  }
+}
+
+class _BannerEdit extends StatefulWidget {
+  final String? id;
+  final Map<String, dynamic>? data;
+  final int nextOrder;
+  const _BannerEdit({this.id, this.data, required this.nextOrder});
+  @override
+  State<_BannerEdit> createState() => _BannerEditState();
+}
+
+class _BannerEditState extends State<_BannerEdit> {
+  late final title = TextEditingController(text: '${widget.data?['title'] ?? ''}');
+  late final sub = TextEditingController(text: '${widget.data?['sub'] ?? ''}');
+  late final link = TextEditingController(text: '${widget.data?['link'] ?? ''}');
+  late final start = TextEditingController(text: '${widget.data?['start'] ?? ''}');
+  late final end = TextEditingController(text: '${widget.data?['end'] ?? ''}');
+  late final order = TextEditingController(text: '${widget.data?['order'] ?? widget.nextOrder}');
+  late bool on = widget.data?['on'] ?? true;
+  String? image; // 새로 고른 그림
+  bool busy = false;
+
+  @override
+  void dispose() {
+    for (final c in [title, sub, link, start, end, order]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    if (title.text.trim().isEmpty) return admToast(context, '제목을 넣어 주세요');
+    if (widget.id == null && image == null) return admToast(context, '그림을 골라 주세요');
+    setState(() => busy = true);
+    try {
+      final ref = widget.id == null ? fsdb.collection('banners').doc() : fsdb.collection('banners').doc(widget.id);
+      final ver = ((widget.data?['ver'] ?? 0) as num).toInt() + (image != null ? 1 : 0);
+      if (image != null) await fsdb.doc('bannerImg/${ref.id}').set({'data': image});
+      await ref.set({
+        'title': title.text.trim(),
+        'sub': sub.text.trim(),
+        'link': link.text.trim(),
+        'start': start.text.trim(),
+        'end': end.text.trim(),
+        'order': int.tryParse(order.text.trim()) ?? widget.nextOrder,
+        'on': on,
+        'ver': ver,
+        'by': fbUser?.email ?? '',
+        'at': fs.FieldValue.serverTimestamp(),
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => busy = false);
+        admToast(context, '저장하지 못했어요: $e');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final img = image;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom),
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(widget.id == null ? '배너 추가' : '배너 고치기', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () async {
+              final s = await pickImageData();
+              if (s == null) return;
+              if (s.isEmpty) {
+                if (context.mounted) admToast(context, '그림이 너무 커요 (700KB 아래로)');
+                return;
+              }
+              setState(() => image = s);
+            },
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Container(
+                decoration: BoxDecoration(color: const Color(0xFFF6F6F8), borderRadius: BorderRadius.circular(8), border: Border.all(color: kPillLine)),
+                clipBehavior: Clip.antiAlias,
+                child: img != null
+                    ? bannerImage(HomeBanner({'image': img}))
+                    : Center(
+                        child: Text(widget.id == null ? '눌러서 그림 고르기 (16:9)' : '눌러서 그림 바꾸기 (안 바꾸면 그대로)', style: const TextStyle(fontSize: 13, color: kSub)),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(controller: title, decoration: admDeco('제목 (그림 아래에 보여요)')),
+          const SizedBox(height: 8),
+          TextField(controller: sub, decoration: admDeco('작은 설명 (없어도 돼요)')),
+          const SizedBox(height: 8),
+          TextField(controller: link, decoration: admDeco('누르면 갈 곳: 주소(https://…) 또는 비워 두기')),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: TextField(controller: start, decoration: admDeco('시작 2026-12-01'))),
+            const SizedBox(width: 8),
+            Expanded(child: TextField(controller: end, decoration: admDeco('끝 2026-12-31'))),
+            const SizedBox(width: 8),
+            SizedBox(width: 70, child: TextField(controller: order, keyboardType: TextInputType.number, decoration: admDeco('순서'))),
+          ]),
+          const SizedBox(height: 4),
+          SwitchListTile(contentPadding: EdgeInsets.zero, value: on, onChanged: (v) => setState(() => on = v), title: const Text('앱에 보이기', style: TextStyle(fontSize: 14))),
+          Row(children: [
+            if (widget.id != null)
+              admBtn('지우기', busy
+                  ? null
+                  : () async {
+                      try {
+                        await fsdb.doc('bannerImg/${widget.id}').delete();
+                        await fsdb.collection('banners').doc(widget.id).delete();
+                        if (context.mounted) Navigator.pop(context, true);
+                      } catch (e) {
+                        if (context.mounted) admToast(context, '지우지 못했어요: $e');
+                      }
+                    }, danger: true),
+            const Spacer(),
+            admBtn('닫기', () => Navigator.pop(context)),
+            const SizedBox(width: 8),
+            admBtn(busy ? '저장 중' : '저장', busy ? null : save, strong: true),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+// ---- 팝업 (앱 켤 때 한 번, 오늘 하루 보지 않기) ----
+class _PopupTab extends StatefulWidget {
+  final VoidCallback onChanged;
+  const _PopupTab({required this.onChanged});
+  @override
+  State<_PopupTab> createState() => _PopupTabState();
+}
+
+class _PopupTabState extends State<_PopupTab> {
+  final title = TextEditingController(), body = TextEditingController(), link = TextEditingController();
+  final start = TextEditingController(), end = TextEditingController();
+  bool on = false, loaded = false, busy = false;
+  int ver = 0;
+  String? image;
+
+  @override
+  void initState() {
+    super.initState();
+    fsdb.doc('config/home').get().then((d) {
+      final p = d.data()?['popup'];
+      if (p is Map) {
+        title.text = '${p['title'] ?? ''}';
+        body.text = '${p['body'] ?? ''}';
+        link.text = '${p['link'] ?? ''}';
+        start.text = '${p['start'] ?? ''}';
+        end.text = '${p['end'] ?? ''}';
+        on = p['on'] == true;
+        ver = ((p['ver'] ?? 0) as num).toInt();
+      }
+      if (mounted) setState(() => loaded = true);
+    }).catchError((_) {
+      if (mounted) setState(() => loaded = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final c in [title, body, link, start, end]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!loaded) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      const Text('앱을 켤 때 한 번 떠요. 「오늘 하루 보지 않기」를 누른 사람은 그날 다시 안 떠요.', style: TextStyle(fontSize: 12.5, color: kSub)),
+      const SizedBox(height: 12),
+      GestureDetector(
+        onTap: () async {
+          final s = await pickImageData();
+          if (s == null) return;
+          if (s.isEmpty) {
+            if (context.mounted) admToast(context, '그림이 너무 커요 (700KB 아래로)');
+            return;
+          }
+          setState(() => image = s);
+        },
+        child: Container(
+          height: 160,
+          decoration: BoxDecoration(color: const Color(0xFFF6F6F8), borderRadius: BorderRadius.circular(8), border: Border.all(color: kPillLine)),
+          clipBehavior: Clip.antiAlias,
+          alignment: Alignment.center,
+          child: image != null
+              ? bannerImage(HomeBanner({'image': image}))
+              : const Text('눌러서 그림 고르기 (없으면 글자만)', style: TextStyle(fontSize: 13, color: kSub)),
+        ),
+      ),
+      const SizedBox(height: 10),
+      TextField(controller: title, decoration: admDeco('제목')),
+      const SizedBox(height: 8),
+      TextField(controller: body, maxLines: 4, minLines: 2, decoration: admDeco('내용')),
+      const SizedBox(height: 8),
+      TextField(controller: link, decoration: admDeco('자세히 보기 주소 (없어도 돼요)')),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: TextField(controller: start, decoration: admDeco('시작 2026-12-01'))),
+        const SizedBox(width: 8),
+        Expanded(child: TextField(controller: end, decoration: admDeco('끝 2026-12-31'))),
+      ]),
+      SwitchListTile(contentPadding: EdgeInsets.zero, value: on, onChanged: (v) => setState(() => on = v), title: const Text('팝업 켜기', style: TextStyle(fontSize: 14))),
+      Align(
+        alignment: Alignment.centerRight,
+        child: admBtn(busy ? '저장 중' : '저장', busy
+            ? null
+            : () async {
+                setState(() => busy = true);
+                try {
+                  final v = ver + (image != null ? 1 : 0);
+                  if (image != null) await fsdb.doc('bannerImg/popup').set({'data': image});
+                  await fsdb.doc('config/home').set({
+                    'popup': {
+                      'on': on,
+                      'title': title.text.trim(),
+                      'body': body.text.trim(),
+                      'link': link.text.trim(),
+                      'start': start.text.trim(),
+                      'end': end.text.trim(),
+                      'ver': v,
+                    },
+                    'at': fs.FieldValue.serverTimestamp(),
+                  }, fs.SetOptions(merge: true));
+                  ver = v;
+                  widget.onChanged();
+                  if (context.mounted) admToast(context, '팝업을 저장했어요');
+                } catch (e) {
+                  if (context.mounted) admToast(context, '저장하지 못했어요: $e');
+                }
+                if (mounted) setState(() => busy = false);
+              }, strong: true),
+      ),
+    ]);
+  }
+}
+
+// ---- 가게 관리: 찾기 → 고치기 · 잠금 · 보호 · 숨김 · 고친 내역 ----
+class _PlaceTab extends StatefulWidget {
+  final List<Place> places;
+  final VoidCallback onChanged;
+  const _PlaceTab({required this.places, required this.onChanged});
+  @override
+  State<_PlaceTab> createState() => _PlaceTabState();
+}
+
+class _PlaceTabState extends State<_PlaceTab> {
+  String q = '';
+  bool onlyGuarded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = q.replaceAll(' ', '').toLowerCase();
+    final seen = <String>{};
+    final list = [
+      for (final p in widget.places)
+        if (seen.add(p.id) &&
+            (onlyGuarded ? guards.containsKey(p.id) : k.isNotEmpty) &&
+            (k.isEmpty || p.name.replaceAll(' ', '').toLowerCase().contains(k) || p.addr.contains(q.trim())))
+          p
+    ].take(80).toList();
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Row(children: [
+          Expanded(child: TextField(onChanged: (v) => setState(() => q = v), decoration: admDeco('가게 이름이나 주소로 찾기'))),
+          const SizedBox(width: 8),
+          admBtn(onlyGuarded ? '전체' : '고친 가게만', () => setState(() => onlyGuarded = !onlyGuarded)),
+        ]),
+      ),
+      const Divider(height: 1, color: kHair),
+      Expanded(
+        child: list.isEmpty
+            ? Center(child: Text(onlyGuarded ? '고친 가게가 없어요' : '가게 이름을 넣어 찾아 주세요', style: const TextStyle(fontSize: 13, color: kSub)))
+            : ListView.separated(
+                itemCount: list.length,
+                separatorBuilder: (_, __) => const Divider(height: 1, color: kHair),
+                itemBuilder: (_, i) {
+                  final p = list[i];
+                  final g = guards[p.id];
+                  return InkWell(
+                    onTap: () async {
+                      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlaceEditPage(place: p)));
+                      if (mounted) setState(() {});
+                      widget.onChanged();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(children: [
+                        Expanded(
+                          child: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, color: kInk)),
+                        ),
+                        Text([dongOf(p), p.cat].where((x) => x.isNotEmpty).join(' · '), style: const TextStyle(fontSize: 12, color: kSub)),
+                        if (g != null) ...[
+                          const SizedBox(width: 8),
+                          if (g.protect) const Text('보호', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kBlue)),
+                          if (g.hidden) const Text(' 숨김', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kAccent)),
+                          if (g.locks.isNotEmpty) Text(' 잠금 ${g.locks.length}', style: const TextStyle(fontSize: 12, color: kInk)),
+                        ],
+                      ]),
+                    ),
+                  );
+                },
+              ),
+      ),
+    ]);
+  }
+}
+
+class PlaceEditPage extends StatefulWidget {
+  final Place place;
+  const PlaceEditPage({super.key, required this.place});
+  @override
+  State<PlaceEditPage> createState() => _PlaceEditPageState();
+}
+
+class _PlaceEditPageState extends State<PlaceEditPage> {
+  late final Place base = widget.place;
+  late final PlaceGuard? g = guards[base.id];
+  late final Map<String, TextEditingController> ctl = {
+    for (final k in kEditable.keys) k: TextEditingController(text: _value(k)),
+  };
+  late final Set<String> locks = {...?g?.locks};
+  late bool protect = g?.protect ?? false;
+  late bool hidden = g?.hidden ?? false;
+  final note = TextEditingController();
+  bool busy = false;
+  List<Map<String, dynamic>>? history;
+
+  // 지금 보이는 값 (고친 값이 있으면 그것)
+  String _value(String k) {
+    final v = g?.ov[k] ?? base.raw[k];
+    if (v is List) return v.join('\n');
+    return '${v ?? ''}';
+  }
+
+  dynamic _parse(String k, String s) => k == 'week' ? s.split('\n').map((x) => x.trim()).where((x) => x.isNotEmpty).toList() : s.trim();
+
+  @override
+  void initState() {
+    super.initState();
+    fsdb.collection('places').doc(base.id).collection('history').orderBy('at', descending: true).limit(20).get().then((q) {
+      if (mounted) setState(() => history = [for (final d in q.docs) d.data()]);
+    }).catchError((_) {
+      if (mounted) setState(() => history = []);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final c in ctl.values) {
+      c.dispose();
+    }
+    note.dispose();
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    setState(() => busy = true);
+    // 원래 자료와 다르게 고친 항목만 남기고, 고친 항목은 저절로 잠근다
+    final ov = <String, dynamic>{};
+    for (final k in kEditable.keys) {
+      final now = _parse(k, ctl[k]!.text);
+      final orig = base.raw[k];
+      final same = now is List ? (orig is List && orig.map((e) => '$e').join('\n') == now.join('\n')) : '${orig ?? ''}' == now;
+      if (!same) {
+        ov[k] = now;
+        locks.add(k);
+      }
+    }
+    try {
+      await saveGuard(base, ov: ov, locks: locks.toList(), protect: protect, hidden: hidden, note: note.text.trim());
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => busy = false);
+        admToast(context, '저장하지 못했어요: $e');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 8, 16, 6),
+              child: Row(children: [
+                IconButton(onPressed: () => Navigator.pop(context), tooltip: '뒤로', icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: kInk)),
+                Expanded(child: Text(base.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+                admBtn(busy ? '저장 중' : '저장', busy ? null : save, strong: true),
+              ]),
+            ),
+            const Divider(height: 1, color: kHair),
+            Expanded(
+              child: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 40), children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: protect,
+                  onChanged: (v) => setState(() => protect = v),
+                  title: const Text('보호', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                  subtitle: const Text('자동 수집에서 빠지거나 폐업으로 나와도 앱에서 사라지지 않아요', style: TextStyle(fontSize: 12)),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: hidden,
+                  onChanged: (v) => setState(() => hidden = v),
+                  title: const Text('숨김', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                  subtitle: const Text('앱에 보이지 않게 (지우지는 않아요 — 다시 켜면 돌아와요)', style: TextStyle(fontSize: 12)),
+                ),
+                const Divider(color: kHair),
+                const SizedBox(height: 6),
+                const Text('고친 항목은 저절로 잠겨서 자동 수집이 덮어쓰지 못해요. 자물쇠를 풀면 다시 자동 값을 써요.', style: TextStyle(fontSize: 12, color: kSub)),
+                const SizedBox(height: 10),
+                for (final e in kEditable.entries) ...[
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(
+                      child: TextField(
+                        controller: ctl[e.key],
+                        maxLines: e.key == 'week' ? 7 : 1,
+                        minLines: 1,
+                        decoration: admDeco(e.value),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: locks.contains(e.key) ? '잠금 풀기' : '잠그기',
+                      onPressed: () => setState(() => locks.contains(e.key) ? locks.remove(e.key) : locks.add(e.key)),
+                      icon: Icon(locks.contains(e.key) ? Icons.lock_rounded : Icons.lock_open_rounded, size: 20, color: locks.contains(e.key) ? kInk : kSub),
+                    ),
+                  ]),
+                  const SizedBox(height: 8),
+                ],
+                TextField(controller: note, decoration: admDeco('고친 까닭 (내역에 남아요, 없어도 돼요)')),
+                const SizedBox(height: 22),
+                const Text('고친 내역', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                if (history == null)
+                  const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+                else if (history!.isEmpty)
+                  const Text('아직 고친 적이 없어요', style: TextStyle(fontSize: 12.5, color: kSub))
+                else
+                  for (final h in history!)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: kHair))),
+                      child: Row(children: [
+                        Expanded(
+                          child: Text(
+                            [
+                              h['at'] is fs.Timestamp ? (h['at'] as fs.Timestamp).toDate().toString().substring(0, 16) : '',
+                              '${h['by'] ?? ''}',
+                              '${h['note'] ?? ''}',
+                            ].where((x) => x.isNotEmpty).join(' · '),
+                            style: const TextStyle(fontSize: 12.5, color: kInk),
+                          ),
+                        ),
+                        admBtn('이 전으로', () async {
+                          try {
+                            final b = h['before'];
+                            await restoreGuard(base, b is Map ? Map<String, dynamic>.from(b) : null);
+                            if (context.mounted) Navigator.pop(context);
+                          } catch (e) {
+                            if (context.mounted) admToast(context, '되돌리지 못했어요: $e');
+                          }
+                        }),
+                      ]),
+                    ),
+              ]),
+            ),
+          ]),
+        ),
+      );
+}
+
+// ---- 확인 대기: 수집에서 빠지거나 폐업으로 나온 가게 (바로 지우지 않고 여기 모음) ----
+class _PendingTab extends StatefulWidget {
+  final List<Place> places;
+  final VoidCallback onChanged;
+  const _PendingTab({required this.places, required this.onChanged});
+  @override
+  State<_PendingTab> createState() => _PendingTabState();
+}
+
+class _PendingTabState extends State<_PendingTab> {
+  List<Map<String, dynamic>>? items;
+  @override
+  void initState() {
+    super.initState();
+    http.get(Uri.parse('${dataUrl('pending.json')}?t=${DateTime.now().millisecondsSinceEpoch}')).then((r) {
+      final j = r.statusCode == 200 ? jsonDecode(utf8.decode(r.bodyBytes)) : null;
+      final l = j is Map ? (j['items'] ?? []) as List : const [];
+      if (mounted) setState(() => items = [for (final e in l) Map<String, dynamic>.from(e as Map)]);
+    }).catchError((_) {
+      if (mounted) setState(() => items = []);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = items;
+    if (l == null) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    final open = [for (final e in l) if (!guards.containsKey('${e['id']}') || (!guards['${e['id']}']!.protect && !guards['${e['id']}']!.hidden)) e];
+    if (open.isEmpty) return const Center(child: Text('확인할 가게가 없어요', style: TextStyle(fontSize: 13, color: kSub)));
+    return ListView.separated(
+      itemCount: open.length,
+      separatorBuilder: (_, __) => const Divider(height: 1, color: kHair),
+      itemBuilder: (_, i) {
+        final e = open[i];
+        final p = widget.places.where((x) => x.id == '${e['id']}').firstOrNull;
+        Future<void> decide({bool? protect, bool? hidden}) async {
+          final pl = p ?? Place({'id': e['id'], 'name': e['name'] ?? '', 'lat': e['lat'] ?? 0, 'lng': e['lng'] ?? 0}, '${e['area'] ?? ''}');
+          try {
+            await saveGuard(pl, protect: protect, hidden: hidden, note: '확인 대기: ${e['why'] ?? ''}');
+            if (mounted) setState(() {});
+            widget.onChanged();
+          } catch (x) {
+            if (context.mounted) admToast(context, '저장하지 못했어요: $x');
+          }
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${e['name'] ?? ''}', style: const TextStyle(fontSize: 14, color: kInk)),
+                Text('${e['why'] ?? ''} · ${e['since'] ?? ''}', style: const TextStyle(fontSize: 12, color: kSub)),
+              ]),
+            ),
+            admBtn('유지(보호)', () => decide(protect: true)),
+            const SizedBox(width: 6),
+            admBtn('숨김', () => decide(hidden: true), danger: true),
+          ]),
+        );
+      },
+    );
+  }
+}
+
+// ---- 후보 확인 (쯔양 등 주소 안 적는 유튜버) — 자료가 생기면 열린다 ----
+class _PicksTab extends StatelessWidget {
+  const _PicksTab();
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('쯔양 영상에서 뽑은 가게 후보가 여기에 모여요.\n구글 AI 키를 넣으면 시작합니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: kSub, height: 1.5)),
+        ),
+      );
+}
+
+// ---- 앱 켤 때 팝업 ----
+Future<void> showHomePopup(BuildContext context, Map<String, dynamic> p) async {
+  final ver = ((p['ver'] ?? 0) as num).toInt();
+  final today = nowKst().toIso8601String().substring(0, 10);
+  try {
+    final sp = await SharedPreferences.getInstance();
+    if (sp.getString('popup_skip') == '$today|$ver|${p['title']}') return;
+  } catch (_) {}
+  if (!context.mounted) return;
+  final img = '${p['image'] ?? ''}';
+  await showDialog(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (img.isNotEmpty) ConstrainedBox(constraints: const BoxConstraints(maxHeight: 360), child: bannerImage(HomeBanner({'image': img}))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if ('${p['title'] ?? ''}'.isNotEmpty) Text('${p['title']}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
+              if ('${p['body'] ?? ''}'.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text('${p['body']}', style: const TextStyle(fontSize: 14, color: kInk, height: 1.45)),
+              ],
+            ]),
+          ),
+          Row(children: [
+            TextButton(
+              onPressed: () async {
+                try {
+                  final sp = await SharedPreferences.getInstance();
+                  await sp.setString('popup_skip', '$today|$ver|${p['title']}');
+                } catch (_) {}
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('오늘 하루 보지 않기', style: TextStyle(fontSize: 13, color: kSub)),
+            ),
+            const Spacer(),
+            if ('${p['link'] ?? ''}'.startsWith('http'))
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  openUrl('${p['link']}');
+                },
+                child: const Text('자세히 보기', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kAccent)),
+              ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('닫기', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk))),
+            const SizedBox(width: 6),
+          ]),
+        ]),
+      ),
+    ),
+  );
+}
+
+// 회원 탈퇴: 한 번 더 묻고 계정을 지운다 (오래전에 로그인했으면 다시 로그인해야 함)
+Future<void> leaveAccount(BuildContext context) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('회원 탈퇴', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+      content: const Text('계정을 지우면 되돌릴 수 없어요. 휴대폰에 저장한 콕한 집은 그대로 남아요.', style: TextStyle(fontSize: 14, height: 1.45)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('탈퇴하기', style: TextStyle(color: kAccent, fontWeight: FontWeight.w700))),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  try {
+    await fbUser?.delete();
+    if (context.mounted) admToast(context, '탈퇴했어요. 그동안 고마웠어요');
+  } on fa.FirebaseAuthException catch (e) {
+    if (context.mounted) admToast(context, e.code == 'requires-recent-login' ? '보안을 위해 다시 로그인한 뒤 탈퇴해 주세요' : authMsg(e.code));
+  }
+}

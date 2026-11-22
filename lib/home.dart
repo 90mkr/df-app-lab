@@ -2867,23 +2867,40 @@ class SettingsPage extends StatelessWidget {
           ),
           Expanded(
             child: ListView(padding: const EdgeInsets.fromLTRB(20, 10, 20, 30), children: [
-              group('계정', [
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Row(children: [
-                    CircleAvatar(radius: 22, backgroundColor: Color(0xFFF1F1F4), child: LineIcon('user', size: 22, color: kSub)),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('로그인하지 않았어요', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
-                        SizedBox(height: 2),
-                        Text('로그인 없이도 모든 기능을 쓸 수 있어요', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w300, color: kSub)),
+              ValueListenableBuilder<int>(
+                valueListenable: authTick,
+                builder: (_, __, ___) {
+                  final u = fbUser;
+                  final nm = u == null ? '' : ((u.displayName ?? '').isNotEmpty ? u.displayName! : (u.email ?? '회원'));
+                  return group('계정', [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(children: [
+                        const CircleAvatar(radius: 22, backgroundColor: Color(0xFFF1F1F4), child: LineIcon('user', size: 22, color: kSub)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(u == null ? '로그인하지 않았어요' : nm, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
+                            const SizedBox(height: 2),
+                            Text(u == null ? '로그인 없이도 모든 기능을 쓸 수 있어요' : (u.email ?? ''),
+                                style: const TextStyle(fontSize: 11.5, color: kSub)),
+                          ]),
+                        ),
                       ]),
                     ),
-                  ]),
-                ),
-                row('로그인', sub: '후기·별점 기능과 함께 열립니다', onTap: () => soon(context)),
-              ]),
+                    if (u == null)
+                      row('로그인 · 회원가입', sub: '구글 · 이메일 (카카오 준비 중)', onTap: () => openLogin(context))
+                    else ...[
+                      if (isAdmin)
+                        row('관리자 화면',
+                            sub: '배너 · 팝업 · 메인 순서 · 가게 관리',
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => AdminPage(places: allPlaces(), onChanged: onAdminChanged)))),
+                      row('로그아웃', onTap: () => fbAuth.signOut()),
+                      row('회원 탈퇴', sub: '계정을 지워요', onTap: () => leaveAccount(context)),
+                    ],
+                  ]);
+                },
+              ),
               const SizedBox(height: 24),
               group('문의', [
                 row('문의하기', sub: kContactMail, onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플] 문의')}')),

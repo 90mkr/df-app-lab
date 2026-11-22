@@ -46,6 +46,13 @@ for gp, line in (("android/app/build.gradle.kts", "    lint {\n        checkRele
         if "checkReleaseBuilds" not in g:
             g = g.replace("android {\n", "android {\n" + line, 1)
             open(gp, "w", encoding="utf-8").write(g)
+# 파이어베이스 로그인은 안드로이드 6.0(23) 이상
+for gp in ("android/app/build.gradle.kts", "android/app/build.gradle"):
+    if os.path.exists(gp):
+        g = open(gp, encoding="utf-8").read()
+        g = g.replace("minSdk = flutter.minSdkVersion", "minSdk = 23").replace("minSdkVersion flutter.minSdkVersion", "minSdkVersion 23")
+        open(gp, "w", encoding="utf-8").write(g)
+
 # 고정 서명: android/app/upload.jks 가 있으면 그 키로 (비밀번호는 KEY_PASS 환경 변수)
 kts = "android/app/build.gradle.kts"
 if os.path.exists(kts):

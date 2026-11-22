@@ -10,6 +10,10 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart' show YoutubePlayer, YoutubePlayerController, YoutubePlayerParams;
 import 'package:connectivity_plus/connectivity_plus.dart' show Connectivity, ConnectivityResult;
+import 'package:firebase_core/firebase_core.dart' as fc;
+import 'package:firebase_auth/firebase_auth.dart' as fa;
+import 'package:cloud_firestore/cloud_firestore.dart' as fs;
+import 'package:image_picker/image_picker.dart' show ImagePicker, ImageSource;
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -17,6 +21,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 part 'home.dart';
+part 'fb.dart';
+part 'admin.dart';
 
 const kBlue = Color(0xFF1F5BFF);
 const kInk = Color(0xFF1B1D22);
@@ -27,7 +33,13 @@ const kRegion = Color(0xFF3A4D66); // 지역 단추·고른 시·도·동네 바
 const kDataBase = 'https://90mkr.github.io/df-app-lab/data/'; // 안드로이드 앱이 자료를 받아 오는 곳
 const kTop = 20; // 종류별로 지도에 보이는 수
 
-void main() => runApp(const DfApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  fbReady().then((ok) {
+    if (ok) watchAuth();
+  });
+  runApp(const DfApp());
+}
 
 class DfApp extends StatelessWidget {
   const DfApp({super.key});
@@ -103,8 +115,10 @@ class Place {
   final double rr; // 그 전보다 몇 배
   final List<String> feat; // 편의 정보 (주차·애견 동반 등, 구글 기준)
   final String sido, gu; // 시·도, 시·군·구 (따라가기 자료)
+  final Map<String, dynamic> raw; // 받은 그대로의 자료 (관리자가 고친 값을 덮어 다시 만들 때)
   Place(Map<String, dynamic> j, [this.areaId = ''])
-      : id = '${j['id']}',
+      : raw = j,
+        id = '${j['id']}',
         kind = j['kind'] ?? 'food',
         name = j['name'] ?? '',
         cat = j['cat'] ?? '',
@@ -427,7 +441,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   final map = MapController();
   List<Sido> sidos = [];
   Area area = kDefaultArea; // 초점 동네 (머리말·홈·순위)
-  final Map<String, SongdoData> loaded = {}; // 불러온 동네 자료 (다시 부르지 않음)
+  final Map<String, SongdoData> loaded = {}; // 불러온 동네 자료 (관리자가 고친 값·숨김 반영)
+  final Map<String, SongdoData> orig = {}; // 받은 그대로 (고친 값을 다시 덮을 때)
+  HomeRemote? remote; // 메인 칸 순서 · 배너 · 팝업 (관리자 화면에서)
   final Set<String> loadingIds = {};
   SongdoData? get data => loaded[area.id];
   int tab = 0; // 0 홈, 1 영상, 2 지도, 3 내 콕
@@ -584,7 +600,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    allPlaces = () => [...loaded.values.expand((d) => d.places), ...?follow?.places];
+    onAdminChanged = _adminChanged;
     _start();
+    _remoteStart();
   }
 
   @override
@@ -625,7 +644,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     for (final a in stale) {
       try {
         final d = await loadData(a.id, version: a.updated);
-        if (mounted) setState(() => loaded[a.id] = d);
+        orig[a.id] = d;
+        if (mounted) setState(() => loaded[a.id] = _guard(d));
       } catch (_) {}
     }
     if (error != null) _load();
@@ -638,6 +658,60 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       });
     }
     return changed ? 1 : 0;
+  }
+
+  // 관리자가 고친 값 덮기 · 숨긴 가게 빼기
+  SongdoData _guard(SongdoData d) {
+    if (guards.isEmpty) return d;
+    return SongdoData(d.updated, d.recentDays, [
+      for (final p in d.places)
+        if (guards[p.id]?.hidden != true) guarded(p)
+    ], d.channels);
+  }
+
+  void _reguard() {
+    if (!mounted) return;
+    setState(() {
+      for (final e in orig.entries) {
+        loaded[e.key] = _guard(e.value);
+      }
+    });
+  }
+
+  // 파이어베이스: 메인 설정·가게 보호를 받고, 팝업은 앱 켤 때 한 번
+  Future<void> _remoteStart() async {
+    if (!await fbReady()) return;
+    await loadGuards();
+    _reguard();
+    final r = await loadHomeRemote();
+    if (!mounted || r == null) return;
+    setState(() => remote = r);
+    final pop = r.popup;
+    if (pop != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showHomePopup(context, pop);
+      });
+    }
+  }
+
+  // 관리자 화면에서 저장하면: 설정·보호 다시 받기
+  Future<void> _adminChanged() async {
+    await loadGuards();
+    _reguard();
+    final r = await loadHomeRemote();
+    if (mounted && r != null) setState(() => remote = r);
+  }
+
+  // 배너 누르기: 주소면 열고, place:가게 id 면 그 집
+  void openBanner(HomeBanner b) {
+    final l = b.link;
+    if (l.startsWith('http')) {
+      openUrl(l);
+    } else if (l.startsWith('place:')) {
+      final id = l.substring(6);
+      final p = loaded.values.expand((d) => d.places).where((x) => x.id == id).firstOrNull;
+      if (p != null) goWhere(p);
+    }
   }
 
   // 아래로 당겨 새로 고침
@@ -751,7 +825,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (id == area.id) setState(() => error = null);
     try {
       final d = await loadData(id, version: a?.updated ?? '');
-      if (mounted) setState(() => loaded[id] = d);
+      orig[id] = d;
+      if (mounted) setState(() => loaded[id] = _guard(d));
     } catch (e) {
       if (mounted && id == area.id) setState(() => error = '$e'.replaceFirst('Exception: ', ''));
     } finally {
@@ -1658,6 +1733,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         HomeView(
           onRefresh: pullRefresh,
           active: tab == 0,
+          banners: remote?.banners ?? const [],
+          order: remote?.order ?? kHomeOrder,
+          onBanner: openBanner,
           data: data,
           error: error,
           area: area,
