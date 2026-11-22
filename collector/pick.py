@@ -387,9 +387,9 @@ def main():
         print("AI 모델:", model)
 
         # 아직 안 본 영상: 인천 먼저, 그다음 최근 영상부터 (1분 넘는 영상만 — 쇼츠는 정보가 거의 없음)
-        rows = load(HINTS, [])
-        hints = [norm(h.get("name", "")) for h in rows if norm(h.get("name", ""))]
-        areas = [a for h in rows for a in h.get("areas", []) if a]  # 이름은 안 나와도 그 동네 영상은 고정 댓글까지 먼저 본다
+        hint_rows = load(HINTS, [])
+        hints = [norm(h.get("name", "")) for h in hint_rows if norm(h.get("name", ""))]
+        areas = [a for h in hint_rows for a in h.get("areas", []) if a]  # 이름은 안 나와도 그 동네 영상은 고정 댓글까지 먼저 본다
 
         def key(vc):
             v = cache["v"].get(vc[0], {})
