@@ -389,7 +389,7 @@ class _BannerTabState extends State<_BannerTab> {
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Row(children: [
-          const Expanded(child: Text('맨 위 큰 비주얼에 오늘의 영상과 섞여 옆으로 넘어가요 (16:9 그림)', style: TextStyle(fontSize: 12.5, color: kSub))),
+          const Expanded(child: Text('맨 위 큰 비주얼에 추천 영상과 섞여 옆으로 넘어가요 (16:9 그림)', style: TextStyle(fontSize: 12.5, color: kSub))),
           admBtn('배너 추가', () => edit(), strong: true),
         ]),
       ),

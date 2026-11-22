@@ -94,7 +94,51 @@ List<Place> ytRank(SongdoData d) {
 // 인기 순 (영상이 아직 없는 동네용)
 List<Place> popRank(SongdoData d) => d.places.where((p) => p.top && p.score > 0).toList()..sort((a, b) => b.score.compareTo(a.score));
 
-// 오늘의 영상: 유튜버가 많이 찾은 집 가운데 날마다 돌아가며 (영상이 없는 동네는 인기 맛집)
+// 추천 영상: 앱을 열 때마다 다른 집 — 그 동네에서 영상이 있는 집 15곳 + 최근 한 달 새 영상이 올라온 집 가운데,
+// 유튜버가 많이 다녀간 집·새 영상이 있는 집이 더 자주 나오게 뽑고, 최근에 본 5곳은 다시 안 나오게.
+// 한 번 뽑으면 앱을 닫을 때까지 그대로 (화면을 다시 그려도 안 바뀜).
+final Map<String, String> heroChoice = {}; // 동네 → 이번에 뽑힌 가게
+List<String> heroSeen = []; // 최근에 맨 위에 보인 가게 (앱 시작 때 읽어 둠)
+
+Future<void> loadHeroSeen() async {
+  try {
+    final sp = await SharedPreferences.getInstance();
+    heroSeen = sp.getStringList('hero_seen') ?? [];
+  } catch (_) {}
+}
+
+Place? sessionPick(String key, List<Place> pool) {
+  final had = heroChoice[key];
+  if (had != null) {
+    final p = pool.where((x) => x.id == had).firstOrNull;
+    if (p != null) return p;
+  }
+  if (pool.isEmpty) return null;
+  final fresh = pool.where((p) => !heroSeen.contains(p.id)).toList();
+  final src = fresh.isNotEmpty ? fresh : pool;
+  double w(Place p) => 1.0 + ytCount(p) + (ytRecent(p) ? 2.0 : 0.0);
+  final total = src.fold<double>(0, (a, p) => a + w(p));
+  var x = math.Random().nextDouble() * total;
+  var pick = src.last;
+  for (final p in src) {
+    x -= w(p);
+    if (x <= 0) {
+      pick = p;
+      break;
+    }
+  }
+  heroChoice[key] = pick.id;
+  heroSeen = [pick.id, ...heroSeen.where((x) => x != pick.id)].take(5).toList();
+  SharedPreferences.getInstance().then((sp) => sp.setStringList('hero_seen', heroSeen)).catchError((_) => false);
+  return pick;
+}
+
+List<Place> heroPool(SongdoData d) {
+  final l = ytRank(d).where((p) => p.vids.any((v) => !v.short)).toList();
+  return [...l.take(15), ...l.skip(15).where((p) => ytRecent(p))];
+}
+
+// 영상이 없는 동네: 인기 맛집 가운데 날마다 돌아가며
 Place? todaysPlace(SongdoData d) {
   var l = ytRank(d).take(7).toList();
   if (l.isEmpty) l = popRank(d).take(7).toList();
@@ -862,7 +906,7 @@ class HomeView extends StatelessWidget {
       return l.firstWhere((x) => x.hd, orElse: () => l.first);
     }
 
-    final p = todaysPlace(d);
+    final p = sessionPick(area.id, heroPool(d));
     if (p != null) {
       final v = vidOf(p);
       if (v != null) return (p, v, false);
@@ -874,13 +918,12 @@ class HomeView extends StatelessWidget {
           if (area.contains(q.point) && vidOf(q) != null) q
       ]..sort((a, b) => vidOf(b)!.date.compareTo(vidOf(a)!.date));
       if (near.isNotEmpty) {
-        final t = nowKst();
-        final day = t.difference(DateTime.utc(t.year)).inDays;
-        final q = near[day % math.min(near.length, 7)];
+        final q = sessionPick('follow-${area.id}', near.take(15).toList())!;
         return (q, vidOf(q), true);
       }
     }
-    return p == null ? null : (p, null, false);
+    final top = todaysPlace(d);
+    return top == null ? null : (top, null, false);
   }
 
   Widget _hero(SongdoData d) {
@@ -1289,7 +1332,7 @@ class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin
     final o = openInfo(p);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        Text(v == null ? '오늘의 추천' : '오늘의 영상', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kAccent)),
+        Text(v == null ? '오늘의 추천' : '추천 영상', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kAccent)),
         if (n > 0) ...[
           const SizedBox(width: 8),
           Container(

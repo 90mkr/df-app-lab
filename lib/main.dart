@@ -40,7 +40,7 @@ Future<void> main() async {
   fbReady().then((ok) {
     if (ok) watchAuth();
   });
-  await introWarmUp(); // 시작 화면 그림을 먼저 읽어 첫 장면부터 바로 보이게
+  await Future.wait([introWarmUp(), loadHeroSeen()]); // 시작 화면 그림·최근 본 추천 영상을 먼저 읽어 둔다
   runApp(const DfApp());
 }
 
