@@ -25,6 +25,8 @@ CACHE = os.path.join(ROOT, "pick_cache.json")
 FB_FILE = os.path.join(ROOT, "fb.json")
 # 먼저 볼 가게 이름 (대표님이 준 목록에서 쯔양 영상에 실제로 나오는 것만) — 목록을 그대로 올리지 않고, 그 이름이 나오는 영상을 먼저 AI로 본다
 HINTS = os.path.join(ROOT, "pick_hints.json")
+# 대표님이 준 자료로 김부장이 대신 「맞음」 처리한 것 (관리자 화면에서 대표님이 정한 것이 있으면 그쪽이 먼저)
+OK_FILE = os.path.join(ROOT, "pick_ok.json")
 OUT = os.path.join(ROOT, "..", "web", "data", "picks.json")
 FOLLOW = os.path.join(ROOT, "..", "web", "data", "follow.json")
 YT = "https://www.googleapis.com/youtube/v3/"
@@ -434,6 +436,8 @@ def main():
     except Exception as e:
         print("관리자 결정 받기 실패:", str(e)[:120])
         dec = {}
+    auto = {k: v for k, v in load(OK_FILE, {}).items() if k not in dec}
+    dec.update(auto)
     # 관리자가 「직접 연결」로 적은 가게 이름: 카카오로 찾아 그 영상의 후보로 더한다 (다시 확인)
     for k, d in dec.items():
         q = (d.get("query") or "").strip()
@@ -459,8 +463,12 @@ def main():
             continue
         for i, p in enumerate(a["p"]):
             rescore(p)
-            items.append({"key": f"{vid}_{i}", "vid": vid, "t": v.get("t", ""), "date": v.get("date", ""), "ch": c["name"], "cid": c.get("id", ""),
-                          **p, "inc": any(k in (v.get("t", "") + v.get("d", "")[:600]) for k in INCHEON)})
+            key = f"{vid}_{i}"
+            it = {"key": key, "vid": vid, "t": v.get("t", ""), "date": v.get("date", ""), "ch": c["name"], "cid": c.get("id", ""),
+                  **p, "inc": any(k in (v.get("t", "") + v.get("d", "")[:600]) for k in INCHEON)}
+            if key in auto:  # 김부장이 대신 맞음 처리한 것 — 관리자 화면에서 「정한 것」으로 보이게
+                it["auto"] = {"status": "ok", "by": auto[key].get("by", ""), "place": auto[key].get("place")}
+            items.append(it)
     items.sort(key=lambda x: (x["check"], x["inc"], x["date"]), reverse=True)
     save(OUT, {"updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
                "items": items, "nofind": sorted(nofind, key=lambda x: (x["inc"], x["date"]), reverse=True)[:400]})

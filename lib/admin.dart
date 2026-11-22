@@ -1005,6 +1005,11 @@ class _PicksTabState extends State<_PicksTab> {
         nofind = [for (final e in (j['nofind'] ?? []) as List) Map<String, dynamic>.from(e as Map)];
         updated = '${j['updated'] ?? ''}';
         dec = {for (final d in q.docs) d.id: d.data()};
+        // 김부장이 대표님 자료로 대신 맞음 처리한 것 (관리자 화면에서 정한 것이 먼저)
+        for (final it in items!) {
+          final a = it['auto'];
+          if (a is Map && !dec.containsKey('${it['key']}')) dec['${it['key']}'] = Map<String, dynamic>.from(a);
+        }
       });
     } catch (_) {
       if (mounted) setState(() => items = []);
