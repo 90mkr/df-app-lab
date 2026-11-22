@@ -12,7 +12,7 @@ const kFb = <String, String>{
   'webAppId': '1:233879188710:web:543f8fd620c76f0685f727',
   'androidAppId': '1:233879188710:android:35792ff90ca0509d85f727',
 };
-const kAdminEmails = ['dfmail@naver.com']; // 관리자 화면을 여는 계정 (쓰기 권한은 파이어베이스 규칙이 따로 막는다)
+const kAdminEmails = ['dfmail@naver.com', 'dfmail2580@gmail.com']; // 관리자 화면을 여는 계정 (쓰기 권한은 파이어베이스 규칙이 따로 막는다)
 
 Future<bool>? _fbF;
 bool fbOn = false;

@@ -3,8 +3,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'dfmail@naver.com'
-        && request.auth.token.email_verified == true; // 메일 인증을 마친 관리자만
+      return request.auth != null && request.auth.token.email in ['dfmail@naver.com', 'dfmail2580@gmail.com']
+        && request.auth.token.email_verified == true; // 메일 인증을 마친 관리자만 (구글 계정은 처음부터 인증됨)
     }
     match /config/{doc} { allow read: if true; allow write: if isAdmin(); }
     match /banners/{doc} { allow read: if true; allow write: if isAdmin(); }
