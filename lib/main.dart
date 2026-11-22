@@ -1392,25 +1392,51 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         ),
       );
 
-  Widget _cuisineChip() => Semantics(
-        button: true,
-        label: '$cuisine 걸러 보기 풀기',
-        onTap: () => pickCuisine(''),
-        excludeSemantics: true,
-        child: GestureDetector(
-          onTap: () => pickCuisine(''),
-          child: Container(
-            height: 32,
-            padding: const EdgeInsets.only(left: 10, right: 10),
-            decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(16)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text('${kCuisineEmoji[cuisine] ?? '🍱'} $cuisine', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
-              const SizedBox(width: 4),
-              const Icon(Icons.close_rounded, size: 15, color: Colors.white),
-            ]),
+  // 걸러 보기: 음식 종류 (한식·중식·일식·양식·아시안·분식·빵·카페) — 누르면 고르는 창, 고른 뒤에는 ×로 풀기
+  Widget _cuisineChip() {
+    final on = cuisine.isNotEmpty;
+    return Container(
+      height: 32,
+      decoration: BoxDecoration(
+        color: on ? kAccent : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: on ? kAccent : kPillLine, width: 1),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Semantics(
+          button: true,
+          label: on ? '$cuisine만 보는 중, 음식 종류 바꾸기' : '음식 종류 고르기',
+          onTap: openCuisine,
+          excludeSemantics: true,
+          child: GestureDetector(
+            onTap: openCuisine,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: EdgeInsets.only(left: 11, right: on ? 1 : 7),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(on ? '${kCuisineEmoji[cuisine] ?? '🍱'} $cuisine' : '음식 종류',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: on ? Colors.white : kInk)),
+                Icon(Icons.keyboard_arrow_down_rounded, size: 17, color: on ? Colors.white : kInk),
+              ]),
+            ),
           ),
         ),
-      );
+        if (on)
+          Semantics(
+            button: true,
+            label: '음식 종류 걸러 보기 풀기',
+            onTap: () => pickCuisine(''),
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: () => pickCuisine(''),
+              behavior: HitTestBehavior.opaque,
+              child: const Padding(padding: EdgeInsets.only(left: 3, right: 9), child: Icon(Icons.close_rounded, size: 15, color: Colors.white)),
+            ),
+          ),
+      ]),
+    );
+  }
 
   // 지역 검색: 전국 시·도 → 시·군·구 (유튜버 맛집이 있는 곳, 가게 수와 함께)
   Future<void> openRegionSearch({bool fromMap = true}) async {
@@ -2317,7 +2343,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   compact: true,
                   extra: Row(mainAxisSize: MainAxisSize.min, children: [
                     _multiChip(),
-                    if (cuisine.isNotEmpty) ...[const SizedBox(width: 6), _cuisineChip()],
+                    const SizedBox(width: 6),
+                    _cuisineChip(),
                   ]),
                 )
               else if (!searching && course != null)

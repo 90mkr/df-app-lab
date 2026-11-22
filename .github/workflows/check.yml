@@ -81,7 +81,7 @@ jobs:
         run: |
           (cd /tmp/site && python3 -m http.server 8765 > /dev/null 2>&1 &)
           sleep 2
-          python .github/shot/${{ contains(github.event.head_commit.message, '[화면:기능]') && 'feat_shot' || (contains(github.event.head_commit.message, '[화면:앱]') && 'app_shot' || 'review_shot') }}.py "http://localhost:8765/df-app-lab/?demo=1" shots
+          python .github/shot/${{ contains(github.event.head_commit.message, '[화면:종류]') && 'cuisine_shot' || (contains(github.event.head_commit.message, '[화면:기능]') && 'feat_shot' || (contains(github.event.head_commit.message, '[화면:앱]') && 'app_shot' || 'review_shot')) }}.py "http://localhost:8765/df-app-lab/?demo=1" shots
 
       - name: 사진 올리기
         if: always()
