@@ -4,6 +4,7 @@
     python3 tool/brand.py web       # flutter create 뒤, 웹 아이콘·홈 화면 이름·첫 화면
 
 그림은 tool/brand/ 에 미리 만들어 둔 것을 복사만 한다 (제작 서버에 그림 도구가 없어도 되게).
+웹은 지난번 화면을 꺼내 쓰는 저장분이 있으면 이 단계를 건너뛰므로, 이 파일이 바뀌면 화면을 새로 만든다.
 """
 import json
 import os
