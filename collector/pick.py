@@ -387,13 +387,16 @@ def main():
         print("AI 모델:", model)
 
         # 아직 안 본 영상: 인천 먼저, 그다음 최근 영상부터 (1분 넘는 영상만 — 쇼츠는 정보가 거의 없음)
-        hints = [norm(h.get("name", "")) for h in load(HINTS, []) if norm(h.get("name", ""))]
+        rows = load(HINTS, [])
+        hints = [norm(h.get("name", "")) for h in rows if norm(h.get("name", ""))]
+        areas = [a for h in rows for a in h.get("areas", []) if a]  # 이름은 안 나와도 그 동네 영상은 고정 댓글까지 먼저 본다
 
         def key(vc):
             v = cache["v"].get(vc[0], {})
             text = v.get("t", "") + " " + v.get("d", "")[:600]
-            full = norm(v.get("t", "") + " " + v.get("d", ""))
-            return (any(h in full for h in hints), any(k in text for k in INCHEON), v.get("date", ""))
+            raw = v.get("t", "") + " " + v.get("d", "")
+            full = norm(raw)
+            return (any(h in full for h in hints), any(a in raw for a in areas), any(k in text for k in INCHEON), v.get("date", ""))
 
         todo = [vc for vc in rows if vc[0] in cache["v"] and vc[0] not in cache["ai"] and cache["v"][vc[0]].get("dur", 0) > 60]
         todo.sort(key=key, reverse=True)
