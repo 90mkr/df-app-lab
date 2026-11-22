@@ -168,6 +168,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # 고정 서명 키: 대표님이 깃허브 비밀(ANDROID_KEY_PASS)에 직접 정한 비밀번호로 잠가 저장소에 둔다
+      # 처음 한 번은 여기서 새로 만들어 잠근 파일을 올리고, 다음부터는 그 파일을 풀어 쓴다 (비밀번호는 어디에도 안 남음)
+      - name: 앱 서명 키 준비
+        env:
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          K="$RUNNER_TEMP/upload.jks"
+          if [ -z "$KEY_PASS" ]; then
+            echo "서명 키 비밀번호(ANDROID_KEY_PASS)가 아직 없어 임시 서명으로 만듭니다"
+          elif [ -f tool/upload.jks.enc ] && openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in tool/upload.jks.enc -out "$K" -pass env:KEY_PASS 2>/dev/null; then
+            echo "고정 서명 키로 만듭니다"
+          else
+            rm -f "$K"
+            keytool -genkeypair -keystore "$K" -alias kokple -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$KEY_PASS" -keypass "$KEY_PASS" -dname "CN=Kokple, O=Designfeel, L=Incheon, C=KR"
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$K" -out tool/upload.jks.enc -pass env:KEY_PASS
+            git config user.name "df-app-lab"
+            git config user.email "dfmail@naver.com"
+            git add tool/upload.jks.enc
+            git commit -m "앱 서명 키 처음 만듦 (잠근 파일) [skip ci]"
+            git pull --rebase origin main && git push
+            echo "고정 서명 키를 새로 만들었습니다"
+          fi
+
       - name: 플러터 준비
         uses: subosito/flutter-action@v2
         with:
@@ -188,16 +212,9 @@ jobs:
           flutter create --org kr.designfeel --project-name df_app_lab --platforms android,web .
           python3 tool/patch_android.py "콕플"
 
-      - name: 앱 서명 키 풀기
-        env:
-          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+      - name: 앱 서명 키 넣기
         run: |
-          if [ -n "$KEY_PASS" ]; then
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in tool/upload.jks.enc -out android/app/upload.jks -pass env:KEY_PASS
-            echo "고정 서명 키로 만듭니다"
-          else
-            echo "서명 키 비밀번호(ANDROID_KEY_PASS)가 아직 없어 임시 서명으로 만듭니다"
-          fi
+          if [ -f "$RUNNER_TEMP/upload.jks" ]; then cp "$RUNNER_TEMP/upload.jks" android/app/upload.jks; fi
 
       - name: 안드로이드 설치 파일 만들기
         env:
