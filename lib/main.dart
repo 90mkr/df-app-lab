@@ -45,6 +45,7 @@ Future<void> main() async {
   if (kIsWeb && Uri.base.queryParameters['demo'] == '1') reviews.demo = true; // 화면 점검용 예시 후기
   reviews.loadLocal(); // 차단한 사람 목록 · 후기 규칙 동의 (휴대폰에 둔 것)
   loadNavPref(); // 길안내를 바로 열 앱 (설정에서 고른 것)
+  loadRstats(); // 「지금도 맛있다」 투표·추천 메뉴 모음 (매일 수집)
   fbReady().then((ok) {
     if (ok) watchAuth();
   });
@@ -110,9 +111,14 @@ class Video {
         cid = j['cid'] ?? '',
         hd = j['mx'] == 1,
         short = j['sh'] == 1,
-        dur = ((j['dur'] ?? 0) as num).toInt();
+        dur = ((j['dur'] ?? 0) as num).toInt(),
+        start = ((j['s'] ?? 0) as num).toInt();
   final int dur; // 영상 길이(초) — 따라가기 자료에만
+  final int start; // 설명란 시간표에서 찾은 이 가게 장면 (초, 없으면 0)
 }
+
+// 유튜브 주소: 이 가게 장면부터
+String ytWatch(Video v) => 'https://www.youtube.com/watch?v=${v.id}${v.start > 0 ? '&t=${v.start}s' : ''}';
 
 class Place {
   final String id, kind, name, cat, addr, tel, kakao, home, gurl;
@@ -139,6 +145,7 @@ class Place {
   final double rr; // 그 전보다 몇 배
   final List<String> feat; // 편의 정보 (주차·애견 동반 등, 구글 기준)
   final String sido, gu; // 시·도, 시·군·구 (따라가기 자료)
+  final List<(String, int)> dmenus; // 영상 설명란에 나온 메뉴 (이름, 나온 영상 수)
   final Map<String, dynamic> raw; // 받은 그대로의 자료 (관리자가 고친 값을 덮어 다시 만들 때)
   Place(Map<String, dynamic> j, [this.areaId = ''])
       : raw = j,
@@ -176,7 +183,11 @@ class Place {
         rr = ((j['rr'] ?? 0) as num).toDouble(),
         feat = ((j['feat'] ?? []) as List).map((e) => '$e').toList(),
         sido = j['s'] ?? '',
-        gu = j['gu'] ?? '';
+        gu = j['gu'] ?? '',
+        dmenus = [
+          for (final m in (j['menu'] is List ? j['menu'] as List : const []))
+            if (m is List && m.length >= 2) ('${m[0]}', ((m[1] ?? 1) as num).toInt())
+        ];
   LatLng get point => LatLng(lat, lng);
 }
 
@@ -191,6 +202,53 @@ class OpenInfo {
 }
 
 DateTime nowKst() => DateTime.now().toUtc().add(const Duration(hours: 9));
+
+// 후기 투표 모음 (매일 수집 때 rstats.json에 적음): 가게 id → (지금도 맛있어요, 예전만 못해요)
+final rstats = <String, (int, int)>{};
+final rmenus = <String, Map<String, int>>{}; // 가게 id → 「○○ 꼭 시키세요」 메뉴별 수
+Future<void> loadRstats() async {
+  if (reviews.demo) return;
+  try {
+    final res = await http.get(Uri.parse('${dataUrl('rstats.json')}?t=${DateTime.now().millisecondsSinceEpoch ~/ 600000}'));
+    if (res.statusCode != 200) return;
+    final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    for (final e in ((j['v'] as Map?) ?? const {}).entries) {
+      final l = e.value as List;
+      rstats['${e.key}'] = ((l[0] as num).toInt(), (l[1] as num).toInt());
+    }
+    for (final e in ((j['m'] as Map?) ?? const {}).entries) {
+      rmenus['${e.key}'] = {for (final m in (e.value as Map).entries) '${m.key}': (m.value as num).toInt()};
+    }
+  } catch (_) {}
+}
+
+// 「지금도 맛있다 ○%」: 가게 화면에서 후기를 받아 왔으면 그것으로, 아니면 매일 모은 값으로 (5표 이상)
+(int, int)? voteOf(Place p) {
+  final live = reviews.visible(p.id);
+  if (live.isNotEmpty) return stillVote(live);
+  final s = rstats[p.id];
+  if (s == null) return null;
+  final n = s.$1 + s.$2;
+  return n >= 5 ? ((s.$1 * 100 / n).round(), n) : null;
+}
+
+// 방영 후 ○개월: 이 집이 나온 가장 최근 영상 날짜 기준
+String airedText(Place p, {bool short = false}) {
+  DateTime? last;
+  for (final v in p.vids) {
+    final d = DateTime.tryParse(v.date);
+    if (d != null && (last == null || d.isAfter(last))) last = d;
+  }
+  if (last == null) return '';
+  final days = nowKst().difference(last).inDays;
+  if (days < 0) return '';
+  if (days < 7) return '방영 후 ${math.max(1, days)}일';
+  if (days < 31) return '방영 후 ${days ~/ 7}주';
+  final m = (days / 30.44).floor();
+  if (m < 12) return '방영 후 $m개월';
+  final y = m ~/ 12, r = m % 12;
+  return short || r == 0 ? '방영 후 $y년' : '방영 후 $y년 $r개월';
+}
 
 String hm(int v) {
   if (v == 0) return '자정';
@@ -340,11 +398,17 @@ double rankScore(Place p) {
 // 같은 가게가 동네 자료(별점·영업시간)와 유튜버 자료에 다 있으면 하나로 (영상은 합쳐서)
 Place mergePlaces(Place rich, Place yt) {
   final have = {for (final v in rich.vids) v.id};
+  final starts = {
+    for (final v in (yt.raw['vids'] ?? const []) as List)
+      if (v is Map && v['s'] != null) '${v['id']}': v['s']
+  };
   return Place({
     ...yt.raw,
     ...rich.raw,
+    if (yt.raw['menu'] != null) 'menu': yt.raw['menu'],
     'vids': [
-      ...(rich.raw['vids'] ?? const []) as List,
+      for (final v in (rich.raw['vids'] ?? const []) as List)
+        if (v is Map && v['s'] == null && starts['${v['id']}'] != null) {...v, 's': starts['${v['id']}']} else v,
       for (final v in (yt.raw['vids'] ?? const []) as List)
         if (v is Map && !have.contains('${v['id']}')) v,
     ],
@@ -570,9 +634,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   List<Place> _mp = const [];
   String _mpKey = '#';
   final Map<String, double> _score = {};
+  bool multi = false; // 유튜버 2명 이상 다녀간 집만
   List<Place> get mapPlaces {
     final f = follow;
-    final key = '$followCh|$cuisine|${identityHashCode(f)}|${identityHashCode(guards)}|${[for (final e in loaded.entries) '${e.key}:${identityHashCode(e.value)}'].join(',')}';
+    final key = '$followCh|$cuisine|$multi|${identityHashCode(f)}|${identityHashCode(guards)}|${[for (final e in loaded.entries) '${e.key}:${identityHashCode(e.value)}'].join(',')}';
     if (key == _mpKey) return _mp;
     _mpKey = key;
     final byId = <String, Place>{for (final p in followPlaces) p.id: p};
@@ -586,6 +651,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
     Iterable<Place> l = byId.values;
     if (cuisine.isNotEmpty) l = l.where((p) => cuisineOf(p) == cuisine);
+    if (multi) l = l.where((p) => ytCount(p) >= 2);
     _mp = l.toList();
     _score
       ..clear()
@@ -1299,6 +1365,33 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     map.fitCamera(CameraFit.coordinates(coordinates: [for (final p in ps) p.point], padding: const EdgeInsets.fromLTRB(40, 230, 40, 100), maxZoom: 12.5));
   }
 
+  // 걸러 보기: 유튜버 2명 이상 다녀간 집
+  Widget _multiChip() => Semantics(
+        button: true,
+        selected: multi,
+        label: '유튜버 2명 이상 다녀간 집만',
+        onTap: () => setState(() => multi = !multi),
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: () => setState(() => multi = !multi),
+          child: Container(
+            height: 32,
+            padding: const EdgeInsets.only(left: 9, right: 11),
+            decoration: BoxDecoration(
+              color: multi ? kAccent : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: multi ? kAccent : kPillLine, width: 1),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              LineIcon('play', size: 12, color: multi ? Colors.white : kPointText),
+              const SizedBox(width: 3),
+              Text('2명 이상', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: multi ? Colors.white : kInk)),
+            ]),
+          ),
+        ),
+      );
+
   Widget _cuisineChip() => Semantics(
         button: true,
         label: '$cuisine 걸러 보기 풀기',
@@ -1880,11 +1973,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         child: PlaceMarker(place: p, rank: i + 1, open: t == 0 || focus, dir: d, numbered: numbered ?? true, focus: focus, onTap: () => openPlace(p)),
       );
     }
+    final box = IconMarker.boxOf(p);
     return Marker(
       key: ValueKey('icon${p.id}'),
       point: p.point,
-      width: 30,
-      height: 32,
+      width: box.width,
+      height: box.height,
       alignment: Alignment.topCenter,
       child: IconMarker(place: p, onTap: () => openPlace(p)),
     );
@@ -1902,7 +1996,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     // 처음엔 낮게: 이름 (+ 유튜버 다녀감) + 길안내 단추 줄 + 별점·거리 한두 줄까지만, 끌어올리면 끝까지
     final mq = MediaQuery.of(context);
     final poor = p.greviews == 0 && p.week.isEmpty;
-    final px = 162.0 + (oneLine(p).isNotEmpty ? 24 : 0) + (poor && p.vids.isNotEmpty ? 88 : 0) + 66 + (poor ? 8 : 48) + mq.padding.bottom;
+    final px = 156.0 + (oneLine(p).isNotEmpty && p.dmenus.isEmpty ? 24 : 0) + (poor && p.vids.isNotEmpty ? 88 : 0) + (p.vids.isNotEmpty ? 28 : 0) + 66 + (poor ? 8 : 40) + mq.padding.bottom;
     final peek = (px / mq.size.height).clamp(0.26, 0.6).toDouble();
     // 그 집이 아래 창에 가리지 않게: 위 머리말과 아래 창 사이 가운데쯤 오도록 지도를 옮긴다
     final z = math.max(map.camera.zoom, 16.0);
@@ -2221,7 +2315,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   onPick: pickChannel,
                   onClose: closeFollow,
                   compact: true,
-                  extra: cuisine.isEmpty ? null : _cuisineChip(),
+                  extra: Row(mainAxisSize: MainAxisSize.min, children: [
+                    _multiChip(),
+                    if (cuisine.isNotEmpty) ...[const SizedBox(width: 6), _cuisineChip()],
+                  ]),
                 )
               else if (!searching && course != null)
                 CourseBar(
@@ -2450,6 +2547,8 @@ class PlaceMarker extends StatelessWidget {
     final inner = cardFullW(rank) - 12;
     final line = kindLine(place.kind); // 맛집 빨강, 카페 짙은 갈색
     final thumb = thumbOf(place);
+    final aired = place.vids.isEmpty ? '' : airedText(place, short: true);
+    final vote = voteOf(place);
     final card = Stack(clipBehavior: Clip.none, children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 280),
@@ -2476,12 +2575,27 @@ class PlaceMarker extends StatelessWidget {
                     height: img,
                     child: thumb.isEmpty
                         ? kindFill(place.kind, img * 0.66)
-                        : Image.network(
-                            thumb,
-                            fit: BoxFit.cover,
-                            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                            errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.66),
-                          ),
+                        : Stack(fit: StackFit.expand, children: [
+                            Image.network(
+                              thumb,
+                              fit: BoxFit.cover,
+                              webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                              errorBuilder: (_, __, ___) => kindFill(place.kind, img * 0.66),
+                            ),
+                            if (aired.isNotEmpty)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 1.5),
+                                  color: Colors.black.withValues(alpha: 0.52),
+                                  alignment: Alignment.center,
+                                  child: Text(aired, maxLines: 1, softWrap: false, overflow: TextOverflow.clip,
+                                      style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w600, color: Colors.white, height: 1.15)),
+                                ),
+                              ),
+                          ]),
                   ),
                 ),
                 const SizedBox(width: 7),
@@ -2524,6 +2638,8 @@ class PlaceMarker extends StatelessWidget {
               ]),
             ),
           ),
+          // 지금도 맛있다 ○% (5표 이상): 카드 위 왼쪽에 작게
+          if (vote != null) Positioned(left: 6, top: -15, child: VotePill(pct: vote.$1)),
           // 접혀 있을 때는 이름이 안 보이니 방송 표시를 모서리에
           if (place.tv.isNotEmpty)
             Positioned(
@@ -2780,29 +2896,96 @@ class IconMarker extends StatelessWidget {
   final Place place;
   final VoidCallback onTap;
   const IconMarker({super.key, required this.place, required this.onTap});
+
+  // 다녀간 유튜버 수: 1명 / 2~3명 / 4명 이상 → 핀 크기 3단계
+  static double sizeOf(Place p) {
+    final n = ytCount(p);
+    return n >= 4 ? 36 : (n >= 2 ? 31 : 26);
+  }
+
+  // 지도 표시용 상자 (숫자 딱지 자리까지)
+  static Size boxOf(Place p) => Size(sizeOf(p) + 12, sizeOf(p) + 11);
+
   @override
   Widget build(BuildContext context) {
+    final s = sizeOf(place);
+    final n = ytCount(place);
+    final tint = kindTint(place.kind);
+    final vote = voteOf(place);
     return GestureDetector(
       onTap: onTap,
-      child: Column(mainAxisSize: MainAxisSize.max, mainAxisAlignment: MainAxisAlignment.end, children: [
-        Container(
-          width: 26,
-          height: 26,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: kindTint(place.kind),
-            borderRadius: BorderRadius.circular(7),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 6)],
+      child: Stack(clipBehavior: Clip.none, alignment: Alignment.bottomCenter, children: [
+        Column(mainAxisSize: MainAxisSize.max, mainAxisAlignment: MainAxisAlignment.end, children: [
+          Container(
+            width: s,
+            height: s,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: tint,
+              borderRadius: BorderRadius.circular(s * 0.27),
+              border: n >= 4 ? Border.all(color: Colors.white, width: 1) : null,
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: n >= 4 ? 0.26 : 0.18), blurRadius: n >= 4 ? 9 : 6)],
+            ),
+            child: KindGlyph(kind: place.kind, size: s * 0.68, bg: tint),
           ),
-          child: KindGlyph(kind: place.kind, size: 18, bg: kindTint(place.kind)),
-        ),
-        Transform.translate(
-          offset: const Offset(0, -1.5),
-          child: CustomPaint(size: const Size(8, 5), painter: _Tail(kindTint(place.kind), fill: kindTint(place.kind))),
-        ),
+          Transform.translate(
+            offset: const Offset(0, -1.5),
+            child: CustomPaint(size: Size(s * 0.3, s * 0.19), painter: _Tail(tint, fill: tint)),
+          ),
+        ]),
+        // 다녀간 유튜버 수 (2명부터)
+        if (n >= 2)
+          Positioned(
+            right: 0,
+            bottom: s - 7,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 16),
+              height: 16,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: tint, width: 1),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 3)],
+              ),
+              child: Text('$n', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: tint, height: 1.0)),
+            ),
+          ),
+        // 지금도 맛있다 ○% (5표 이상)
+        if (vote != null)
+          Positioned(
+            bottom: s + 9,
+            child: VotePill(pct: vote.$1),
+          ),
       ]),
     );
   }
+}
+
+// 지도 위 작은 「지금도 ○%」
+class VotePill extends StatelessWidget {
+  final int pct;
+  const VotePill({super.key, required this.pct});
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFFFC9B8), width: 1),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.10), blurRadius: 4)],
+        ),
+        child: Text.rich(
+          TextSpan(children: [
+            const TextSpan(text: '지금도 '),
+            TextSpan(text: '$pct%', style: const TextStyle(fontWeight: FontWeight.w800)),
+          ]),
+          maxLines: 1,
+          softWrap: false,
+          style: const TextStyle(fontSize: 9.5, color: kPointText, height: 1.1),
+        ),
+      );
 }
 
 class _Tail extends CustomPainter {
@@ -2926,7 +3109,7 @@ class PlaceSheet extends StatelessWidget {
                 Text(p.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk, height: 1.25)),
                 const SizedBox(height: 3),
                 Text(p.cat, style: const TextStyle(fontSize: 12.5, color: kGray)),
-                if (oneLine(p).isNotEmpty) ...[
+                if (oneLine(p).isNotEmpty && p.dmenus.isEmpty) ...[
                   const SizedBox(height: 5),
                   Text(oneLine(p), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: kInk, height: 1.35)),
                 ],
@@ -2937,8 +3120,10 @@ class PlaceSheet extends StatelessWidget {
             if (onKok != null) ...[const SizedBox(width: 8), KokButton(on: kok, onChanged: onKok!)],
           ]),
           if (poor && p.vids.isNotEmpty) ...[const SizedBox(height: 12), _YtVisited(place: p)],
+          if (p.vids.isNotEmpty) ...[const SizedBox(height: 10), AiredVote(place: p)],
           const SizedBox(height: 14),
           PlaceActions(place: p), // 길안내(크게) · 전화 · 메뉴 · 블로그
+          KokMenus(place: p), // 콕플러 추천 메뉴 (설명란 메뉴 + 「○○ 꼭 시키세요」)
           const SizedBox(height: 14),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (p.greviews > 0)
@@ -3048,7 +3233,7 @@ class PlaceSheet extends StatelessWidget {
                 itemBuilder: (_, i) {
                   final v = p.vids[i];
                   return GestureDetector(
-                    onTap: () => openUrl('https://www.youtube.com/watch?v=${v.id}'),
+                    onTap: () => openUrl(ytWatch(v)),
                     child: SizedBox(
                       width: 180,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -3127,7 +3312,7 @@ class _YtVisited extends StatelessWidget {
     final chans = p.vids.map((x) => x.channel).where((x) => x.isNotEmpty).toSet().toList();
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       GestureDetector(
-        onTap: () => openUrl('https://www.youtube.com/watch?v=${v.id}'),
+        onTap: () => openUrl(ytWatch(v)),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: SizedBox(
@@ -3167,6 +3352,110 @@ class _YtVisited extends StatelessWidget {
       ),
     ]);
   }
+}
+
+// 「방영 후 ○개월 · 지금도 맛있다 88% (12표)」 — 후기가 5표 모이기 전에는 투표를 권함
+// 콕플러 추천 메뉴: 영상 설명란에 나온 메뉴 + 후기 「○○ 꼭 시키세요」 — 많이 나온 순 2~3개 (가격은 넣지 않음)
+List<String> kokMenusOf(Place p) {
+  final cnt = <String, int>{};
+  final order = <String>[];
+  void add(String m, int n) {
+    final k = m.trim();
+    if (k.isEmpty) return;
+    final same = cnt.keys.where((x) => x.replaceAll(' ', '') == k.replaceAll(' ', '')).firstOrNull ?? k;
+    if (!cnt.containsKey(same)) order.add(same);
+    cnt[same] = (cnt[same] ?? 0) + n;
+  }
+
+  final live = reviews.visible(p.id);
+  if (live.isNotEmpty) {
+    for (final (k, m, n) in stickerRank(live)) {
+      if (k == 'menu') add(m, n);
+    }
+  } else {
+    for (final e in (rmenus[p.id] ?? const <String, int>{}).entries) {
+      add(e.key, e.value);
+    }
+  }
+  for (final (m, n) in p.dmenus) {
+    add(m, n);
+  }
+  order.sort((a, b) => cnt[b]!.compareTo(cnt[a]!));
+  return order.take(3).toList();
+}
+
+class KokMenus extends StatelessWidget {
+  final Place place;
+  const KokMenus({super.key, required this.place});
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: reviews.tick,
+        builder: (_, __, ___) {
+          final l = kokMenusOf(place);
+          if (l.isEmpty) return const SizedBox();
+          return Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                const Text('콕플러 추천 메뉴', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: kInk, letterSpacing: -0.3)),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('영상 설명란·후기에서 많이 나온 순', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: kGray))),
+              ]),
+              const SizedBox(height: 8),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (var i = 0; i < l.length; i++)
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(12, 7, 13, 7),
+                    decoration: BoxDecoration(
+                      color: i == 0 ? kAccentTint : Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: i == 0 ? const Color(0xFFFFC9B8) : kLine, width: 1),
+                    ),
+                    child: Text.rich(TextSpan(children: [
+                      TextSpan(text: '${i + 1} ', style: TextStyle(fontWeight: FontWeight.w800, color: i == 0 ? kPointText : kGray)),
+                      TextSpan(text: l[i]),
+                    ]), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kInk, height: 1.2)),
+                  ),
+              ]),
+            ]),
+          );
+        },
+      );
+}
+
+class AiredVote extends StatelessWidget {
+  final Place place;
+  final bool bare; // 유튜버 머리 안에서는 아이콘 없이
+  const AiredVote({super.key, required this.place, this.bare = false});
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: reviews.tick,
+        builder: (_, __, ___) {
+          final aired = airedText(place);
+          final v = voteOf(place);
+          if (aired.isEmpty && v == null) return const SizedBox();
+          final t = Text.rich(
+            TextSpan(children: [
+              TextSpan(text: aired, style: const TextStyle(fontWeight: FontWeight.w600, color: kInk)),
+              if (v != null) ...[
+                const TextSpan(text: '  ·  지금도 맛있다 '),
+                TextSpan(text: '${v.$1}%', style: const TextStyle(fontWeight: FontWeight.w800, color: kPointText)),
+                TextSpan(text: '  ${v.$2}표', style: const TextStyle(fontSize: 11.5, color: kGray)),
+              ] else
+                const TextSpan(text: '  ·  지금은 어떤지 후기로 알려 주세요', style: TextStyle(fontSize: 12, color: kGray)),
+            ]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, color: kPointText),
+          );
+          if (bare) return t;
+          return Row(children: [
+            const LineIcon('play', size: 13, color: kPointText),
+            const SizedBox(width: 6),
+            Expanded(child: t),
+          ]);
+        },
+      );
 }
 
 class _Title extends StatelessWidget {

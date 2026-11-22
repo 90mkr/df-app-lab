@@ -173,6 +173,95 @@ def parse(desc):
     return out[:12]
 
 
+# ---------- 설명란 시간표 · 메뉴 (자막은 쓰지 않음) ----------
+
+CHAPTER = re.compile(r"^\s*[\[(]?((?:\d{1,2}:)?\d{1,2}:\d{2})[\])]?\s*[-–|:.)\]]?\s*(.+?)\s*$")
+PRICE_MENU = re.compile(r"([가-힣][가-힣A-Za-z0-9&+ ]{0,14}?[가-힣A-Za-z)])\s*(?:\([^)]*\))?\s*[:：\-]?\s*₩?\s*\d{1,3}(?:,\d{3})+\s*원")
+_MW = r"(?:대표\s*|주문\s*|먹은\s*|추천\s*|오늘의\s*)?메뉴"
+MENU_LINE = re.compile(r"^\s*(?:[\[(【]\s*" + _MW + r"\s*[\])】]\s*[:：\-]?|" + _MW + r"\s*[:：\-])\s*(.+)$")
+BAD_MENU = re.compile(r"영업|시간|주소|전화|주차|휴무|원산지|가격|메뉴판|인분|세트|추가|사리|공기밥|음료|주류|소주|맥주|콜라|사이다|포장|배달|예약|문의|협찬|광고"
+                      r"|https?|www|구독|좋아요|촬영|위치|오픈|마감|브레이크|라스트|총\s*금액|합계|계산")
+
+
+def chapters(desc):
+    """「03:12 가게 이름」 같은 시간표 → [(초, 글)] (두 줄 이상일 때만 시간표로 봄)"""
+    out = []
+    for line in (desc or "").replace("\r", "").split("\n"):
+        m = CHAPTER.match(line)
+        if m:
+            parts = [int(x) for x in m.group(1).split(":")]
+            sec = parts[-1] + parts[-2] * 60 + (parts[0] * 3600 if len(parts) == 3 else 0)
+            out.append((sec, m.group(2)))
+    return out if len(out) >= 2 else []
+
+
+def menus(desc):
+    """설명란의 메뉴 이름 (가격은 버림): 「물냉면 13,000원」 「메뉴 : 물냉면, 수육」"""
+    found = []
+    for line in (desc or "").replace("\r", "").split("\n"):
+        line = line.strip()
+        for m in PRICE_MENU.finditer(line):
+            found.append(m.group(1))
+        m = MENU_LINE.match(line)
+        if m:
+            for part in re.split(r"[,/·|]|\s및\s", m.group(1)):
+                found.append(re.sub(r"\d[\d,]*\s*원.*$", "", part))
+    out = []
+    for n in found:
+        n = re.sub(r"^[\W\d_]+", "", n).strip(" -·:")
+        n = re.sub(r"\s*\(.*$", "", n).strip()
+        if 2 <= len(n) <= 12 and not BAD_MENU.search(n) and n not in out:
+            out.append(n)
+    return out[:8]
+
+
+def attach(v, desc, cache):
+    """영상 하나: 가게마다 시작 장면(초), 가게가 하나뿐이면 설명란 메뉴"""
+    keys = v.get("p", [])
+    ch = chapters(desc)
+    at = {}
+    for k in keys:
+        pl = cache["pl"].get(k) or {}
+        name = pl.get("name", "")
+        nk = C.norm(C.base_name(name))
+        if len(nk) < 2:
+            continue
+        for sec, text in ch:
+            nt = C.norm(text)
+            if sec > 0 and (nk in nt or (len(nk) >= 3 and nk[:3] in nt) or sim(name, text) >= 0.6):
+                at[k] = sec
+                break
+    if at:
+        v["at"] = at
+    if len(keys) == 1:
+        mn = menus(desc)
+        if mn:
+            v["mn"] = mn
+    v["dv"] = 1
+
+
+def details(cache, limit=200):
+    """예전에 읽은 영상: 설명란을 다시 받아 시간표·메뉴만 붙인다 (50개에 1회, 하루 limit회까지)"""
+    need = [vid for vid, v in cache["v"].items() if v.get("p") and not v.get("dv")]
+    calls = 0
+    for i in range(0, len(need), 50):
+        if calls >= limit:
+            break
+        ids = need[i:i + 50]
+        res = yt("videos", part="snippet", id=",".join(ids))
+        calls += 1
+        got = set()
+        for it in res.get("items", []):
+            v = cache["v"].get(it["id"])
+            if v is not None:
+                attach(v, it.get("snippet", {}).get("description", ""), cache)
+                got.add(it["id"])
+        for vid in ids:
+            if vid not in got:
+                cache["v"][vid]["dv"] = 1   # 지워진 영상
+    print(f"설명란 시간표·메뉴: {min(len(need), calls * 50)}개 영상 확인 (남은 {max(0, len(need) - calls * 50)}개)")
+
+
 # ---------- 카카오로 자리·가게 확인 ----------
 
 def sim(a, b):
@@ -354,6 +443,8 @@ def scan(cid, up, cache):
             title = C.clean(sn.get("title", ""))
             vids[vid] = {"c": cid, "t": title[:90], "d": sn.get("publishedAt", "")[:10], "p": keys,
                          "sh": 1 if "#shorts" in (title + sn.get("description", "")).lower() else 0}
+            if keys:
+                attach(vids[vid], sn.get("description", ""), cache)
             if later:
                 vids[vid]["later"] = 1
                 left = True
@@ -430,6 +521,7 @@ def build(chs, info, cache):
         for k in v.get("p", []):
             by_ch.setdefault(v["c"], {}).setdefault(k, []).append(vid)
     places = {}
+    mcount = {}   # 가게 → 설명란 메뉴별로 나온 영상 수
     for cid, ks in by_ch.items():
         nm = info.get(cid, {}).get("name", "")
         for k, vs in ks.items():
@@ -444,11 +536,20 @@ def build(chs, info, cache):
                                       "vids": [], "top": False})
             for vid in vs:
                 v = cache["v"][vid]
-                o["vids"].append({"id": vid, "t": v.get("t", ""), "ch": nm, "cid": cid, "date": v.get("d", ""),
-                                  "dur": v.get("dur", 0), "sh": v.get("sh", 0)})
-    for o in places.values():
+                e = {"id": vid, "t": v.get("t", ""), "ch": nm, "cid": cid, "date": v.get("d", ""),
+                     "dur": v.get("dur", 0), "sh": v.get("sh", 0)}
+                if (v.get("at") or {}).get(k):
+                    e["s"] = v["at"][k]   # 이 가게 장면부터
+                o["vids"].append(e)
+                for m in v.get("mn", []) if len(v.get("p", [])) == 1 else []:
+                    mc = mcount.setdefault(k, {})
+                    mc[m] = mc.get(m, 0) + 1
+    for k, o in places.items():
         o["vids"].sort(key=lambda x: x["date"], reverse=True)
         o["vids"] = o["vids"][:6]
+        mc = mcount.get(k)
+        if mc:
+            o["menu"] = [[m, n] for m, n in sorted(mc.items(), key=lambda x: -x[1])[:3]]
     out_ch = []
     for c in chs:
         cid = c.get("id")
@@ -522,6 +623,10 @@ def main():
         durations([v for v, x in cache["v"].items() if x.get("p")], cache)
     except RuntimeError as e:
         print("영상 길이 확인 중단:", str(e)[:120])
+    try:
+        details(cache)
+    except RuntimeError as e:
+        print("설명란 시간표 확인 중단:", str(e)[:120])
     C.save_json(CACHE, cache)
     out = build(chs, info, cache)
     C.save_json(OUT, out)

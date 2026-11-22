@@ -28,7 +28,7 @@ service cloud.firestore {
     function bodyOk(d) {
       return d.st is list && d.st.size() >= 1 && d.st.size() <= 5
         && d.st.toSet().size() == d.st.size()
-        && d.st.toSet().difference(['yt_ok', 'again', 'life', 'meh', 'wait_ok', 'wait_no', 'big', 'value', 'solo', 'date', 'menu', 'kind'].toSet()).size() == 0
+        && d.st.toSet().difference(['yt_ok', 'again', 'life', 'meh', 'wait_ok', 'wait_no', 'big', 'value', 'solo', 'date', 'menu', 'kind', 'still', 'worse'].toSet()).size() == 0
         && d.menu is string && d.menu.size() <= 20
         && (!('menu' in d.st) || d.menu.size() > 0)
         && d.star is int && d.star >= 0 && d.star <= 5

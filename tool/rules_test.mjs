@@ -49,6 +49,8 @@ await t('같은 스티커 두 번 → 막힘', assertFails(setDoc(doc(bob, 'revi
 await t('스티커 없음 → 막힘', assertFails(setDoc(doc(bob, 'reviews', rid('bob', day, '6')), review('bob', { pid: '6', st: [] }))));
 await t('메뉴 스티커인데 메뉴 이름 없음 → 막힘', assertFails(setDoc(doc(bob, 'reviews', rid('bob', day, '7')), review('bob', { pid: '7', st: ['menu'] }))));
 await t('메뉴 스티커 + 메뉴 이름 → 됨', assertSucceeds(setDoc(doc(bob, 'reviews', rid('bob', day, '8')), review('bob', { pid: '8', st: ['menu', 'life'], menu: '김치찜' }))));
+await t('지금도 맛있어요 스티커 → 됨', assertSucceeds(setDoc(doc(bob, 'reviews', rid('bob', day, '9')), review('bob', { pid: '9', st: ['still', 'again'] }))));
+await t('예전만 못해요 스티커 → 됨', assertSucceeds(setDoc(doc(bob, 'reviews', rid('bob', day, '10')), review('bob', { pid: '10', st: ['worse'] }))));
 await t('어제 날짜 → 됨 (밤 12시 언저리)', assertSucceeds(setDoc(doc(bob, 'reviews', rid('bob', kday(-1), '9')), review('bob', { pid: '9', day: kday(-1) }))));
 await t('그저께 날짜 → 막힘', assertFails(setDoc(doc(bob, 'reviews', rid('bob', kday(-2), '10')), review('bob', { pid: '10', day: kday(-2) }))));
 await t('문서 이름과 날짜가 다름 → 막힘', assertFails(setDoc(doc(bob, 'reviews', rid('bob', kday(-1), '11')), review('bob', { pid: '11' }))));

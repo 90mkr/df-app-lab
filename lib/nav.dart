@@ -373,3 +373,35 @@ class PlaceActions extends StatelessWidget {
     ]);
   }
 }
+
+// ---------------- 룰렛 결과 카톡으로 보내기 ----------------
+String rouletteText(Place p, String area) {
+  final n = ytCount(p);
+  final chans = p.vids.map((v) => v.channel).where((x) => x.isNotEmpty).toSet().take(3).join(', ');
+  final where = [sidoShort(p.sido), p.gu].where((x) => x.isNotEmpty).join(' ');
+  final link = p.kakao.isNotEmpty ? p.kakao : 'https://map.kakao.com/link/map/${Uri.encodeComponent(p.name)},${p.lat},${p.lng}';
+  return [
+    '[콕플] 오늘 뭐 먹지? 룰렛이 골라 준 집',
+    '${p.name}${where.isNotEmpty ? ' · $where' : (area.isNotEmpty ? ' · $area' : '')}',
+    if (n > 0) '유튜버 $n명 다녀감${chans.isNotEmpty ? ' ($chans)' : ''}',
+    if (p.greviews > 0) '구글 별점 ${p.grate.toStringAsFixed(1)} · 리뷰 ${commas(p.greviews)}개',
+    if (p.addr.isNotEmpty) p.addr,
+    link,
+  ].join('\n');
+}
+
+Future<void> shareKakao(BuildContext context, String text) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  if (!kIsWeb) {
+    try {
+      final r = await const MethodChannel('kokple/apps').invokeMethod<String>('shareKakao', {'text': text});
+      if (r == 'kakao' || r == 'chooser') return;
+    } catch (_) {}
+  }
+  try {
+    await Clipboard.setData(ClipboardData(text: text));
+    messenger?.showSnackBar(const SnackBar(content: Text('내용을 복사했어요. 카톡 대화창에 붙여 넣어 보내 주세요'), duration: Duration(seconds: 3)));
+  } catch (_) {
+    messenger?.showSnackBar(const SnackBar(content: Text('휴대폰 앱에서 누르면 카톡으로 바로 보낼 수 있어요'), duration: Duration(seconds: 3)));
+  }
+}

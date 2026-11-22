@@ -41,6 +41,7 @@ if "net.daum.android.map" not in s:
         <package android:name="net.daum.android.map" />
         <package android:name="com.nhn.android.nmap" />
         <package android:name="com.skt.tmap.ku" />
+        <package android:name="com.kakao.talk" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="kakaomap" />
@@ -119,6 +120,7 @@ MAIN_KT = '''package {pkg}
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.graphics.Matrix
@@ -139,6 +141,26 @@ class MainActivity : FlutterActivity() {{
         super.configureFlutterEngine(flutterEngine)
         // 길안내 고르는 창: 휴대폰에 깔린 카카오맵·네이버·티맵의 실제 아이콘 (없는 앱은 빠짐)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "kokple/apps").setMethodCallHandler {{ call, result ->
+            // 룰렛 결과 카톡으로 보내기: 카톡이 있으면 카톡으로 바로, 없으면 휴대폰 공유 창
+            if (call.method == "shareKakao") {{
+                val text = call.argument<String>("text") ?: ""
+                val send = Intent(Intent.ACTION_SEND).apply {{
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, text)
+                }}
+                try {{
+                    startActivity(Intent(send).setPackage("com.kakao.talk"))
+                    result.success("kakao")
+                }} catch (e: Throwable) {{
+                    try {{
+                        startActivity(Intent.createChooser(send, "보내기"))
+                        result.success("chooser")
+                    }} catch (e2: Throwable) {{
+                        result.success("none")
+                    }}
+                }}
+                return@setMethodCallHandler
+            }}
             if (call.method != "icons") {{
                 result.notImplemented()
                 return@setMethodCallHandler

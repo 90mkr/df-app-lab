@@ -1195,6 +1195,7 @@ class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin
 
   YoutubePlayerController _player() => YoutubePlayerController.fromVideoId(
         videoId: widget.video!.id,
+        startSeconds: widget.video!.start > 0 ? widget.video!.start.toDouble() : null, // 이 가게 장면부터
         autoPlay: true, // 누른 다음에만 만든다
         params: const YoutubePlayerParams(
           showControls: true,
@@ -2177,14 +2178,14 @@ class _RouletteSheetState extends State<RouletteSheet> with SingleTickerProvider
               child: p == null
                   ? SizedBox(
                       key: const ValueKey('none'),
-                      height: 76,
+                      height: 122,
                       child: Center(
                         child: Text(picks.length < 2 ? '' : (ctl.isAnimating ? '두근두근…' : (note.isNotEmpty ? note : '가운데를 눌러 돌려 보세요')),
                             style: const TextStyle(fontSize: 12.5, color: kSub)),
                       ),
                     )
-                  : Container(
-                      key: ValueKey(p.id),
+                  : Column(key: ValueKey(p.id), children: [
+                    Container(
                       height: 72,
                       padding: const EdgeInsets.all(12),
                       decoration: kokCard(),
@@ -2225,6 +2226,31 @@ class _RouletteSheetState extends State<RouletteSheet> with SingleTickerProvider
                         ),
                       ]),
                     ),
+                    const SizedBox(height: 8),
+                    // 룰렛 결과를 카톡으로 (카톡이 없으면 휴대폰 공유 창, 웹은 글 복사)
+                    Semantics(
+                      button: true,
+                      label: '카톡으로 보내기',
+                      onTap: () => shareKakao(context, rouletteText(p, widget.areaName)),
+                      excludeSemantics: true,
+                      child: Material(
+                        color: const Color(0xFFFEE500),
+                        borderRadius: BorderRadius.circular(12),
+                        child: InkWell(
+                          onTap: () => shareKakao(context, rouletteText(p, widget.areaName)),
+                          borderRadius: BorderRadius.circular(12),
+                          child: const SizedBox(
+                            height: 42,
+                            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              Icon(Icons.chat_bubble_rounded, size: 16, color: Color(0xFF191919)),
+                              SizedBox(width: 7),
+                              Text('카톡으로 보내기', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF191919))),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ]),
             ),
           ]),
         ),
@@ -2561,10 +2587,10 @@ class _VideoViewState extends State<VideoView> {
           Semantics(
             button: true,
             label: '영상 보기: ${v.title}',
-            onTap: () => openUrl('https://www.youtube.com/watch?v=${v.id}'),
+            onTap: () => openUrl(ytWatch(v)),
             excludeSemantics: true,
             child: GestureDetector(
-              onTap: () => openUrl('https://www.youtube.com/watch?v=${v.id}'),
+              onTap: () => openUrl(ytWatch(v)),
               behavior: HitTestBehavior.opaque,
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 AspectRatio(

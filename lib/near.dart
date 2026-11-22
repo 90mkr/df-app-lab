@@ -227,7 +227,13 @@ class _NearPageState extends State<NearPage> {
               MarkerLayer(markers: [
                 for (final (p, _) in list.reversed)
                   if (p.id != sel)
-                    Marker(key: ValueKey('n${p.id}'), point: p.point, width: 30, height: 32, alignment: Alignment.topCenter, child: IconMarker(place: p, onTap: () => open(p))),
+                    Marker(
+                        key: ValueKey('n${p.id}'),
+                        point: p.point,
+                        width: IconMarker.boxOf(p).width,
+                        height: IconMarker.boxOf(p).height,
+                        alignment: Alignment.topCenter,
+                        child: IconMarker(place: p, onTap: () => open(p))),
                 for (final (p, _) in list)
                   if (p.id == sel)
                     Marker(

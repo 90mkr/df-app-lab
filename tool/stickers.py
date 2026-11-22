@@ -1,4 +1,4 @@
-"""콕플 스티커 12종 — 캐릭터(핀 모양) 표정 + 소품 + 이름표, 다이컷 흰 테두리."""
+"""콕플 스티커 14종 — 캐릭터(핀 모양) 표정 + 소품 + 이름표, 다이컷 흰 테두리."""
 import math
 import os
 import numpy as np
@@ -372,9 +372,34 @@ def kind_fn(d, im):
     heart(d, 790, 230, 66, PINK, ow=12); heart(d, 180, 300, 50, PINK, ow=10); sparkle(d, 760, 420, 40, GOLD)
 make('kind', '사장님 친절', ORANGE, 'bow', {'after': after(kind_fn)})
 
+# 13. 지금도 맛있어요 (방영 후 지금은?) — 시간이 지나도(시계) 여전히 좋음(하트·반짝)
+def still_fn(d, im):
+    clock(d, 770, 300, 100)
+    heart(d, 640, 150, 54, RED, ow=12)
+    sparkle(d, 880, 150, 40, GOLD); sparkle(d, 200, 250, 44, GOLD)
+make('still', '지금도 맛있어요', RED, 'happy', {'after': after(still_fn)}, char_cx=400)
+
+
+# 14. 예전만 못해요 (부드럽게) — 내려가는 꺾은선
+def down_arrow(d, pts, color):
+    d.line(pts, fill=INK, width=44, joint='curve')
+    d.line(pts, fill=color, width=22, joint='curve')
+    (x0, y0), (x1, y1) = pts[-2], pts[-1]
+    ang = math.atan2(y1 - y0, x1 - x0)
+    tip = (x1 + 34 * math.cos(ang), y1 + 34 * math.sin(ang))
+    l = (x1 + 52 * math.cos(ang + 2.4), y1 + 52 * math.sin(ang + 2.4))
+    r = (x1 + 52 * math.cos(ang - 2.4), y1 + 52 * math.sin(ang - 2.4))
+    d.polygon([tip, l, r], fill=color, outline=INK, width=12)
+
+
+def worse_fn(d, im):
+    down_arrow(d, [(620, 150), (705, 235), (765, 195), (850, 300)], (205, 190, 178, 255))
+    drop(d, 230, 240, 40)
+make('worse', '예전만 못해요', GRAYLB, 'sad', {'after': after(worse_fn)}, char_cx=400)
+
 # 한 장으로 모아 보기
-keys = ['yt_ok', 'again', 'life', 'meh', 'wait_ok', 'wait_no', 'big', 'value', 'solo', 'date', 'menu', 'kind']
-sheet = Image.new('RGBA', (4 * 250 + 40, 3 * 250 + 40), (246, 244, 241, 255))
+keys = ['yt_ok', 'again', 'life', 'meh', 'wait_ok', 'wait_no', 'big', 'value', 'solo', 'date', 'menu', 'kind', 'still', 'worse']
+sheet = Image.new('RGBA', (4 * 250 + 40, 4 * 250 + 40), (246, 244, 241, 255))
 for i, k in enumerate(keys):
     s = Image.open(f'{OUT}/{k}.png').resize((240, 240), Image.LANCZOS).convert('RGBA')
     sheet.alpha_composite(s, (20 + (i % 4) * 250, 20 + (i // 4) * 250))

@@ -86,6 +86,11 @@ jobs:
           AREAS: ${{ inputs.areas }}
         run: python3 -u collector/collect.py
 
+      - name: 후기 모음 (지금도 맛있다 투표·추천 메뉴)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python3 -u collector/review_stats.py
+
       - name: 지역 수집 진행 상황 적기 (관리자 화면 「지역 수집」)
         if: ${{ !cancelled() }}
         continue-on-error: true

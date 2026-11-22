@@ -17,13 +17,16 @@ const kStickers = <String, String>{
   'date': '데이트 추천',
   'kind': '사장님 친절',
   'menu': '꼭 시키세요',
+  'still': '지금도 맛있어요',
+  'worse': '예전만 못해요',
 };
 const kStickerGroups = <(String, List<String>)>[
   ('맛은 어땠나요?', ['yt_ok', 'again', 'life', 'meh']),
+  ('방영 후 지금은?', ['still', 'worse']), // 유튜버 영상이 있는 집만
   ('어떤 집이었나요?', ['wait_ok', 'wait_no', 'big', 'value', 'solo', 'date', 'kind']),
 ];
 // 함께 붙일 수 없는 짝 (하나를 고르면 다른 하나는 빠짐)
-const kStickerClash = {'wait_ok': 'wait_no', 'wait_no': 'wait_ok', 'life': 'meh', 'meh': 'life'};
+const kStickerClash = {'wait_ok': 'wait_no', 'wait_no': 'wait_ok', 'life': 'meh', 'meh': 'life', 'still': 'worse', 'worse': 'still'};
 const kStickerMax = 5;
 const kStickerInk = Color(0xFF501101); // 스티커 선 색 (메뉴 판 글씨)
 const kReportWhy = ['광고·홍보 글', '욕설·비하', '사람 얼굴·개인정보 사진', '이 가게와 상관없는 내용', '기타'];
@@ -193,6 +196,17 @@ class ReviewPhoto {
   const ReviewPhoto.kept(this.keep, this.keepThumb)
       : full = null,
         thumb = null;
+}
+
+// 「지금도 맛있다」 투표: 지금도 맛있어요 ÷ (지금도 맛있어요 + 예전만 못해요) — 5표 이상일 때만 (퍼센트, 표 수)
+(int, int)? stillVote(Iterable<Review> l) {
+  var g = 0, b = 0;
+  for (final r in l.where((r) => !r.hidden)) {
+    if (r.st.contains('still')) g++;
+    if (r.st.contains('worse')) b++;
+  }
+  final n = g + b;
+  return n >= 5 ? ((g * 100 / n).round(), n) : null;
 }
 
 // 스티커 순위 (메뉴 스티커는 메뉴 이름별로)
@@ -709,12 +723,12 @@ class ReviewStore {
     '분위기 좋아서 데이트로 딱이에요',
   ];
   static const _demoSt = [
-    ['again', 'wait_ok', 'menu'],
-    ['big', 'value'],
-    ['solo', 'kind', 'again'],
-    ['life', 'yt_ok', 'menu', 'value', 'again'],
-    ['meh', 'wait_no'],
-    ['date', 'again'],
+    ['again', 'wait_ok', 'menu', 'still'],
+    ['big', 'value', 'still'],
+    ['solo', 'kind', 'again', 'still'],
+    ['life', 'yt_ok', 'menu', 'still', 'again'],
+    ['meh', 'wait_no', 'worse'],
+    ['date', 'again', 'still'],
   ];
   static const _demoNick = ['바삭한 콕플러', '송도먹보', '든든한 콕플러', '점심은국밥', '맛집탐정', '새콤한 콕플러'];
   static const _demoMenu = ['묵은지 김치찜', '', '', '차돌짬뽕', '', ''];
@@ -753,6 +767,10 @@ class ReviewStore {
       for (var i = 0; i < 6; i++) _demoFor(ps.isEmpty ? 'p$i' : ps[i % ps.length].id, ps.isEmpty ? '' : ps[i % ps.length].name)[i],
     ];
     popular = latest.where((r) => r.lc >= 2).toList()..sort((a, b) => b.lc.compareTo(a.lc));
+    // 지도 핀의 「지금도 ○%」 보기용 예시
+    for (var i = 0; i < math.min(80, places.length); i++) {
+      if (i % 3 == 0) rstats[places[i].id] = (8 + i % 5, i % 4);
+    }
     homeLoaded = true;
     bump();
   }
@@ -896,6 +914,7 @@ Map<String, dynamic> reviewRec(Place p) => {
       'ln': p.lng,
       'a': p.areaId,
       'an': p.areaId == 'follow' ? [sidoShort(p.sido), p.gu].where((x) => x.isNotEmpty).join(' ') : dongOf(p),
+      'th': p.vids.isEmpty ? '' : 'https://i.ytimg.com/vi/${p.vids.first.id}/mqdefault.jpg', // 영상 사진 (방영 후 지금은? 스티커도 이걸로 판단)
     };
 
 // ---- 후기 쓰기 창 (아래에서 올라와 한 화면에서 끝) ----
@@ -1231,8 +1250,9 @@ class _ReviewSheetState extends State<ReviewSheet> {
                         ),
                       ]),
                       const SizedBox(height: 16),
-                      for (final (t, ks) in kStickerGroups) ...[
-                        label(t),
+                      for (final (t, ks) in kStickerGroups)
+                        if (t != '방영 후 지금은?' || '${widget.rec['th'] ?? ''}'.isNotEmpty) ...[
+                        label(t, sub: t == '방영 후 지금은?' ? '영상에 나온 뒤 지금은 어떤지 알려 주세요' : null),
                         Wrap(spacing: 0, runSpacing: 6, children: [for (final k in ks) cell(k, cs)]),
                         const SizedBox(height: 18),
                       ],
@@ -1525,7 +1545,8 @@ class _ReviewRankLineState extends State<ReviewRankLine> {
   Widget build(BuildContext context) => ValueListenableBuilder<int>(
         valueListenable: reviews.tick,
         builder: (_, __, ___) {
-          final rank = stickerRank(reviews.visible(widget.pid)).take(3).toList();
+          // 「지금도 맛있어요·예전만 못해요」는 따로 「지금도 맛있다 ○%」로 보여 준다
+          final rank = stickerRank(reviews.visible(widget.pid)).where((r) => r.$1 != 'still' && r.$1 != 'worse').take(3).toList();
           if (rank.isEmpty) return const SizedBox();
           return Padding(
             padding: const EdgeInsets.only(top: 7),
