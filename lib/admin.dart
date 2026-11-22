@@ -177,7 +177,7 @@ class AdminPage extends StatefulWidget {
 
 class _AdminPageState extends State<AdminPage> {
   int tab = 0;
-  static const tabs = ['메인 순서', '배너', '팝업', '가게 관리', '확인 대기', '후보 확인', '후기 신고'];
+  static const tabs = ['메인 순서', '배너', '팝업', '공지사항', '가게 관리', '확인 대기', '후보 확인', '후기 신고', '지역 수집'];
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -226,10 +226,12 @@ class _AdminPageState extends State<AdminPage> {
                 0 => _OrderTab(onChanged: widget.onChanged),
                 1 => _BannerTab(onChanged: widget.onChanged),
                 2 => _PopupTab(onChanged: widget.onChanged),
-                3 => _PlaceTab(places: widget.places, onChanged: widget.onChanged),
-                4 => _PendingTab(places: widget.places, onChanged: widget.onChanged),
-                5 => const _PicksTab(),
-                _ => const ReviewAdminTab(),
+                3 => const NoticeAdminTab(),
+                4 => _PlaceTab(places: widget.places, onChanged: widget.onChanged),
+                5 => _PendingTab(places: widget.places, onChanged: widget.onChanged),
+                6 => const _PicksTab(),
+                7 => const ReviewAdminTab(),
+                _ => const RegionProgressTab(),
               },
             ),
           ]),
@@ -1530,4 +1532,210 @@ class AccountStrip extends StatelessWidget {
           );
         },
       );
+}
+
+// ---------------- 지역 수집: 인천 → 서울 → 경기 → 광역시 → 그 밖의 시·군 순서와 진행 상황 ----------------
+// 자료는 매일 수집이 끝날 때 collector/auto_areas.py가 web/data/progress.json에 적는다.
+class RegionProgressTab extends StatefulWidget {
+  const RegionProgressTab({super.key});
+  @override
+  State<RegionProgressTab> createState() => _RegionProgressTabState();
+}
+
+class _RegionProgressTabState extends State<RegionProgressTab> {
+  Map<String, dynamic>? data;
+  String? error;
+  final Set<int> opened = {};
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    try {
+      final res = await http.get(Uri.parse('${dataUrl('progress.json')}?t=${DateTime.now().millisecondsSinceEpoch}'));
+      if (res.statusCode != 200) throw Exception('${res.statusCode}');
+      final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      if (mounted) setState(() => data = j);
+    } catch (e) {
+      if (mounted) setState(() => error = '진행 상황을 받지 못했습니다');
+    }
+  }
+
+  static String _md(String s) {
+    // 2026-11-22 19:01 → 11.22
+    final m = RegExp(r'\d{4}-(\d{2})-(\d{2})').firstMatch(s);
+    return m == null ? '' : '${int.parse(m.group(1)!)}.${int.parse(m.group(2)!)}';
+  }
+
+  Widget pill(String st, int? o) {
+    final (t, bg, fg, line) = switch (st) {
+      'done' => ('완료', kAccentTint, kPointText, const Color(0xFFFFC9B8)),
+      'run' => ('모으는 중', kInk, Colors.white, kInk),
+      'covered' => ('포함', Colors.white, kSub, kLine),
+      _ => ('대기 ${o ?? ''}', Colors.white, kInk, kPillLine),
+    };
+    return Container(
+      width: 66,
+      height: 22,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(11), border: Border.all(color: line, width: 1)),
+      child: Text(t, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg, height: 1.1)),
+    );
+  }
+
+  Widget row(Map<String, dynamic> r) {
+    final st = '${r['st']}';
+    final views = (r['v'] as num?)?.toInt() ?? 0;
+    final name = Text('${r['n']}',
+        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: st == 'queue' ? FontWeight.w500 : FontWeight.w700, color: st == 'covered' ? kSub : kInk));
+    final yt = Text('유튜버 ${r['yt']}곳', style: const TextStyle(fontSize: 12, color: kSub));
+    // 대기: 한 줄 (촘촘하게)
+    if (st == 'queue') {
+      return Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: kHair, width: 1))),
+        child: Row(children: [
+          pill(st, (r['o'] as num?)?.toInt()),
+          const SizedBox(width: 10),
+          Expanded(child: name),
+          if (views > 0) ...[Text('앱에서 $views번 봄', style: const TextStyle(fontSize: 11.5, color: kSub)), const SizedBox(width: 10)],
+          yt,
+        ]),
+      );
+    }
+    // 완료 · 모으는 중 · 포함: 두 줄 (아래 줄에 모은 내용)
+    final all = (r['all'] as num?)?.toInt() ?? 0;
+    final up = _md('${r['up'] ?? ''}');
+    final detail = switch (st) {
+      'covered' => '「${r['in']}」 수집에 함께 들어가요',
+      _ when all == 0 => '구글 무료량이 다시 채워지면 시작해요',
+      _ => '가게 $all곳  ·  별점 ${r['rated']}  ·  영업시간 ${r['hours']}  ·  블로그 ${r['blog']}${up.isEmpty ? '' : '  ·  $up 갱신'}',
+    };
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: kHair, width: 1))),
+      child: Row(children: [
+        pill(st, null),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [Expanded(child: name), yt]),
+            const SizedBox(height: 2),
+            Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: st == 'done' ? kInk : kSub)),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = data;
+    if (d == null) {
+      return Center(
+        child: error == null
+            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: kAccent))
+            : TextButton(onPressed: () => setState(() {
+                error = null;
+                load();
+              }), child: Text('$error · 다시 받기')),
+      );
+    }
+    final g = (d['google'] as Map?) ?? const {};
+    final used = (g['used'] as num?)?.toInt() ?? 0, limit = math.max(1, (g['limit'] as num?)?.toInt() ?? 900);
+    final rows = [for (final r in (d['rows'] as List? ?? const [])) (r as Map).cast<String, dynamic>()];
+    final phases = [for (final p in (d['phases'] as List? ?? const [])) '$p'];
+    int count(String st) => rows.where((r) => r['st'] == st).length;
+    final refill = '${g['refill'] ?? ''}';
+    final rm = RegExp(r'\d{4}-(\d{2})-(\d{2})').firstMatch(refill);
+    final refillText = rm == null ? '다음 달 1일' : '${int.parse(rm.group(1)!)}월 ${int.parse(rm.group(2)!)}일';
+    final run = rows.where((r) => r['st'] == 'run').firstOrNull;
+    final next = rows.where((r) => r['st'] == 'queue').firstOrNull;
+    return RefreshIndicator(
+      onRefresh: load,
+      color: kAccent,
+      child: ListView(padding: const EdgeInsets.only(bottom: 40), children: [
+        // 요약: 구글 무료량 · 완료/모으는 중/대기 · 지금과 다음
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          decoration: kokCard().copyWith(borderRadius: BorderRadius.circular(12)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Text('이번 달 구글 무료량', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
+              const Spacer(),
+              Text('$used / $limit번', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
+            ]),
+            const SizedBox(height: 7),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(value: (used / limit).clamp(0.0, 1.0), minHeight: 6, backgroundColor: kHair, color: used >= limit ? kAccent : kInk),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              d['wait'] == true ? '새 동네를 시작할 만큼 남지 않아 $refillText에 다시 채워지면 이어서 모읍니다' : '새 동네 하나에 최대 ${g['per_area'] ?? 160}번 씁니다',
+              style: const TextStyle(fontSize: 12, color: kSub, height: 1.35),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              for (final (t, n) in [('완료', count('done')), ('모으는 중', count('run')), ('대기', count('queue'))]) ...[
+                Text(t, style: const TextStyle(fontSize: 12.5, color: kSub)),
+                const SizedBox(width: 4),
+                Text('$n곳', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: kInk)),
+                const SizedBox(width: 14),
+              ],
+            ]),
+            const SizedBox(height: 8),
+            Text.rich(
+              TextSpan(children: [
+                const TextSpan(text: '지금 '),
+                TextSpan(text: run == null ? '없음' : '${run['s']} ${run['n']}', style: const TextStyle(fontWeight: FontWeight.w700, color: kInk)),
+                const TextSpan(text: '   다음 '),
+                TextSpan(text: next == null ? '없음' : '${next['s']} ${next['n']}', style: const TextStyle(fontWeight: FontWeight.w700, color: kInk)),
+              ]),
+              style: const TextStyle(fontSize: 12.5, color: kSub),
+            ),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 4),
+          child: Text('순서: ${phases.join(' → ')}  ·  같은 시·도 안에서는 앱에서 많이 본 곳 → 유튜버가 많이 다녀간 곳. 자료 ${_md('${d['updated']}')} 기준',
+              style: const TextStyle(fontSize: 11.5, color: kSub, height: 1.4)),
+        ),
+        for (var i = 0; i < phases.length; i++)
+          Builder(builder: (_) {
+            final list = rows.where((r) => (r['p'] as num?)?.toInt() == i).toList();
+            if (list.isEmpty) return const SizedBox();
+            final done = list.where((r) => r['st'] == 'done').length;
+            final open = opened.contains(i) || list.length <= 14;
+            final shown = open ? list : list.take(10).toList();
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(top: 14),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                color: const Color(0xFFF6F6F8),
+                child: Text.rich(TextSpan(children: [
+                  TextSpan(text: '${i + 1}. ${phases[i]}', style: const TextStyle(fontWeight: FontWeight.w800, color: kInk)),
+                  TextSpan(text: '   완료 $done / ${list.length}곳', style: const TextStyle(color: kSub)),
+                ]), style: const TextStyle(fontSize: 13)),
+              ),
+              for (final r in shown) row(r),
+              if (!open)
+                InkWell(
+                  onTap: () => setState(() => opened.add(i)),
+                  child: SizedBox(
+                    height: 40,
+                    child: Center(child: Text('나머지 ${list.length - shown.length}곳 펼쳐 보기', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kInk))),
+                  ),
+                ),
+            ]);
+          }),
+      ]),
+    );
+  }
 }

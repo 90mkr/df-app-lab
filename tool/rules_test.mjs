@@ -96,9 +96,29 @@ await t('내 신고만 모아 보기 → 됨', assertSucceeds(getDocs(query(coll
 await t('관리자 신고 지우기 → 됨', assertSucceeds(deleteDoc(doc(admin, 'reports', `${rid('alice')}_bob`))));
 
 await t('내 후기 지우기 → 됨', assertSucceeds(deleteDoc(doc(alice, 'reviews', rid('alice')))));
+const carol = env.authenticatedContext('carol', { email: 'c@test.com' }).firestore();
+await t('관리자가 아닌데 쓰기 막기 → 막힘', assertFails(setDoc(doc(bob, 'bans', 'carol'), { why: 'x' })));
+await t('관리자 쓰기 막기 → 됨', assertSucceeds(setDoc(doc(admin, 'bans', 'carol'), { why: '광고', at: serverTimestamp() })));
+await t('막힌 회원 후기 쓰기 → 막힘', assertFails(setDoc(doc(carol, 'reviews', rid('carol', day, '20')), review('carol', { pid: '20' }))));
+await t('막힌 회원 사진 올리기 → 막힘', assertFails(setDoc(doc(carol, 'reviewImg', `${rid('carol', day, '20')}_0`), img('carol', rid('carol', day, '20'), 0))));
+await t('막힌 회원 자기 막힘 확인 → 됨', assertSucceeds(getDoc(doc(carol, 'bans', 'carol'))));
+await t('남의 막힘 엿보기 → 막힘', assertFails(getDoc(doc(bob, 'bans', 'carol'))));
+await t('막힌 회원도 공감은 → 됨', assertSucceeds(updateDoc(doc(carol, 'reviews', rid('bob', day, '8')), { likes: arrayUnion('carol'), lc: increment(1) })));
+await t('관리자 막기 풀기 → 됨', assertSucceeds(deleteDoc(doc(admin, 'bans', 'carol'))));
+await t('풀린 뒤 후기 쓰기 → 됨', assertSucceeds(setDoc(doc(carol, 'reviews', rid('carol', day, '21')), review('carol', { pid: '21' }))));
+await t('내 계정 문서에 차단 목록 → 됨', assertSucceeds(setDoc(doc(bob, 'users', 'bob'), { blocked: { carol: '콕플러' } }, { merge: true })));
 await t('관리자 아닌데 설정 쓰기 → 막힘', assertFails(setDoc(doc(alice, 'config', 'home'), { order: [] })));
 await t('내 계정 문서 → 됨', assertSucceeds(setDoc(doc(alice, 'users', 'alice'), { nick: '콕플러' })));
 await t('남의 계정 문서 → 막힘', assertFails(getDoc(doc(bob, 'users', 'alice'))));
+
+const rv = doc(nobody, 'regionViews', '서울_마포구');
+await t('지역 세기 처음 (비회원) → 됨', assertSucceeds(setDoc(rv, { n: 1, sido: '서울', city: '마포구', at: serverTimestamp() })));
+await t('지역 세기 1 올리기 → 됨', assertSucceeds(updateDoc(rv, { n: increment(1), at: serverTimestamp() })));
+await t('지역 세기 한 번에 10 → 막힘', assertFails(updateDoc(rv, { n: increment(10), at: serverTimestamp() })));
+await t('지역 세기 이름 바꾸기 → 막힘', assertFails(updateDoc(rv, { n: increment(1), city: '강남구', at: serverTimestamp() })));
+await t('지역 세기 이름과 문서 다름 → 막힘', assertFails(setDoc(doc(nobody, 'regionViews', '서울_강남구'), { n: 1, sido: '서울', city: '마포구', at: serverTimestamp() })));
+await t('지역 세기 처음부터 100 → 막힘', assertFails(setDoc(doc(nobody, 'regionViews', '부산_해운대구'), { n: 100, sido: '부산', city: '해운대구', at: serverTimestamp() })));
+await t('지역 세기 읽기 → 됨', assertSucceeds(getDoc(rv)));
 
 await env.cleanup();
 console.log(`\n시험 ${n}개 중 실패 ${bad}개`);

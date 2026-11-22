@@ -10,6 +10,10 @@ service cloud.firestore {
     function signedIn() {
       return request.auth != null;
     }
+    // 관리자가 후기 쓰기를 막은 회원
+    function banned() {
+      return exists(/databases/$(database)/documents/bans/$(request.auth.uid));
+    }
     // 한국 날짜를 20261122 같은 숫자로 (어제 날짜도 받아 줌: 밤 12시 언저리 휴대폰 시계 차이)
     function dayNum(t) {
       return t.year() * 10000 + t.month() * 100 + t.day();
@@ -63,7 +67,7 @@ service cloud.firestore {
     // 후기 (문서 이름 = 가게id_회원id_날짜 → 같은 가게는 하루 한 개)
     match /reviews/{rid} {
       allow read: if true;
-      allow create: if signedIn()
+      allow create: if signedIn() && !banned()
         && request.resource.data.keys().hasOnly(['uid', 'nick', 'pid', 'pname', 'rec', 'st', 'menu', 'star', 'text', 'ph', 'th', 'likes', 'lc', 'hidden', 'at', 'day'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.pid is string && request.resource.data.pid.size() > 0 && request.resource.data.pid.size() <= 40
@@ -76,7 +80,7 @@ service cloud.firestore {
         && request.resource.data.hidden == false
         && bodyOk(request.resource.data);
       allow update: if signedIn() && (
-        (resource.data.uid == request.auth.uid
+        (resource.data.uid == request.auth.uid && !banned()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nick', 'st', 'menu', 'star', 'text', 'ph', 'th', 'ed'])
           && request.resource.data.ed == request.time
           && bodyOk(request.resource.data))
@@ -87,7 +91,7 @@ service cloud.firestore {
     // 후기 사진 원본 (문서 이름 = 후기이름_0~2)
     match /reviewImg/{id} {
       allow read: if true;
-      allow create: if signedIn()
+      allow create: if signedIn() && !banned()
         && request.resource.data.keys().hasOnly(['uid', 'rid', 'd'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.rid is string && request.resource.data.rid.matches('.+_' + request.auth.uid + '_[0-9]{8}')
@@ -97,6 +101,24 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['d'])
         && request.resource.data.d is string && request.resource.data.d.size() < 950000;
       allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+    // 자주 찾는 지역 세기: 누구나 1씩만 올릴 수 있음 (문서 이름 = 시·도_시·군·구)
+    match /regionViews/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['n', 'sido', 'city', 'at'])
+        && request.resource.data.n == 1
+        && request.resource.data.sido is string && request.resource.data.sido.size() <= 12
+        && request.resource.data.city is string && request.resource.data.city.size() <= 24
+        && id == request.resource.data.sido + '_' + request.resource.data.city
+        && request.resource.data.at == request.time;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['n', 'at'])
+        && request.resource.data.n == resource.data.n + 1
+        && request.resource.data.at == request.time;
+    }
+    // 후기 쓰기 막은 회원 (관리자만 쓰고, 본인은 자기 것만 볼 수 있음)
+    match /bans/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow write: if isAdmin();
     }
     // 후기 신고 (한 사람이 한 후기에 한 번) → 관리자가 보고 숨김
     match /reports/{id} {

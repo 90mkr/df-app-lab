@@ -35,6 +35,30 @@ if "android.intent.action.DIAL" not in s:
     else:
         s = s.replace("</manifest>", "    <queries>" + extra + "\n    </queries>\n</manifest>", 1)
 
+# 길안내: 카카오맵·네이버·티맵이 깔렸는지 보고 아이콘을 받으려면 알려 둬야 함 (안드로이드 11부터)
+if "net.daum.android.map" not in s:
+    nav = """
+        <package android:name="net.daum.android.map" />
+        <package android:name="com.nhn.android.nmap" />
+        <package android:name="com.skt.tmap.ku" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="kakaomap" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="nmap" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tmap" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="market" />
+        </intent>"""
+    s = s.replace("<queries>", "<queries>" + nav, 1)
+
 open(path, "w", encoding="utf-8").write(s)
 
 # 출시용 만들 때 린트 검사 끄기 (영상 재생 부품의 린트 도구가 깨져 제작이 멈춤)
@@ -95,6 +119,8 @@ MAIN_KT = '''package {pkg}
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.media.FaceDetector
@@ -111,6 +137,24 @@ class MainActivity : FlutterActivity() {{
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {{
         super.configureFlutterEngine(flutterEngine)
+        // 길안내 고르는 창: 휴대폰에 깔린 카카오맵·네이버·티맵의 실제 아이콘 (없는 앱은 빠짐)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "kokple/apps").setMethodCallHandler {{ call, result ->
+            if (call.method != "icons") {{
+                result.notImplemented()
+                return@setMethodCallHandler
+            }}
+            val pkgs = call.argument<List<String>>("pkgs") ?: emptyList()
+            pool.execute {{
+                val out = HashMap<String, ByteArray>()
+                for (p in pkgs) {{
+                    try {{
+                        out[p] = iconPng(packageManager.getApplicationIcon(p), 120)
+                    }} catch (e: Throwable) {{
+                    }}
+                }}
+                Handler(Looper.getMainLooper()).post {{ result.success(out) }}
+            }}
+        }}
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "kokple/photo").setMethodCallHandler {{ call, result ->
             if (call.method != "prep") {{
                 result.notImplemented()
@@ -126,6 +170,16 @@ class MainActivity : FlutterActivity() {{
                 }}
             }}
         }}
+    }}
+
+    private fun iconPng(d: Drawable, size: Int): ByteArray {{
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        d.setBounds(0, 0, size, size)
+        d.draw(c)
+        val o = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.PNG, 100, o)
+        return o.toByteArray()
     }}
 
     private fun prep(path: String, fullMax: Int, thumbMax: Int): Map<String, Any> {{

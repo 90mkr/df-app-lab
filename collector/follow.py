@@ -383,6 +383,44 @@ def durations(vids, cache):
 
 CLOSED = re.compile(r"폐업|휴업|영업\s*종료|문\s*닫")
 
+# 카카오에 가게로 안 잡힌 집은 설명란 글을 이름으로 쓰는데, 그 글이 「식당」 「11am ~ 10pm」 「역대급 …!」 같은 조각일 때가 있다
+GENERIC = {"식당", "맛집", "가게", "음식점", "카페", "본점", "매장", "위치", "주소", "장소", "메뉴", "가격", "무휴", "연중무휴", "휴무",
+           "정기휴무", "영업", "전화", "상호", "정보", "식당정보", "가게정보", "촬영협조", "협찬", "길거리음식"}
+JUNK_NAME = re.compile(r"\d\s*(am|pm)\b|~|영업\s*시간|브레이크|라스트\s*오더|[!?]|\+\+|먹방|역대급|최고의|최고급|대한민국|맛집\s*추천|몰아\s*보기"
+                       r"|top\s*\d|subscribe|구독|좋아요|문의|협찬|광고|https?:|www\.|재료\s*소진|조기\s*마감", re.I)
+NAME_PREFIX = re.compile(r"^(촬영\s*(협조|장소|협찬|지)?|가게\s*(명|이름)?|상호\s*명?|업체\s*명?|장소|위치|식당\s*(명|이름)?|매장\s*명?)\s*[:：\-]\s*")
+
+
+def tidy_name(n):
+    """「촬영협조 : 가게」 「00:00 | 시장 | 가게」 「가게 #해시태그」 「가게, 메뉴 설명」 → 가게"""
+    n = re.sub(r"^[\W_ㄱ-ㅎ]+", "", (n or "").strip())
+    n = re.sub(r"^\d{1,2}:\d{2}(:\d{2})?\s*", "", n)
+    if "|" in n:
+        n = ([x for x in n.split("|") if x.strip()] or [""])[-1]
+    n = NAME_PREFIX.sub("", n.strip())
+    n = re.sub(r"\s*[#＃]\S+", "", n)
+    if "," in n:
+        n = n.split(",")[0]
+    n = re.sub(r"^[\W_ㄱ-ㅎ]+", "", n)
+    return n.strip(" -·,:|/")
+
+
+def tidy(pl):
+    """카카오에 가게로 안 잡힌 집: 이름을 다듬고, 다듬어도 가게 이름이 아니면(시간·제목 조각) 지도에서 뺀다"""
+    out, drop = [], 0
+    for o in pl:
+        if o.get("kakao"):
+            out.append(o)
+            continue
+        nm = tidy_name(o["name"])
+        if len(nm) < 2 or len(nm) > 20 or re.sub(r"\s", "", nm) in GENERIC or JUNK_NAME.search(nm):
+            drop += 1
+            continue
+        o["name"] = nm
+        out.append(o)
+    print(f"설명란 이름 다듬기: 가게 이름이 아닌 {drop}곳 뺌, 남은 {len(out)}곳")
+    return out
+
 
 def build(chs, info, cache):
     # 설명란에 「폐업」이라고 적힌 가게는 빼기 (카카오 이름에는 표시가 없을 수 있어 설명란 이름으로 본다)
@@ -419,7 +457,7 @@ def build(chs, info, cache):
         n = sum(1 for o in places.values() if any(v["cid"] == cid for v in o["vids"]))
         out_ch.append({"id": cid, "name": info[cid]["name"], "short": c.get("name", ""), "handle": info[cid]["handle"],
                        "thumb": info[cid]["thumb"], "subs": info[cid]["subs"], "count": n})
-    pl = sorted(places.values(), key=lambda o: o["vids"][0]["date"], reverse=True)
+    pl = tidy(sorted(places.values(), key=lambda o: o["vids"][0]["date"], reverse=True))
     return {"updated": dt.date.today().isoformat(), "sido": SIDO_ONLY, "channels": rank_channels(out_ch), "places": pl}
 
 

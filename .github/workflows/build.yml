@@ -69,6 +69,11 @@ jobs:
           PICK_MAX: ${{ inputs.pick_max }}
         run: python3 -u collector/pick.py
 
+      - name: 다음 동네 정하기 (인천 → 서울 → 경기 → 큰 도시 순, 구글 무료량이 남을 때만)
+        if: ${{ !inputs.follow_only && !inputs.pick_only && !inputs.areas }}
+        continue-on-error: true
+        run: python3 -u collector/auto_areas.py
+
       - name: 맛집 자료 모으기
         if: ${{ !inputs.follow_only && !inputs.pick_only }}
         timeout-minutes: 45
@@ -80,6 +85,11 @@ jobs:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           AREAS: ${{ inputs.areas }}
         run: python3 -u collector/collect.py
+
+      - name: 지역 수집 진행 상황 적기 (관리자 화면 「지역 수집」)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python3 -u collector/auto_areas.py --report
 
       - name: 모은 자료 저장
         run: |

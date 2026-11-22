@@ -579,6 +579,15 @@ class _LinePainter extends CustomPainter {
               ..cubicTo(5 * k, 15.5 * k, 8.2 * k, 13.6 * k, 12 * k, 13.6 * k)
               ..cubicTo(15.8 * k, 13.6 * k, 19 * k, 15.5 * k, 19 * k, 20 * k),
             p);
+      case 'nav': // 길안내: 기울어진 화살촉 (옅게 채움)
+        final arrow = ui.Path()
+          ..moveTo(20 * k, 4 * k)
+          ..lineTo(4.2 * k, 10.6 * k)
+          ..lineTo(11.2 * k, 12.8 * k)
+          ..lineTo(13.4 * k, 19.8 * k)
+          ..close();
+        c.drawPath(arrow, Paint()..color = color.withValues(alpha: color == Colors.white ? 0.28 : 0.14));
+        c.drawPath(arrow, p);
       case 'wheel': // 룰렛: 원판 + 칸 + 위쪽 바늘
         c.drawCircle(o(12, 13.2), 8.3 * k, p);
         for (var i = 0; i < 6; i++) {
@@ -817,7 +826,7 @@ Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLin
 
 // ---- 홈 ----
 // 메인 칸 순서 (나중에 관리자 화면에서 바꿀 수 있게 이름 목록)
-const kHomeOrder = ['hero', 'roulette', 'follow', 'reviews', 'courses', 'tops', 'fresh', 'creators', 'cuisine'];
+const kHomeOrder = ['hero', 'follow', 'reviews', 'courses', 'roulette', 'tops', 'fresh', 'creators', 'cuisine'];
 
 // 맨 위 큰 비주얼에 섞어 넘기는 배너 (관리자 화면에서 등록)
 class HomeBanner {
@@ -847,8 +856,6 @@ class HomeView extends StatelessWidget {
   final SongdoData? data;
   final String? error;
   final Area area;
-  final bool regionOpen;
-  final Widget regionPanel;
   final VoidCallback onRegion, onSearch, onRetry, onRoulette;
   final ValueChanged<String> onCuisine; // 음식 종류 → 지도
   final ValueChanged<Place> onWhere; // 이 집 어디야 → 지도
@@ -869,8 +876,6 @@ class HomeView extends StatelessWidget {
     required this.data,
     required this.error,
     required this.area,
-    required this.regionOpen,
-    required this.regionPanel,
     required this.onRegion,
     required this.onSearch,
     required this.onRetry,
@@ -901,8 +906,7 @@ class HomeView extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: Column(children: [
-          narrowTop(KokHeader(area: area, open: regionOpen, onRegion: onRegion, onSearch: onSearch)),
-          if (regionOpen) narrowTop(Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: regionPanel)),
+          narrowTop(KokHeader(area: area, open: false, onRegion: onRegion, onSearch: onSearch)),
           Expanded(
             child: ColoredBox(
               color: kPageBg,
@@ -1881,13 +1885,16 @@ class FollowBar extends StatelessWidget {
   final String current;
   final ValueChanged<String> onPick;
   final VoidCallback onClose;
-  const FollowBar({super.key, required this.follow, required this.current, required this.onPick, required this.onClose});
+  final bool compact; // 유튜버 지도가 기본일 때: 위 제목 줄(닫기) 없이 고르기 줄만
+  final Widget? extra; // 고르기 줄 맨 앞에 붙는 것 (음식 종류 걸러 보기 등)
+  const FollowBar({super.key, required this.follow, required this.current, required this.onPick, required this.onClose, this.compact = false, this.extra});
   @override
   Widget build(BuildContext context) {
     final f = follow;
     final ch = f.channels.where((c) => c.id == current).firstOrNull;
     final n = ch?.places.length ?? f.places.length;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (!compact) ...[
       Container(
         height: 40,
         padding: const EdgeInsets.only(left: 14, right: 2),
@@ -1920,9 +1927,11 @@ class FollowBar extends StatelessWidget {
         ]),
       ),
       const SizedBox(height: 8),
+      ],
       SizedBox(
-        height: 30,
+        height: compact ? 34 : 30,
         child: ListView(scrollDirection: Axis.horizontal, children: [
+          if (extra != null) ...[extra!, const SizedBox(width: 6)],
           _SegChip(label: '전체', emoji: '🎬', on: current.isEmpty, onTap: () => onPick('')),
           for (final c in f.channels) ...[
             const SizedBox(width: 6),
@@ -2421,8 +2430,6 @@ class YtRow extends StatelessWidget {
 class VideoView extends StatefulWidget {
   final SongdoData? data;
   final Area area;
-  final bool regionOpen;
-  final Widget regionPanel;
   final VoidCallback onRegion, onSearch;
   final ValueChanged<Place> onWhere;
   final Future<void> Function() onRefresh; // 아래로 당겨 새로 고침
@@ -2430,8 +2437,6 @@ class VideoView extends StatefulWidget {
     super.key,
     required this.data,
     required this.area,
-    required this.regionOpen,
-    required this.regionPanel,
     required this.onRegion,
     required this.onSearch,
     required this.onWhere,
@@ -2658,8 +2663,7 @@ class _VideoViewState extends State<VideoView> {
             width: width,
             height: c.maxHeight,
             child: Column(children: [
-              KokHeader(area: area, open: widget.regionOpen, onRegion: widget.onRegion, onSearch: widget.onSearch, title: '영상'),
-              if (widget.regionOpen) Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: widget.regionPanel),
+              KokHeader(area: area, open: false, onRegion: widget.onRegion, onSearch: widget.onSearch, title: '영상'),
               if (all.isNotEmpty) ...[
                 Padding(
                   padding: EdgeInsets.fromLTRB(side + 2, 0, side, 12),
@@ -2744,11 +2748,11 @@ class _SavedViewState extends State<SavedView> {
     return '${d.month}월 ${d.day}일';
   }
 
-  Widget row(Map<String, dynamic> k, {required VoidCallback onRemove, required String removeTip, bool when = false}) {
+  Widget row(Map<String, dynamic> k, {required VoidCallback onRemove, required String removeTip, bool when = false, VoidCallback? onTap}) {
     final th = '${k['th'] ?? ''}';
     final kd = '${k['k'] ?? 'food'}';
     return InkWell(
-      onTap: () => widget.onOpen(k),
+      onTap: onTap ?? () => widget.onOpen(k),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(children: [
@@ -2780,22 +2784,123 @@ class _SavedViewState extends State<SavedView> {
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w300, color: kSub)),
             ]),
           ),
+          if (k['la'] != null && k['ln'] != null) ...[
+            const SizedBox(width: 6),
+            NavPill(onTap: () => startNav(context, name: '${k['n'] ?? ''}', lat: ((k['la'] ?? 0) as num).toDouble(), lng: ((k['ln'] ?? 0) as num).toDouble())),
+          ],
           IconButton(onPressed: onRemove, tooltip: removeTip, icon: const Icon(Icons.close_rounded, size: 18, color: kSub)),
         ]),
       ),
     );
   }
 
+  // 목록 전체 화면 (콕한 집 · 최근 본 집)
+  void openList(int w) => Navigator.of(context).push(MaterialPageRoute(
+        builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+          final l = w == 0 ? widget.koks : widget.recents;
+          return subPage(
+            ctx,
+            w == 0 ? '콕한 집 ${l.length}' : '최근 본 집 ${l.length}',
+            l.isEmpty
+                ? const Center(child: Text('목록이 비었어요.', style: TextStyle(fontSize: 13, color: kSub)))
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 30),
+                    itemCount: l.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1, thickness: 1, color: kHair),
+                    itemBuilder: (_, i) {
+                      final k = l[i];
+                      void go() {
+                        Navigator.pop(ctx);
+                        widget.onOpen(k);
+                      }
+
+                      return row(k,
+                          onTap: go,
+                          onRemove: () {
+                            w == 0 ? widget.onRemove(k) : widget.onRemoveRecent(k);
+                            set(() {});
+                            setState(() {});
+                          },
+                          removeTip: w == 0 ? '콕 빼기' : '목록에서 지우기',
+                          when: w == 1);
+                    },
+                  ),
+            action: w == 1 && l.isNotEmpty
+                ? TextButton(
+                    onPressed: () {
+                      widget.onClearRecents();
+                      set(() {});
+                      setState(() {});
+                    },
+                    child: const Text('모두 지우기', style: TextStyle(fontSize: 12.5, color: kSub)),
+                  )
+                : null,
+          );
+        }),
+      ));
+
+  void openMyReviews() => Navigator.of(context).push(MaterialPageRoute(
+        builder: (ctx) => subPage(ctx, '내가 쓴 후기', MyReviews(onOpen: (r) {
+          Navigator.pop(ctx);
+          widget.onOpen(r);
+        })),
+      ));
+
+  @override
+  void initState() {
+    super.initState();
+    loadNotices();
+  }
+
   @override
   Widget build(BuildContext context) {
     final koks = widget.koks, recents = widget.recents;
     final w = which ?? (koks.isEmpty && recents.isNotEmpty ? 1 : 0);
-    final list = w == 0 ? koks : (w == 1 ? recents : const <Map<String, dynamic>>[]);
+    final list = w == 0 ? koks : recents;
+    Widget preview() {
+      if (w == 2) return MyReviewsPreview(onAll: openMyReviews, onOpen: widget.onOpen);
+      if (list.isEmpty) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
+          decoration: kokCard().copyWith(borderRadius: BorderRadius.circular(14)),
+          child: Text(
+            w == 0 ? '마음에 드는 집을 「콕」 눌러 저장해 두세요.\n가게 화면 오른쪽 위에 있어요.' : '가게 화면을 열어 본 집이 여기에 차례로 쌓여요.\n휴대폰 안에만 남아요.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: kSub, height: 1.5),
+          ),
+        );
+      }
+      return Container(
+        decoration: kokCard().copyWith(borderRadius: BorderRadius.circular(14)),
+        child: Column(children: [
+          for (var i = 0; i < math.min(5, list.length); i++) ...[
+            if (i > 0) const Divider(height: 1, thickness: 1, color: kHair, indent: 14, endIndent: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: row(list[i],
+                  onRemove: () => w == 0 ? widget.onRemove(list[i]) : widget.onRemoveRecent(list[i]), removeTip: w == 0 ? '콕 빼기' : '목록에서 지우기', when: w == 1),
+            ),
+          ],
+          const Divider(height: 1, thickness: 1, color: kHair),
+          InkWell(
+            onTap: () => openList(w),
+            child: SizedBox(
+              height: 46,
+              child: Center(
+                child: Text('${w == 0 ? '콕한 집' : '최근 본 집'} 전체 보기 (${list.length})  ›', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kInk)),
+              ),
+            ),
+          ),
+        ]),
+      );
+    }
+
     return SafeArea(
       bottom: false,
       child: narrow(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 8, 8),
+          padding: const EdgeInsets.fromLTRB(20, 14, 8, 6),
           child: Row(children: [
             const Expanded(child: Text('내 콕', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.4))),
             Semantics(
@@ -2815,62 +2920,43 @@ class _SavedViewState extends State<SavedView> {
             ),
           ]),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 2, 16, 14),
-          child: AccountStrip(koks: koks.length),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 12, 6),
-          child: Row(children: [
-            // 작은 휴대폰에선 칸이 넘치지 않게 옆으로 밀어 보기
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  _SegChip(label: koks.isEmpty ? '콕한 집' : '콕한 집 ${koks.length}', emoji: '📌', on: w == 0, onTap: () => setState(() => which = 0)),
-                  const SizedBox(width: 6),
-                  _SegChip(label: recents.isEmpty ? '최근 본 집' : '최근 본 집 ${recents.length}', emoji: '🕘', on: w == 1, onTap: () => setState(() => which = 1)),
-                  const SizedBox(width: 6),
-                  _SegChip(label: '내가 쓴 후기', lead: const StickerFace('again', size: 22), on: w == 2, onTap: () => setState(() => which = 2)),
-                ]),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () async {
+              await Future.wait([widget.onRefresh(), loadNotices(force: true), reviews.loadMine(force: true)]);
+            },
+            color: kAccent,
+            child: ValueListenableBuilder<int>(
+              valueListenable: reviews.tick,
+              builder: (context, __, ___) => ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 2, 16, 34),
+                children: [
+                  AccountStrip(koks: koks.length),
+                  const SizedBox(height: 16),
+                  // 알약 단추 3개: 누르면 바로 아래 목록이 바뀜
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: [
+                      _SegChip(label: koks.isEmpty ? '콕한 집' : '콕한 집 ${koks.length}', emoji: '📌', on: w == 0, onTap: () => setState(() => which = 0)),
+                      const SizedBox(width: 6),
+                      _SegChip(label: recents.isEmpty ? '최근 본 집' : '최근 본 집 ${recents.length}', emoji: '🕘', on: w == 1, onTap: () => setState(() => which = 1)),
+                      const SizedBox(width: 6),
+                      _SegChip(
+                          label: (reviews.mine?.isNotEmpty ?? false) ? '내가 쓴 후기 ${reviews.mine!.length}' : '내가 쓴 후기',
+                          lead: const StickerFace('again', size: 22),
+                          on: w == 2,
+                          onTap: () => setState(() => which = 2)),
+                    ]),
+                  ),
+                  const SizedBox(height: 10),
+                  preview(),
+                  const SizedBox(height: 28),
+                  ...myMenus(context),
+                ],
               ),
             ),
-            if (w == 1 && recents.isNotEmpty)
-              Semantics(
-                button: true,
-                label: '모두 지우기',
-                onTap: widget.onClearRecents,
-                excludeSemantics: true,
-                child: TextButton(
-                  onPressed: widget.onClearRecents,
-                  style: TextButton.styleFrom(foregroundColor: kSub, padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: const Size(0, 30)),
-                  child: const Text('모두 지우기', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: kSub)),
-                ),
-              ),
-          ]),
-        ),
-        Expanded(
-          child: w == 2
-              ? MyReviews(onOpen: widget.onOpen)
-              : list.isEmpty
-              ? Center(
-                  child: Text(
-                      w == 0 ? '마음에 드는 집을 「콕」 눌러 저장해 두세요.\n가게 화면 오른쪽 위에 있습니다.' : '가게 화면을 열어 본 집이 여기에 차례로 쌓여요.\n휴대폰 안에만 남습니다.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 13, color: kSub, height: 1.5)),
-                )
-              : RefreshIndicator(
-                  onRefresh: widget.onRefresh,
-                  color: kAccent,
-                  child: ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                  itemCount: list.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, thickness: 1, color: kHair),
-                  itemBuilder: (_, i) => w == 0
-                      ? row(list[i], onRemove: () => widget.onRemove(list[i]), removeTip: '콕 빼기')
-                      : row(list[i], onRemove: () => widget.onRemoveRecent(list[i]), removeTip: '목록에서 지우기', when: true),
-                )),
+          ),
         ),
       ])),
     );
@@ -2907,7 +2993,7 @@ class NavIcon extends StatelessWidget {
 class KokNav extends StatelessWidget {
   final int tab;
   final ValueChanged<int> onTap;
-  final VoidCallback onCenter; // 가운데 「오늘 뭐 먹지?」 (룰렛)
+  final VoidCallback onCenter; // 가운데 「내 주변」
   const KokNav({super.key, required this.tab, required this.onTap, required this.onCenter});
   @override
   Widget build(BuildContext context) {
@@ -2948,13 +3034,20 @@ class KokNav extends StatelessWidget {
                 Expanded(
                   child: Semantics(
                     button: true,
-                    label: '뭐 먹지 돌리기',
+                    label: '내 주변',
                     onTap: onCenter,
                     excludeSemantics: true,
                     child: GestureDetector(
                       onTap: onCenter,
                       behavior: HitTestBehavior.opaque,
-                      child: Center(child: Transform.translate(offset: const Offset(0, -13), child: const _CenterBtn())),
+                      // 동그라미는 메뉴 띠 위로 살짝 솟고, 글자는 다른 메뉴 글자와 같은 줄에
+                      child: const Stack(clipBehavior: Clip.none, alignment: Alignment.topCenter, children: [
+                        Positioned(top: -14, child: _CenterBtn()),
+                        Positioned(
+                          bottom: 9,
+                          child: Text('내 주변', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kPointText, height: 1.1)),
+                        ),
+                      ]),
                     ),
                   ),
                 ),
@@ -2970,29 +3063,21 @@ class KokNav extends StatelessWidget {
   }
 }
 
-// 가운데 둥근 단추: 오늘 뭐 먹지? (누르면 룰렛)
+// 가운데 둥근 단추: 내 주변 (위치 표시 + 콕플 색)
 class _CenterBtn extends StatelessWidget {
   const _CenterBtn();
   @override
   Widget build(BuildContext context) => Container(
-        width: 62,
-        height: 62,
+        width: 54,
+        height: 54,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFFFF3D5E), Color(0xFFFF7A2E)]),
-          boxShadow: [BoxShadow(color: const Color(0xFFFF5A3C).withValues(alpha: 0.32), blurRadius: 16)],
+          gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFFFF5A3C), Color(0xFFFF4B2B)]),
+          border: Border.all(color: Colors.white, width: 1),
+          boxShadow: [BoxShadow(color: const Color(0xFFFF5A3C).withValues(alpha: 0.30), blurRadius: 14)],
         ),
-        padding: const EdgeInsets.all(8),
-        child: MediaQuery.withNoTextScaling(
-          child: const FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text('오늘', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xE6FFFFFF), height: 1.1)),
-              SizedBox(height: 1),
-              Text('뭐 먹지?', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white, height: 1.1, letterSpacing: -0.3)),
-            ]),
-          ),
-        ),
+        child: const LineIcon('pin', size: 28, color: Colors.white),
       );
 }
 
@@ -3073,6 +3158,7 @@ const kContactMail = 'dfmail@naver.com';
 const kPrivacyUrl = 'https://90mkr.github.io/df-app-lab/policy/privacy.html';
 const kDeleteUrl = 'https://90mkr.github.io/df-app-lab/policy/delete.html';
 const kTermsUrl = 'https://90mkr.github.io/df-app-lab/policy/terms.html';
+const kLocationUrl = 'https://90mkr.github.io/df-app-lab/policy/location.html';
 const kAppVersion = '0.1 시험판';
 
 class SettingsPage extends StatelessWidget {
@@ -3210,6 +3296,19 @@ class SettingsPage extends StatelessWidget {
                   ]);
                 },
               ),
+              const SizedBox(height: 24),
+              group('사용 설정', [
+                ValueListenableBuilder<String>(
+                  valueListenable: navPref,
+                  builder: (_, __, ___) => row('길안내 앱', sub: navPrefName(), onTap: () => openNavSetting(context)),
+                ),
+              ]),
+              const SizedBox(height: 24),
+              group('개인정보·권한', [
+                row('위치 사용', sub: '내 주변 맛집을 찾을 때만 휴대폰 안에서 써요', onTap: () => kIsWeb ? openUrl(kLocationUrl) : Geolocator.openAppSettings()),
+                row('차단한 사람', sub: reviews.blocked.isEmpty ? '없어요' : '${reviews.blocked.length}명', onTap: () => openBlocked(context)),
+                row('위치정보 이용 안내', onTap: () => openUrl(kLocationUrl)),
+              ]),
               const SizedBox(height: 24),
               group('문의', [
                 row('문의하기', sub: kContactMail, onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플] 문의')}')),

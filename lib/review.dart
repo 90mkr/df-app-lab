@@ -226,6 +226,55 @@ class ReviewStore {
   String? _nick;
   String _nickUid = '';
   bool demo = false; // 화면 점검용 (웹 주소에 ?demo=1)
+  Map<String, String> blocked = {}; // 내가 차단한 사람 (회원 id → 별명) — 그 사람 후기는 안 보임
+  bool _ugcOk = false; // 후기 규칙에 동의했는지
+  bool _localLoaded = false;
+
+  // 휴대폰에 둔 차단 목록·동의 표시 (로그인하면 계정 것과 합침)
+  Future<void> loadLocal() async {
+    if (_localLoaded) return;
+    _localLoaded = true;
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final b = sp.getString('blocked');
+      if (b != null && b.startsWith('{')) blocked = Map<String, String>.from(jsonDecode(b) as Map);
+      _ugcOk = sp.getBool('ugc_ok') ?? false;
+      bump();
+    } catch (_) {}
+  }
+
+  void _saveLocal() {
+    SharedPreferences.getInstance().then((sp) {
+      sp.setString('blocked', jsonEncode(blocked));
+      sp.setBool('ugc_ok', _ugcOk);
+    }).catchError((_) {});
+  }
+
+  bool isBlocked(String uid) => blocked.containsKey(uid);
+
+  Future<void> block(Review r) async {
+    blocked = {...blocked, r.uid: r.nick};
+    _saveLocal();
+    bump();
+    final u = fbOn ? fbUser : null;
+    if (u != null && !demo) {
+      try {
+        await fsdb.doc('users/${u.uid}').set({'blocked': blocked}, fs.SetOptions(merge: true));
+      } catch (_) {}
+    }
+  }
+
+  Future<void> unblockAll() async {
+    blocked = {};
+    _saveLocal();
+    bump();
+    final u = fbOn ? fbUser : null;
+    if (u != null && !demo) {
+      try {
+        await fsdb.doc('users/${u.uid}').update({'blocked': <String, String>{}});
+      } catch (_) {}
+    }
+  }
 
   void bump() => tick.value++;
 
@@ -236,7 +285,7 @@ class ReviewStore {
     bump();
   }
 
-  List<Review> visible(String pid) => (place[pid] ?? const <Review>[]).where((r) => !r.hidden || r.mine || isAdmin).toList();
+  List<Review> visible(String pid) => (place[pid] ?? const <Review>[]).where((r) => (!r.hidden || r.mine || isAdmin) && !isBlocked(r.uid)).toList();
   Review? todayMine(String pid) => (place[pid] ?? const <Review>[]).where((r) => r.mine && r.day == kDayNum()).firstOrNull;
 
   void _put(Review r) {
@@ -277,10 +326,10 @@ class ReviewStore {
       out.add((jp, false));
       seen.add(jp.id);
     }
-    for (final r in popular.take(3)) {
+    for (final r in popular.where((r) => !isBlocked(r.uid)).take(3)) {
       if (seen.add(r.id)) out.add((r, true));
     }
-    for (final r in latest) {
+    for (final r in latest.where((r) => !isBlocked(r.uid))) {
       if (seen.add(r.id)) out.add((r, false));
     }
     return out.take(20).toList();
@@ -391,13 +440,52 @@ class ReviewStore {
     if (_nick != null && _nickUid == u.uid) return _nick!;
     try {
       final d = await fsdb.doc('users/${u.uid}').get();
-      final n = '${d.data()?['nick'] ?? ''}'.trim();
+      final j = d.data() ?? const <String, dynamic>{};
+      final n = '${j['nick'] ?? ''}'.trim();
       _nick = n.isNotEmpty ? n : defaultNick(u.uid);
+      if (j['blocked'] is Map) {
+        blocked = {...blocked, ...Map<String, String>.from((j['blocked'] as Map).map((k, v) => MapEntry('$k', '$v')))};
+        _saveLocal();
+      }
+      if (j['ugc'] == true) _ugcOk = true;
     } catch (_) {
       _nick = defaultNick(u.uid);
     }
     _nickUid = u.uid;
     return _nick!;
+  }
+
+  // 관리자가 후기 쓰기를 막은 계정인지 (본인 것만 읽을 수 있음)
+  Future<bool> isBanned() async {
+    final u = fbOn ? fbUser : null;
+    if (u == null || demo) return false;
+    try {
+      return (await fsdb.doc('bans/${u.uid}').get()).exists;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool get ugcOk => _ugcOk;
+  void agreeUgc() {
+    _ugcOk = true;
+    _saveLocal();
+    final u = fbOn ? fbUser : null;
+    if (u != null && !demo) fsdb.doc('users/${u.uid}').set({'ugc': true}, fs.SetOptions(merge: true)).catchError((_) {});
+  }
+
+  // 관리자: 이 회원 후기 쓰기 막기 · 풀기
+  Future<String?> ban(Review r, bool on) async {
+    try {
+      if (on) {
+        await fsdb.doc('bans/${r.uid}').set({'nick': r.nick, 'rid': r.id, 'by': fbUser?.email ?? '', 'at': fs.FieldValue.serverTimestamp()});
+      } else {
+        await fsdb.doc('bans/${r.uid}').delete();
+      }
+      return null;
+    } catch (_) {
+      return '바꾸지 못했어요';
+    }
   }
 
   void _saveNick(String n) {
@@ -605,6 +693,9 @@ class ReviewStore {
     latest = latest.where((r) => r.uid != u.uid).toList();
     popular = popular.where((r) => r.uid != u.uid).toList();
     place.clear();
+    blocked = {};
+    _ugcOk = false;
+    _saveLocal();
     onAuth();
   }
 
@@ -711,6 +802,18 @@ Future<void> openReviewSheet(BuildContext context, {required String pid, require
   }
   final nick = reviews.demo ? '바삭한 콕플러' : await reviews.nick();
   if (!context.mounted) return;
+  if (await reviews.isBanned()) {
+    toast('후기 쓰기가 제한된 계정이에요. 문의: dfmail@naver.com');
+    return;
+  }
+  await reviews.loadLocal();
+  if (!reviews.ugcOk && !reviews.demo) {
+    if (!context.mounted) return;
+    final ok = await showUgcRules(context);
+    if (ok != true) return;
+    reviews.agreeUgc();
+  }
+  if (!context.mounted) return;
   final saved = await showModalBottomSheet<Review>(
     context: context,
     isScrollControlled: true,
@@ -725,6 +828,63 @@ Future<void> openReviewSheet(BuildContext context, {required String pid, require
     toast('후기를 고쳤어요');
   }
 }
+
+// 처음 후기를 쓸 때 한 번: 콕플 후기 규칙에 동의
+Future<bool?> showUgcRules(BuildContext context) => showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (ctx) {
+        Widget line(String t) => Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Padding(padding: EdgeInsets.only(top: 7, right: 8), child: CircleAvatar(radius: 2.5, backgroundColor: kInk)),
+                Expanded(child: Text(t, style: const TextStyle(fontSize: 13.5, color: kInk, height: 1.45))),
+              ]),
+            );
+        return Align(
+          alignment: Alignment.bottomCenter,
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: kHomeMax),
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.fromLTRB(22, 18, 22, 14 + MediaQuery.of(ctx).padding.bottom),
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: mixTitle('콕플 ', '후기 규칙', size: 19)),
+                  Transform.rotate(angle: 0.1, child: const StickerFace('kind', size: 54)),
+                ]),
+                const SizedBox(height: 4),
+                const Text('처음 한 번만 확인해 주세요.', style: TextStyle(fontSize: 12.5, color: kSub)),
+                const SizedBox(height: 14),
+                line('직접 가 본 집만 솔직하게 남겨 주세요.'),
+                line('광고·홍보 글, 욕설·비하, 사실이 아닌 내용은 올릴 수 없어요.'),
+                line('다른 사람 얼굴이나 개인정보가 담긴 사진은 올릴 수 없어요.'),
+                line('신고가 들어온 후기는 확인한 뒤 숨기고, 규칙을 계속 어기면 후기 쓰기를 막아요.'),
+                const SizedBox(height: 2),
+                GestureDetector(
+                  onTap: () => openUrl(kTermsUrl),
+                  child: const Text('이용약관 전체 보기 ›', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kSub, decoration: TextDecoration.underline, decorationColor: kSub)),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style: TextButton.styleFrom(backgroundColor: kAccent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                    child: const Text('동의하고 후기 쓰기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
 
 // 가게 → 후기에 남길 가게 정보 (메인 카드에서 그 집을 다시 열 때 씀)
 Map<String, dynamic> reviewRec(Place p) => {
@@ -1592,7 +1752,7 @@ class ReviewTile extends StatelessWidget {
               }
             }),
           ] else
-            _tileBtn('신고', () => reportReview(context, r)),
+            _tileBtn('신고·차단', () => reportReview(context, r)),
           if (isAdmin && !r.mine)
             _tileBtn(r.hidden ? '다시 보이기' : '숨기기', () async {
               final e = await reviews.setHidden(r, !r.hidden);
@@ -1684,7 +1844,7 @@ class _LikeButtonState extends State<LikeButton> with SingleTickerProviderStateM
 
 // 신고: 까닭 하나 고르기
 Future<void> reportReview(BuildContext context, Review r) async {
-  if (!fbOn || fbUser == null) {
+  if (!reviews.demo && (!fbOn || fbUser == null)) {
     await openLogin(context);
     if (!fbOn || fbUser == null || !context.mounted) return;
   }
@@ -1703,9 +1863,9 @@ Future<void> reportReview(BuildContext context, Review r) async {
           padding: EdgeInsets.fromLTRB(22, 20, 22, 10 + MediaQuery.of(ctx).padding.bottom),
           decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('후기 신고', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kInk)),
+            const Text('후기 신고 · 차단', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kInk)),
             const SizedBox(height: 4),
-            const Text('관리자가 확인한 뒤 숨겨요. 신고한 사람은 밝히지 않아요.', style: TextStyle(fontSize: 12.5, color: kSub)),
+            const Text('신고하면 관리자가 확인한 뒤 숨겨요. 신고한 사람은 밝히지 않아요.', style: TextStyle(fontSize: 12.5, color: kSub)),
             const SizedBox(height: 10),
             for (final w in kReportWhy)
               InkWell(
@@ -1717,12 +1877,40 @@ Future<void> reportReview(BuildContext context, Review r) async {
                   child: Text(w, style: const TextStyle(fontSize: 15, color: kInk)),
                 ),
               ),
+            // 차단: 이 사람 후기를 나에게서 모두 안 보이게
+            InkWell(
+              onTap: () => Navigator.pop(ctx, '#block'),
+              child: Container(
+                height: 54,
+                alignment: Alignment.centerLeft,
+                decoration: const BoxDecoration(border: Border(top: BorderSide(color: kLine))),
+                child: Row(children: [
+                  const Icon(Icons.block_rounded, size: 19, color: kPointText),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text.rich(TextSpan(children: [
+                      TextSpan(text: '${r.nick} 차단', style: const TextStyle(fontWeight: FontWeight.w700, color: kPointText)),
+                      const TextSpan(text: '  이 사람 후기를 모두 안 보기', style: TextStyle(fontSize: 12.5, color: kSub)),
+                    ]), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15)),
+                  ),
+                ]),
+              ),
+            ),
           ]),
         ),
       ),
     ),
   );
   if (why == null || !context.mounted) return;
+  if (why == '#block') {
+    await reviews.block(r);
+    if (context.mounted) {
+      ScaffoldMessenger.maybeOf(context)
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('${r.nick} 님 후기를 더 보지 않아요. 설정에서 풀 수 있어요'), duration: const Duration(seconds: 3)));
+    }
+    return;
+  }
   final m = await reviews.report(r, why);
   if (context.mounted) {
     ScaffoldMessenger.maybeOf(context)
@@ -2240,6 +2428,7 @@ class _ReviewAdminTabState extends State<ReviewAdminTab> {
                             return null;
                           }, '신고를 정리했어요')),
                       if (r != null) admBtn('후기 지우기', () => act(() => reviews.remove(r), '후기를 지웠어요'), danger: true),
+                      if (r != null) admBtn('작성자 쓰기 막기', () => act(() => reviews.ban(r, true), '${r.nick} 님 후기 쓰기를 막았어요'), danger: true),
                     ]),
                 ] else ...[
                   if (hidden.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Text('숨긴 후기가 없어요.', style: TextStyle(fontSize: 13, color: kSub))),

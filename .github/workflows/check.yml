@@ -45,7 +45,7 @@ jobs:
 
   # 커밋 글에 [화면]이 있으면: 웹을 만들어 이 컴퓨터 안에서 띄우고 후기 화면을 찍어 shots-check 갈래에 올림 (배포 안 함)
   screens:
-    if: contains(github.event.head_commit.message, '[화면]')
+    if: contains(github.event.head_commit.message, '[화면')
     needs: analyze
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -81,7 +81,7 @@ jobs:
         run: |
           (cd /tmp/site && python3 -m http.server 8765 > /dev/null 2>&1 &)
           sleep 2
-          python .github/shot/review_shot.py "http://localhost:8765/df-app-lab/?demo=1" shots
+          python .github/shot/${{ contains(github.event.head_commit.message, '[화면:앱]') && 'app_shot' || 'review_shot' }}.py "http://localhost:8765/df-app-lab/?demo=1" shots
 
       - name: 사진 올리기
         if: always()
@@ -91,3 +91,19 @@ jobs:
           git add -A
           git -c user.name="화면 확인" -c user.email="shot@users.noreply.github.com" commit -qm "후기 화면 점검 ${{ github.run_id }}"
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" shots-check
+
+  # 커밋 글에 [규칙확인]이 있으면: 실제 파이어베이스에 새 규칙이 게시됐는지 (후기 읽기가 열렸는지) 확인
+  live_rules:
+    if: contains(github.event.head_commit.message, '[규칙확인]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 후기 읽기 시험
+        run: |
+          code=$(curl -s -o out.json -w "%{http_code}" "https://firestore.googleapis.com/v1/projects/kokple/databases/(default)/documents/reviews?pageSize=1&key=AIzaSyCtAYeMr_86li7WmmkXUL6Nx0ae8xmG5ME")
+          echo "후기 읽기 응답: $code"
+          head -c 300 out.json; echo
+          code2=$(curl -s -o out2.json -w "%{http_code}" "https://firestore.googleapis.com/v1/projects/kokple/databases/(default)/documents/reports?pageSize=1&key=AIzaSyCtAYeMr_86li7WmmkXUL6Nx0ae8xmG5ME")
+          echo "신고 몰래 읽기 응답(막혀야 정상 403): $code2"
+          code3=$(curl -s -o out3.json -w "%{http_code}" "https://firestore.googleapis.com/v1/projects/kokple/databases/(default)/documents/regionViews?pageSize=1&key=AIzaSyCtAYeMr_86li7WmmkXUL6Nx0ae8xmG5ME")
+          echo "많이 본 지역 읽기 응답(새 규칙이면 200): $code3"
+          test "$code" = 200 && test "$code2" = 403 && test "$code3" = 200

@@ -342,6 +342,20 @@ void pushWatched(Map<String, Map<String, dynamic>> w) {
   });
 }
 
+// 자주 찾는 지역 세기 (시·군·구) — 많이 보는 지역부터 블로그·별점·영업시간을 자동으로 모은다 (로그인 없이도, 한 번에 1씩만)
+Future<void> regionHit(String sido, String city) async {
+  if (sido.isEmpty || city.isEmpty || !await fbReady()) return;
+  final ref = fsdb.doc('regionViews/${sido}_$city'.replaceAll('/', '·'));
+  try {
+    await ref.update({'n': fs.FieldValue.increment(1), 'at': fs.FieldValue.serverTimestamp()});
+  } on fs.FirebaseException catch (e) {
+    if (e.code != 'not-found') return;
+    try {
+      await ref.set({'n': 1, 'sido': sido, 'city': city, 'at': fs.FieldValue.serverTimestamp()});
+    } catch (_) {}
+  } catch (_) {}
+}
+
 // 관리자 메일 인증 확인: 메일의 링크를 누른 뒤 이걸 누르면 새 표시를 받아 관리자 화면이 열린다
 Future<String> checkVerify() async {
   final u = fbAuth.currentUser;

@@ -24,6 +24,10 @@ part 'fb.dart';
 part 'admin.dart';
 part 'intro.dart';
 part 'review.dart';
+part 'region.dart';
+part 'near.dart';
+part 'nav.dart';
+part 'mypage.dart';
 
 const kPoint = kAccent; // 콕플 주색 (빨강주황): 단추·고른 탭·강조
 const kPointText = Color(0xFFDC3519); // 작은 강조 글씨 (흰 바탕에서 또렷하게 한 톤 진하게)
@@ -39,6 +43,8 @@ const kTop = 20; // 종류별로 지도에 보이는 수
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb && Uri.base.queryParameters['demo'] == '1') reviews.demo = true; // 화면 점검용 예시 후기
+  reviews.loadLocal(); // 차단한 사람 목록 · 후기 규칙 동의 (휴대폰에 둔 것)
+  loadNavPref(); // 길안내를 바로 열 앱 (설정에서 고른 것)
   fbReady().then((ok) {
     if (ok) watchAuth();
   });
@@ -72,7 +78,9 @@ class DfApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const MapPage(),
+      home: kIsWeb && reviews.demo && Uri.base.queryParameters['view'] == 'progress'
+          ? const Scaffold(backgroundColor: Colors.white, body: SafeArea(child: RegionProgressTab()))
+          : const MapPage(),
     );
   }
 }
@@ -321,6 +329,28 @@ class Sido {
 }
 
 // 새로 뜨는 집: 최근 한 달 안에 유튜버 영상이 올라온 집 (영상 날짜 yyyy-mm-dd 또는 yyyymmdd)
+// 한 지도 순위: 다녀간 유튜버 수가 기본, 화제 점수(블로그·리뷰)·별점·방송은 더하기
+double rankScore(Place p) {
+  var s = ytCount(p) * 30.0 + p.score * 0.4;
+  if (p.greviews >= 30) s += (p.grate - 3.8).clamp(0.0, 1.2) * 12;
+  if (p.tv.isNotEmpty) s += 6;
+  return s;
+}
+
+// 같은 가게가 동네 자료(별점·영업시간)와 유튜버 자료에 다 있으면 하나로 (영상은 합쳐서)
+Place mergePlaces(Place rich, Place yt) {
+  final have = {for (final v in rich.vids) v.id};
+  return Place({
+    ...yt.raw,
+    ...rich.raw,
+    'vids': [
+      ...(rich.raw['vids'] ?? const []) as List,
+      for (final v in (yt.raw['vids'] ?? const []) as List)
+        if (v is Map && !have.contains('${v['id']}')) v,
+    ],
+  }, rich.areaId);
+}
+
 String ytLast(Place p) {
   var last = '';
   for (final v in p.vids) {
@@ -511,7 +541,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   Course? course; // 지도에서 보는 중인 테마 코스
   String cuisine = ''; // 음식 종류 고르기 (한식·중식 …, 비면 전체)
   FollowData? follow; // 유명 유튜버 따라가기 (전국)
-  bool followOn = false; // 지도에서 따라가기 가게를 보는 중
+  bool followOn = true; // 지도 기본: 유튜버 따라 먹기 (전국) — 인천 「자세히」 동네만 별점·영업시간 지도로 바꿔 볼 수 있음
+  bool _placed = false, _moved = false; // 처음 지도 자리를 잡았는지 · 손으로 지도를 움직였는지
+  RegionIndex? _ridx; // 지역 검색 목록 (따라가기 가게 주소로 만든다)
+  Object? _ridxOf;
   String here = ''; // 따라가기 중 지도 가운데가 콕플 동네 밖일 때 머리말에 보일 지역 (예: 제주 제주시, 전국)
   String followCh = ''; // 그중 한 채널만 (비면 전체)
   List<Place> _fp = const [];
@@ -533,6 +566,95 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
     return _fp;
   }
+  // 한 지도: 유튜버 다녀간 집(전국) + 수집·순위 맛집(인천 등) — 같은 집은 하나로
+  List<Place> _mp = const [];
+  String _mpKey = '#';
+  final Map<String, double> _score = {};
+  List<Place> get mapPlaces {
+    final f = follow;
+    final key = '$followCh|$cuisine|${identityHashCode(f)}|${identityHashCode(guards)}|${[for (final e in loaded.entries) '${e.key}:${identityHashCode(e.value)}'].join(',')}';
+    if (key == _mpKey) return _mp;
+    _mpKey = key;
+    final byId = <String, Place>{for (final p in followPlaces) p.id: p};
+    for (final d in loaded.values) {
+      for (final p in d.places) {
+        if (!(p.top || p.rise || p.vids.isNotEmpty)) continue;
+        final fp = byId[p.id];
+        if (followCh.isNotEmpty && fp == null && !p.vids.any((v) => v.cid == followCh)) continue;
+        byId[p.id] = fp == null ? p : mergePlaces(p, fp);
+      }
+    }
+    Iterable<Place> l = byId.values;
+    if (cuisine.isNotEmpty) l = l.where((p) => cuisineOf(p) == cuisine);
+    _mp = l.toList();
+    _score
+      ..clear()
+      ..addEntries([for (final p in _mp) MapEntry(p.id, rankScore(p))]);
+    return _mp;
+  }
+
+  List<Place> _ap = const [];
+  String _apKey = '#';
+  List<Place> get anyPlaces {
+    final f = follow;
+    final key = '${identityHashCode(f)}|${identityHashCode(guards)}|${[for (final e in loaded.entries) '${e.key}:${identityHashCode(e.value)}'].join(',')}';
+    if (key == _apKey) return _ap;
+    _apKey = key;
+    final byId = <String, Place>{
+      for (final p in f?.places ?? const <Place>[])
+        if (guards[p.id]?.hidden != true) p.id: guarded(p)
+    };
+    for (final d in loaded.values) {
+      for (final p in d.places) {
+        if (!(p.top || p.rise || p.vids.isNotEmpty)) continue;
+        final fp = byId[p.id];
+        byId[p.id] = fp == null ? p : mergePlaces(p, fp);
+      }
+    }
+    return _ap = byId.values.toList();
+  }
+
+  // 내 주변 (아래 가운데 단추): 위 반 지도 + 아래 반 가까운 순 목록
+  Future<void> openNear() async {
+    final at = me ?? myPos.value;
+    if (at != null) await _ensureNear(at);
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => NearPage(
+        places: () => anyPlaces,
+        me: at,
+        area: area,
+        names: follow?.names ?? const {},
+        isKok: isKok,
+        onKok: toggleKok,
+        onSeen: noteRecent,
+        onMe: (p) {
+          setState(() => me = p);
+          myPos.value = p;
+          _ensureNear(p);
+        },
+        richer: richer,
+        recentDays: data?.recentDays ?? 90,
+      ),
+    ));
+  }
+
+  int byRank(Place a, Place b) {
+    final c = (_score[b.id] ?? rankScore(b)).compareTo(_score[a.id] ?? rankScore(a));
+    return c != 0 ? c : ytLast(b).compareTo(ytLast(a));
+  }
+
+  // 지금 화면(조금 넉넉히)에 들어온 가게, 순위 순
+  List<Place> inView({double pad = 0.1, int max = 300}) {
+    final b = bounds;
+    Iterable<Place> src = mapPlaces;
+    if (b != null) {
+      final dLat = (b.north - b.south) * pad, dLng = (b.east - b.west) * pad;
+      src = src.where((p) => p.lat >= b.south - dLat && p.lat <= b.north + dLat && p.lng >= b.west - dLng && p.lng <= b.east + dLng);
+    }
+    return (src.toList()..sort(byRank)).take(max).toList();
+  }
+
   Timer? _sync;
   static const kClusterZoom = 11.5; // 이보다 넓게 보면 동네별 숫자 묶음
   static const kSidoZoom = 9.0; // 이보다 넓게 보면 시·도별 숫자 묶음
@@ -544,17 +666,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   bool locating = false;
   static const kNearMeters = 3000.0; // 내 주변: 3km 안
   double zoom = 13;
-  String get kindLabel {
-    final b = switch (kind) {
-      'cafe' => '카페',
-      'food' => '맛집',
-      'near' => '내 주변',
-      'open' => '영업 중',
-      'rise' => '새로 뜨는 집',
-      _ => '맛집·카페',
-    };
-    return cuisine.isEmpty ? b : (kind == 'all' ? cuisine : '$cuisine $b');
-  }
 
   // 홈에서 음식 종류: 지도로 가서 지금 동네의 그 음식 집이 모두 보이게 맞춘다
   void goCuisine(String c) {
@@ -562,7 +673,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       followOn = false;
       focus = null;
       tab = 2;
-      regionOpen = false;
       kind = 'all';
       cuisine = c;
       course = null;
@@ -622,18 +732,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
-  // 분류 단추를 눌렀을 때: 내 주변은 위치부터 확인
+  // 내 주변 (홈 지역 메뉴): 지도로 가서 내 위치 둘레를 크게
   Future<void> pickKind(String k) async {
-    if (k != 'near') {
-      setState(() {
-        kind = k;
-        focus = null;
-      });
-      return;
-    }
     setState(() {
-      kind = 'near';
-      followOn = false;
+      tab = 2;
       focus = null;
       locating = true;
       course = null;
@@ -647,14 +749,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         myPos.value = pos;
       }
     });
-    if (pos != null) await _ensureNear(pos);
-    if (!mounted) return;
     if (pos == null) {
-      setState(() => kind = 'all');
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('내 위치를 확인하지 못했습니다. 위치 사용을 허용해 주세요.')));
       return;
     }
-    map.move(pos, 15);
+    _moved = true;
+    await _ensureNear(pos);
+    if (mounted) map.move(pos, 14.5);
   }
 
   @override
@@ -867,16 +968,23 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (v != null && v != me && mounted) setState(() => me = v);
   }
 
-  // 처음 켤 때 위치: 허락해 둔 휴대폰은 조용히 받고, 허락을 묻는 건 처음 한 번만
+  // 처음 켤 때 위치: 허락해 둔 휴대폰은 조용히 받고, 허락을 묻는 건 처음 한 번만 (왜 쓰는지 먼저 알린 뒤)
   Future<LatLng?> _firstLocation() async {
     try {
       final sp = await SharedPreferences.getInstance();
       if (!(sp.getBool('loc_asked') ?? false)) {
+        final perm = await Geolocator.checkPermission();
+        if (perm == LocationPermission.always || perm == LocationPermission.whileInUse) return await quietLocation();
         await sp.setBool('loc_asked', true);
+        final f = Completer<void>();
+        WidgetsBinding.instance.addPostFrameCallback((_) => f.complete());
+        await f.future;
+        if (!mounted) return null;
+        if (await locationReason(context) != true) return null;
         return await myLocation();
       }
     } catch (_) {}
-    return quietLocation();
+    return await quietLocation();
   }
 
   Future<void> _start() async {
@@ -916,22 +1024,19 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       area = pick;
     });
     if (at == null) {
-      // 위치가 늦게 오면: 아직 홈에서 처음 동네를 보고 있을 때만 내 동네로 바꾼다
+      // 위치가 늦게 오면: 홈은 아직 처음 동네를 보고 있을 때만 내 동네로, 지도는 아직 손대지 않았으면 내 주변으로
       locF.then((late) {
+        if (!mounted || late == null) return;
+        me = late;
+        _placeMap(again: true);
         final near = nearArea(readyAreas, late);
-        if (!mounted || near == null || near.id == pick.id) return;
-        if (area.id != pick.id || tab != 0 || regionOpen) return;
+        if (near == null || near.id == pick.id) return;
+        if (area.id != pick.id || tab != 0) return;
         setState(() => area = near);
-        try {
-          map.move(near.center, near.zoom);
-        } catch (_) {}
         _ensure(near.id);
       });
-    }
-    if (pick.id != kDefaultArea.id) {
-      try {
-        map.move(pick.center, pick.zoom);
-      } catch (_) {}
+    } else {
+      me = at;
     }
     _load();
     loadFollow().then((f) {
@@ -940,7 +1045,32 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           follow = f;
           _fpKey = '#';
         });
+        _placeMap();
       }
+    });
+  }
+
+  // 지도 첫 자리: 내 위치가 있으면 가까운 유튜버 맛집 몇 곳이 함께 보이게, 없으면 전국
+  void _placeMap({bool again = false}) {
+    if (follow == null || _moved || (_placed && !again)) return;
+    _placed = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _moved) return;
+      final at = me ?? myPos.value;
+      try {
+        if (at == null) {
+          map.move(const LatLng(36.25, 127.8), 6.4);
+          return;
+        }
+        final near = [...followPlaces]..sort((a, b) => meters(at, a.point).compareTo(meters(at, b.point)));
+        final pts = [at, for (final p in near.take(8)) if (meters(at, p.point) < 40000) p.point];
+        if (pts.length >= 4) {
+          final c = CameraFit.coordinates(coordinates: pts, padding: const EdgeInsets.fromLTRB(40, 230, 40, 110), maxZoom: 14).fit(map.camera);
+          map.move(c.center, c.zoom.clamp(10.0, 14.0).toDouble());
+        } else {
+          map.move(at, 11);
+        }
+      } catch (_) {}
     });
   }
 
@@ -969,7 +1099,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       followOn = false;
       here = '';
       focus = null;
-      regionOpen = false;
       area = a;
       course = null;
     });
@@ -978,8 +1107,25 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _ensure(a.id);
   }
 
+  // 자주 찾는 지역: 지역을 고르거나 한 곳을 몇 초 넘게 가까이 보면 그 시·군·구를 한 번 센다 (앱을 켤 때마다 지역당 한 번)
+  final Set<String> _noted = {};
+  Timer? _noteT;
+  void noteRegion(String sido, String city, {bool picked = false}) {
+    if (sido.isEmpty || city.isEmpty || reviews.demo) return;
+    if (!_noted.add('$sido $city')) return;
+    regionHit(sido, city);
+  }
+
   // 지도가 멈추면: 보이는 범위에 걸친 동네 자료를 불러오고, 머리말 동네를 지도 가운데 동네로
   void _syncView(MapCamera cam) {
+    _noteT?.cancel();
+    if (cam.zoom >= 11 && follow != null && tab == 2) {
+      _noteT = Timer(const Duration(seconds: 4), () {
+        final nm = placeName(cam.center, follow!.places, cam.zoom);
+        final i = nm.indexOf(' ');
+        if (i > 0) noteRegion(nm.substring(0, i), nm.substring(i + 1));
+      });
+    }
     if (!mounted) return;
     setState(() {
       bounds = cam.visibleBounds;
@@ -993,7 +1139,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final inside = readyAreas.where((a) => a.contains(cam.center)).toList()
       ..sort((x, y) => meters(cam.center, x.center).compareTo(meters(cam.center, y.center)));
     // 따라가기 중: 넓게 보면 시·도(또는 전국), 콕플 동네 밖이면 시·군·구까지 — 동네 안을 가까이 볼 때만 동네 이름
-    final h = (followOn && follow != null && (inside.isEmpty || cam.zoom < 10.5)) ? placeName(cam.center, follow!.places, cam.zoom) : '';
+    final h = (follow != null && (inside.isEmpty || cam.zoom < 10.5)) ? placeName(cam.center, follow!.places, cam.zoom) : '';
     if (h != here) setState(() => here = h);
     if (inside.isNotEmpty && inside.first.id != area.id) {
       final a = inside.first;
@@ -1032,29 +1178,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         ),
       );
 
-  // 축소 화면: 동네별(더 넓으면 시·도별) 숫자 묶음 — 수집할 때 세어 둔 숫자만 쓴다
-  List<Marker> clusterMarkers() {
-    int n(Area a) {
-      final c = a.countFor(kind);
-      if (c > 0) return c;
-      final d = loaded[a.id];
-      return d == null ? 0 : d.places.where((p) => p.top && (kind != 'food' && kind != 'cafe' || p.kind == kind)).length;
-    }
-
-    if (zoom < kSidoZoom) {
-      return [
-        for (final s in sidos)
-          if (s.ready)
-            () {
-              final ra = s.areas.where((a) => a.ready).toList();
-              final c = LatLng(ra.map((a) => a.lat).reduce((x, y) => x + y) / ra.length, ra.map((a) => a.lng).reduce((x, y) => x + y) / ra.length);
-              return bubble(s.name, c, s.name, ra.fold<int>(0, (t, a) => t + n(a)), () => map.move(c, kSidoZoom + 1.5));
-            }(),
-      ];
-    }
-    return [for (final a in readyAreas) bubble(a.id, a.center, a.name, n(a), () => map.move(a.center, a.zoom))];
-  }
-
   // 따라가기 축소 화면: 화면 칸(가로 130·세로 60px)마다 묶고, 겹치는 풍선은 큰 쪽에 합친다
   // 이름: 넓게 보면 시·도, 가까이 보면 시·군·구 — 한 지역이 60% 넘으면 그 이름, 아니면 「○○ 일대」
   List<Marker> followClusters() {
@@ -1067,7 +1190,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
 
     final cells = <String, List<Place>>{};
-    for (final p in followPlaces) {
+    for (final p in mapPlaces) {
       final o = px(p.point);
       cells.putIfAbsent('${(o.dx / 130).floor()}_${(o.dy / 60).floor()}', () => []).add(p);
     }
@@ -1128,7 +1251,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _fpKey = '#';
       course = null;
       tab = 2;
-      regionOpen = false;
       searching = false;
       query = '';
       searchCtl.clear();
@@ -1158,10 +1280,118 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _fpKey = '#';
       course = null;
       tab = 2;
-      regionOpen = false;
       searching = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => openPlace(p));
+  }
+
+  // 유튜버 고르기 줄: 지금 보는 곳에 그 유튜버 집이 있으면 그대로, 없으면 그 유튜버 집이 다 보이게
+  void pickChannel(String ch) {
+    setState(() {
+      followCh = ch;
+      _fpKey = '#';
+      focus = null;
+    });
+    final ps = followPlaces;
+    final b = bounds;
+    if (ps.isEmpty) return;
+    if (b != null && ps.any((p) => b.contains(p.point))) return;
+    map.fitCamera(CameraFit.coordinates(coordinates: [for (final p in ps) p.point], padding: const EdgeInsets.fromLTRB(40, 230, 40, 100), maxZoom: 12.5));
+  }
+
+  Widget _cuisineChip() => Semantics(
+        button: true,
+        label: '$cuisine 걸러 보기 풀기',
+        onTap: () => pickCuisine(''),
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: () => pickCuisine(''),
+          child: Container(
+            height: 32,
+            padding: const EdgeInsets.only(left: 10, right: 10),
+            decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(16)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text('${kCuisineEmoji[cuisine] ?? '🍱'} $cuisine', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+              const SizedBox(width: 4),
+              const Icon(Icons.close_rounded, size: 15, color: Colors.white),
+            ]),
+          ),
+        ),
+      );
+
+  // 지역 검색: 전국 시·도 → 시·군·구 (유튜버 맛집이 있는 곳, 가게 수와 함께)
+  Future<void> openRegionSearch({bool fromMap = true}) async {
+    final f = follow;
+    if (f == null) {
+      _toast('유튜버 맛집 자료를 받는 중이에요. 잠시 뒤에 다시 눌러 주세요');
+      return;
+    }
+    if (_ridx == null || !identical(_ridxOf, f)) {
+      _ridx = RegionIndex.from(f.places, readyAreas);
+      _ridxOf = f;
+    }
+    final cur = here.isNotEmpty ? here.split(' ').first : area.sido;
+    final pick = await showModalBottomSheet<RegionPick>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (_) => RegionSearchSheet(index: _ridx!, current: cur),
+    );
+    if (pick == null || !mounted) return;
+    if (!fromMap) {
+      final d = pick.spot?.detail;
+      if (d != null) {
+        // 별점·영업시간까지 모은 동네: 지금 화면(홈·영상)을 그 동네로
+        setArea(d);
+        noteRegion(pick.spot!.sido, pick.spot!.city, picked: true);
+        return;
+      }
+      // 그 밖: 지도로 넘어가 그 지역 유튜버 다녀간 집을 바로 보여 줌
+      setState(() => tab = 2);
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    _moved = true;
+    if (pick.all) {
+      setState(() {
+        focus = null;
+        course = null;
+      });
+      map.move(const LatLng(36.25, 127.8), 6.4);
+      return;
+    }
+    if (pick.me) {
+      final at = me ?? await myLocation();
+      if (!mounted) return;
+      if (at == null) {
+        _toast('내 위치를 확인하지 못했어요. 위치 사용을 허용해 주세요');
+        return;
+      }
+      setState(() {
+        me = at;
+        focus = null;
+        course = null;
+      });
+      myPos.value = at;
+      _moved = false;
+      _placed = false;
+      _placeMap();
+      return;
+    }
+    final sp = pick.spot!;
+    final pts = sp.core;
+    setState(() {
+      focus = null;
+      course = null;
+    });
+    if (sp.city.isNotEmpty) noteRegion(sp.sido, sp.city, picked: true);
+    if (pts.length >= 2) {
+      final c = CameraFit.coordinates(coordinates: pts, padding: const EdgeInsets.fromLTRB(36, 240, 36, 90), maxZoom: 14.5).fit(map.camera);
+      map.move(c.center, c.zoom);
+    } else if (pts.isNotEmpty) {
+      map.move(pts.first, 13.5);
+    }
   }
 
   void closeFollow() {
@@ -1195,6 +1425,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   // 오늘 뭐 먹지: 뽑을 집 (유튜버·방송 맛집, 모자라면 인기 맛집까지)
   List<Place> roulettePool(String k, bool near) {
     final at = me;
+    if (near && at != null) {
+      final yt = anyPlaces.where((p) => p.vids.isNotEmpty && (k == 'all' || p.kind == k) && meters(at, p.point) <= kNearMeters).toList();
+      if (yt.length >= 2) return yt;
+    }
     Iterable<Place> src = near && at != null
         ? loaded.values.expand((d) => d.places).where((p) => meters(at, p.point) <= kNearMeters)
         : (data?.places ?? const <Place>[]);
@@ -1240,7 +1474,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       focus = null;
       course = c;
       tab = 2;
-      regionOpen = false;
       searching = false;
       query = '';
       searchCtl.clear();
@@ -1291,10 +1524,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   // 「이 집 어디야」: 지도 탭으로 가서 그 집을 연다
   void goWhere(Place p) {
     setState(() {
-      followOn = false;
+      followOn = true;
       focus = null;
       tab = 2;
-      regionOpen = false;
       course = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => openPlace(p));
@@ -1530,18 +1762,20 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
-  bool regionOpen = false; // 지역 메뉴(머리말 아래로 펼침)
   bool searching = false; // 가게 이름 검색
   String query = '';
   final searchCtl = TextEditingController();
 
+  bool _searchFrom = true; // 검색을 열 때 유튜버 지도였는지
   void openSearch() => setState(() {
         searching = !searching;
-        followOn = false;
         focus = null;
-        regionOpen = false;
         course = null;
-        if (!searching) {
+        if (searching) {
+          _searchFrom = followOn;
+          followOn = false;
+        } else {
+          followOn = _searchFrom;
           query = '';
           searchCtl.clear();
         }
@@ -1562,45 +1796,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     ));
   }
 
-  Widget chipsRow() => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          for (final k in const [
-            ['all', '전체', '🏆'],
-            ['near', '내 주변', '📍'],
-            ['open', '영업 중', '⏰'],
-            ['food', '맛집', '🍽️'],
-            ['cafe', '카페', '☕'],
-            ['rise', '새로 뜨는 집', '🚀'],
-          ])
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: _Chip(label: k[1], emoji: k[2], on: kind == k[0], onTap: () => pickKind(k[0])),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: _Chip(
-              label: cuisine.isEmpty ? '음식 종류' : '$cuisine ✕',
-              emoji: cuisine.isEmpty ? '🍱' : (kCuisineEmoji[cuisine] ?? '🍱'),
-              on: cuisine.isNotEmpty,
-              onTap: () {
-                if (cuisine.isEmpty) {
-                  openCuisine();
-                } else {
-                  pickCuisine('');
-                }
-              },
-            ),
-          ),
-          _Chip(label: feats.isEmpty ? '편의 필터' : '편의 필터 ${feats.length}', emoji: '🛎️', on: feats.isNotEmpty, onTap: openFeats),
-        ]),
-      );
-
-  void openRegion() {
-    if (sidos.isEmpty) return;
-    setState(() => regionOpen = !regionOpen);
-  }
-
   Iterable<Place> get pool {
     final b = bounds;
     if (b == null) return data?.places ?? const <Place>[];
@@ -1610,33 +1805,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   List<Place> get visible {
-    if (followOn) return followVisible();
     final cs = course;
     if (cs != null) return cs.stops;
-    if (loaded.isEmpty) return [];
-    final all = loaded.values.expand((d) => d.places);
     if (query.isNotEmpty) {
       final q = query.replaceAll(' ', '').toLowerCase();
-      return all.where((p) => (p.top || p.rise) && p.name.replaceAll(' ', '').toLowerCase().contains(q)).toList()
-        ..sort((a, b) => b.score.compareTo(a.score));
+      return (mapPlaces.where((p) => p.name.replaceAll(' ', '').toLowerCase().contains(q)).toList()..sort(byRank)).take(80).toList();
     }
-    var src = (kind == 'near' ? all : pool).where((p) => kind == 'rise' ? ytRecent(p) : (p.top && p.score > 0));
-    if (feats.isNotEmpty) src = src.where((p) => feats.every(p.feat.contains));
-    if (cuisine.isNotEmpty) src = src.where((p) => cuisineOf(p) == cuisine);
-    if (kind == 'open') src = src.where((p) => openInfo(p)?.open == true);
-    if (kind == 'rise') {
-      return src.toList()..sort((a, b) => ytLast(b).compareTo(ytLast(a)));
-    }
-    if (kind == 'food' || kind == 'cafe') src = src.where((p) => p.kind == kind);
-    if (kind == 'near') {
-      final at = me;
-      if (at == null) return [];
-      final near = src.where((p) => meters(at, p.point) <= kNearMeters).toList()
-        ..sort((a, b) => meters(at, a.point).compareTo(meters(at, b.point)));
-      return near.take(kTop).toList();
-    }
-    // 보이는 범위의 가게는 모두 (동네마다 이미 종류별 상위만 모아 둔 자료)
-    return src.toList()..sort((a, b) => b.score.compareTo(a.score));
+    return inView();
   }
 
   // 지도 표시 3단계: 0 = 펼친 카드, 1 = 접힌 카드(사진만), 2 = 작은 아이콘
@@ -1680,32 +1855,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   String subText(int total, int cards) {
-    final d = data;
     final cs = course;
-    if (followOn) {
-      final nm = followCh.isEmpty ? '유튜버 따라 먹기' : (follow?.names[followCh] ?? '');
-      return zoom < kClusterZoom ? '$nm · 전국 ${commas(followPlaces.length)}곳  ·  확대하면 가게가 보여요' : '$nm · 이 화면 $total곳';
-    }
     if (cs != null) return cs.route ? '${cs.name} · ${cs.stops.length}곳을 순서대로 이었어요' : '${cs.name} · ${cs.stops.length}곳';
-    if (zoom < kClusterZoom) return '동네별 가게 수  ·  확대하면 가게가 보여요';
-    if (d == null) return '맛집 자료를 불러오는 중';
+    final nm = followCh.isEmpty ? '' : '${follow?.names[followCh] ?? ''} · ';
+    final cu = cuisine.isEmpty ? '' : '$cuisine · ';
     if (query.isNotEmpty) return total == 0 ? '「$query」 찾는 집이 없습니다' : '「$query」 $total곳';
-    if (kind == 'near') {
-      if (locating || me == null) return '내 위치를 확인하는 중';
-      if (total == 0) return '3km 안에 아직 자료가 있는 집이 없습니다';
-      return '내 위치에서 가까운 $total곳  ·  가까운 순';
-    }
-    if (total == 0) {
-      if (feats.isNotEmpty) return '편의 필터에 맞는 집이 없습니다';
-      if (cuisine.isNotEmpty) return '이 범위에는 $cuisine 집이 없어요 · 지도를 넓혀 보세요';
-      return switch (kind) {
-        'rise' => '최근 한 달 안에 유튜버가 다녀간 집이 아직 없습니다',
-        'open' => '지금 문 연 집이 없습니다',
-        _ => '아직 자료가 없습니다',
-      };
-    }
-    if (kind == 'rise') return '최근 한 달 안에 유튜버가 다녀간 $total곳  ·  최근 영상 순';
-    return cards < total ? '$kindLabel 상위 $total곳 · 확대하면 더 보여요' : '$kindLabel 화제 상위 $total곳  ·  ${d.updated} 기준';
+    if (follow == null && loaded.isEmpty) return '맛집 자료를 불러오는 중';
+    if (zoom < kClusterZoom) return '$nm$cu전국 ${commas(mapPlaces.length)}곳 · 확대하면 가게가 보여요';
+    if (total == 0) return '$nm$cu이 화면에는 아직 맛집이 없어요 · 지도를 넓혀 보세요';
+    return '$nm$cu이 화면 $total곳 · 유튜버 많이 다녀간 순';
   }
 
   Marker markerFor(Place p, int i, int t, int d, {bool focus = false, bool? numbered}) {
@@ -1719,7 +1877,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         width: side ? w + 6 : w,
         height: side ? ch : ch + 6,
         alignment: const [Alignment.topCenter, Alignment.bottomCenter, Alignment.centerRight, Alignment.centerLeft][d],
-        child: PlaceMarker(place: p, rank: i + 1, open: t == 0 || focus, dir: d, numbered: numbered ?? !followOn, focus: focus, onTap: () => openPlace(p)),
+        child: PlaceMarker(place: p, rank: i + 1, open: t == 0 || focus, dir: d, numbered: numbered ?? true, focus: focus, onTap: () => openPlace(p)),
       );
     }
     return Marker(
@@ -1732,11 +1890,19 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
-  void openPlace(Place p) {
+  Place richer(Place p) {
+    if (p.areaId != 'follow') return p;
+    final r = loaded.values.expand((d) => d.places).where((x) => x.id == p.id).firstOrNull;
+    return r == null ? p : mergePlaces(r, p);
+  }
+
+  void openPlace(Place p0) {
+    final p = richer(p0);
     noteRecent(p);
-    // 처음엔 낮게: 이름 · 별점·거리·영업·주소 + 오른쪽 바로가기 (+ 편의 한 줄) 까지만, 끌어올리면 끝까지
+    // 처음엔 낮게: 이름 (+ 유튜버 다녀감) + 길안내 단추 줄 + 별점·거리 한두 줄까지만, 끌어올리면 끝까지
     final mq = MediaQuery.of(context);
-    final px = 238.0 + (oneLine(p).isNotEmpty ? 24 : 0) + (p.feat.any(kFeat.containsKey) ? 38 : 0) + mq.padding.bottom;
+    final poor = p.greviews == 0 && p.week.isEmpty;
+    final px = 162.0 + (oneLine(p).isNotEmpty ? 24 : 0) + (poor && p.vids.isNotEmpty ? 88 : 0) + 66 + (poor ? 8 : 48) + mq.padding.bottom;
     final peek = (px / mq.size.height).clamp(0.26, 0.6).toDouble();
     // 그 집이 아래 창에 가리지 않게: 위 머리말과 아래 창 사이 가운데쯤 오도록 지도를 옮긴다
     final z = math.max(map.camera.zoom, 16.0);
@@ -1754,7 +1920,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   void openRank() {
-    final list = visible;
+    final list = inView(pad: 0, max: 50);
+    if (list.isEmpty) {
+      _toast('이 화면에는 아직 순위에 올릴 집이 없어요. 지도를 넓혀 보세요');
+      return;
+    }
+    final where = here.isNotEmpty ? here : area.name;
+    final who = followCh.isEmpty ? '' : '${follow?.names[followCh] ?? ''} ';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1771,15 +1943,26 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             if (i == 0) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text.rich(TextSpan(children: [
-                  TextSpan(text: kind == 'near' ? '내 주변 ' : '${area.name} $kindLabel ', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: kInk)),
-                  TextSpan(text: kind == 'near' ? '가까운 순' : '화제 순위', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
-                  TextSpan(text: '  상위 ${list.length}곳', style: const TextStyle(fontSize: 13, color: kGray)),
-                ])),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text.rich(TextSpan(children: [
+                    TextSpan(text: '$where $who${cuisine.isEmpty ? '' : '$cuisine '}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: kInk)),
+                    const TextSpan(text: '순위', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kInk)),
+                    TextSpan(text: '  상위 ${list.length}곳', style: const TextStyle(fontSize: 13, color: kGray)),
+                  ])),
+                  const SizedBox(height: 3),
+                  const Text('다녀간 유튜버 수를 기본으로, 별점·블로그 화제가 있으면 더해요', style: TextStyle(fontSize: 11.5, color: kGray)),
+                ]),
               );
             }
             final p = list[i - 1];
-            return InkWell(
+            final yt = ytCount(p);
+            final o = openInfo(p);
+            final chans = p.vids.map((v) => follow?.names[v.cid] ?? v.channel).where((x) => x.isNotEmpty).toSet().take(2).join(', ');
+            return Semantics(
+              button: true,
+              label: '$i위 ${p.name}',
+              excludeSemantics: true,
+              child: InkWell(
               onTap: () {
                 Navigator.pop(ctx);
                 openPlace(p);
@@ -1803,34 +1986,35 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         ],
                       ]),
                       const SizedBox(height: 2),
-                      Builder(builder: (_) {
-                        final o = openInfo(p);
-                        return Text.rich(
-                          TextSpan(children: [
-                            if (kind == 'near' && me != null)
-                              TextSpan(text: '${distText(meters(me!, p.point))}  ·  ', style: const TextStyle(fontWeight: FontWeight.w600, color: kInk)),
-                            if (kind == 'rise' && ytLast(p).isNotEmpty)
-                              TextSpan(text: '${mdText(ytLast(p))} 영상  ·  ', style: const TextStyle(fontWeight: FontWeight.w600, color: kPointText)),
-                            if (kind != 'food' && kind != 'cafe')
-                              TextSpan(
-                                text: p.kind == 'cafe' ? '카페  ·  ' : '맛집  ·  ',
-                                style: TextStyle(fontWeight: FontWeight.w600, color: kindTint(p.kind)),
-                              ),
-                            if (o != null)
-                              TextSpan(text: '${o.short}  ·  ', style: TextStyle(fontWeight: FontWeight.w600, color: o.open ? kPointText : kGray)),
-                            TextSpan(text: '${p.cat}${p.greviews > 0 ? '  ·  ★${p.grate.toStringAsFixed(1)} (${commas(p.greviews)})' : ''}  ·  블로그 ${p.blog}'),
-                          ]),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12, color: kGray),
-                        );
-                      }),
+                      Text.rich(
+                        TextSpan(children: [
+                          if (yt > 0) TextSpan(text: '유튜버 $yt명${chans.isEmpty ? '' : ' ($chans)'}  ·  ', style: const TextStyle(fontWeight: FontWeight.w600, color: kPointText)),
+                          if (o != null) TextSpan(text: '${o.short}  ·  ', style: TextStyle(fontWeight: FontWeight.w600, color: o.open ? kPointText : kGray)),
+                          if (p.greviews > 0) TextSpan(text: '★${p.grate.toStringAsFixed(1)}  ·  '),
+                          if (p.blog > 0) TextSpan(text: '블로그 ${p.blog}  ·  '),
+                          TextSpan(text: p.cat.split(' > ').last),
+                        ]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: kGray),
+                      ),
                     ]),
                   ),
-                  ScoreTag(score: p.score),
+                  if (yt > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      decoration: BoxDecoration(color: kAccentTint, borderRadius: BorderRadius.circular(10)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        const LineIcon('play', size: 12, color: kPointText),
+                        const SizedBox(width: 3),
+                        Text('$yt', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: kPointText)),
+                      ]),
+                    )
+                  else if (p.score > 0)
+                    ScoreTag(score: p.score),
                 ]),
               ),
-            );
+            ));
           },
         ),
       ),
@@ -1839,23 +2023,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final panel = RegionPanel(
-      sidos: sidos,
-      current: area,
-      onPick: setArea,
-      onNear: () {
-        setState(() {
-          regionOpen = false;
-          tab = 2;
-        });
-        pickKind('near');
-      },
-    );
     void toMapSearch() => setState(() {
           followOn = false;
           focus = null;
           tab = 2;
-          regionOpen = false;
           searching = true;
         });
     return Scaffold(
@@ -1869,9 +2040,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           data: data,
           error: error,
           area: area,
-          regionOpen: regionOpen && tab == 0,
-          regionPanel: panel,
-          onRegion: openRegion,
+          onRegion: () => openRegionSearch(fromMap: false),
           onSearch: toMapSearch,
           onRetry: _load,
           onRoulette: openRoulette,
@@ -1890,9 +2059,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           onRefresh: pullRefresh,
           data: data,
           area: area,
-          regionOpen: regionOpen && tab == 1,
-          regionPanel: panel,
-          onRegion: openRegion,
+          onRegion: () => openRegionSearch(fromMap: false),
           onSearch: toMapSearch,
           onWhere: goWhere,
         ),
@@ -1920,22 +2087,21 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         tab: tab,
         onTap: (i) => setState(() {
           tab = i;
-          regionOpen = false;
         }),
-        onCenter: openRoulette,
+        onCenter: openNear,
       ),
     );
   }
 
   Widget _mapTab(BuildContext context) {
-    final base = visible;
+    final clustered = zoom < kClusterZoom && course == null && query.isEmpty;
+    final base = clustered ? const <Place>[] : visible;
     // 지금 연 가게: 순위가 낮거나 지금 분류에 없어도 큰 카드로, 맨 위에 (번호는 원래 순위, 목록에 없으면 번호 없이)
     final f = focus;
     var fi = f == null ? -1 : base.indexWhere((x) => x.id == f.id);
     final extra = f != null && fi < 0 && course == null;
-    final list = extra ? [...base, f!] : base;
+    final list = extra ? [...base, f] : base;
     if (extra) fi = list.length - 1;
-    final wide = MediaQuery.of(context).size.width >= 760; // 넓은 화면: 분류 단추를 머리말 오른쪽에
     final place = layout(list, first: fi);
     final cards = place.where((x) => x.$1 == 0).length;
     // 작은 것부터 깔고 큰 카드를 위에 (같은 단계는 높은 순위가 위), 지금 연 가게는 맨 위
@@ -1959,6 +2125,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             // 두 손가락에 지도가 돌아가지 않게 (맛집 지도는 늘 북쪽이 위)
             interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
             onPositionChanged: (camera, hasGesture) {
+              if (hasGesture) _moved = true;
               if ((camera.zoom - zoom).abs() >= 0.05) setState(() => zoom = camera.zoom);
               _sync?.cancel();
               _sync = Timer(const Duration(milliseconds: 250), () => _syncView(camera));
@@ -1981,8 +2148,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             MarkerLayer(
               markers: [
                 // 넓게 보면 동네별 숫자 묶음, 확대하면 가게 하나하나 (코스는 늘 가게로)
-                if (zoom < kClusterZoom && course == null)
-                  ...(followOn ? followClusters() : clusterMarkers())
+                if (clustered)
+                  ...followClusters()
                 else
                   for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2, focus: i == fi, numbered: extra && i == fi ? false : null),
                 if (me != null)
@@ -2005,30 +2172,18 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             ),
           ],
         ),
-        if (regionOpen)
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => regionOpen = false),
-              child: const SizedBox.expand(),
-            ),
-          ),
         // 위쪽 머리말
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               _Header(
-                data: data,
-                area: area,
-                here: followOn ? here : '',
-                open: regionOpen,
-                onRegion: openRegion,
+                label: here.isNotEmpty ? here : '${area.sido} ${area.name}',
+                onRegion: openRegionSearch,
                 sub: subText(base.length, cards),
-                onRank: data == null ? null : openRank,
+                onRank: mapPlaces.isNotEmpty ? openRank : null,
                 onSearch: openSearch,
                 searching: searching,
-                middle: (wide && !regionOpen && !searching && course == null && !followOn) ? chipsRow() : null,
               ),
               const SizedBox(height: 8),
               if (searching)
@@ -2059,64 +2214,36 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     IconButton(onPressed: openSearch, icon: const Icon(Icons.close_rounded, color: kInk, size: 20)),
                   ]),
                 ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: !regionOpen
-                    ? const SizedBox(width: double.infinity)
-                    : RegionPanel(
-                        sidos: sidos,
-                        current: area,
-                        onPick: setArea,
-                        onNear: () {
-                          setState(() => regionOpen = false);
-                          pickKind('near');
-                        },
-                      ),
-              ),
-              if (!regionOpen && !searching && followOn && follow != null)
-                FollowBar(follow: follow!, current: followCh, onPick: openFollow, onClose: closeFollow)
-              else if (!regionOpen && !searching && course != null)
-                CourseBar(course: course!, onList: () => openCourseSheet(course!), onClose: () => setState(() => course = null))
-              else if (!regionOpen && !searching && !wide)
-                chipsRow(),
+              if (!searching && course == null && follow != null)
+                FollowBar(
+                  follow: follow!,
+                  current: followCh,
+                  onPick: pickChannel,
+                  onClose: closeFollow,
+                  compact: true,
+                  extra: cuisine.isEmpty ? null : _cuisineChip(),
+                )
+              else if (!searching && course != null)
+                CourseBar(
+                    course: course!,
+                    onList: () => openCourseSheet(course!),
+                    onClose: () => setState(() {
+                          course = null;
+                          followOn = true;
+                        }))
+
             ]),
           ),
         ),
-        if (data == null && zoom >= kClusterZoom && course == null && !followOn)
+        if (follow == null && loaded.isEmpty)
           Center(
             child: Container(
-              margin: const EdgeInsets.all(30),
               padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
               decoration: _card(),
-              child: error == null
-                  ? const Row(mainAxisSize: MainAxisSize.min, children: [
-                      SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                      SizedBox(width: 12),
-                      Text('맛집 자료를 불러오는 중', style: TextStyle(fontSize: 14, color: kInk)),
-                    ])
-                  : Column(mainAxisSize: MainAxisSize.min, children: [
-                      const Text('자료를 아직 받지 못했습니다', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: kInk)),
-                      const SizedBox(height: 4),
-                      const Text('매일 새벽 자동으로 모읍니다.\n잠시 뒤 다시 시도해 주세요.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4)),
-                      const SizedBox(height: 12),
-                      OutlinedButton(onPressed: _load, child: const Text('다시 불러오기')),
-                    ]),
-            ),
-          ),
-        if (data != null && !followOn && feats.isEmpty && kind == 'rise' && base.isEmpty)
-          Center(
-            child: Container(
-              margin: const EdgeInsets.all(30),
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-              decoration: _card(),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(
-                    '최근 한 달 안에 유튜버가 다녀간 집이 아직 없습니다',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: kInk)),
-                const SizedBox(height: 4),
-                const Text('새 영상이 올라오면 매일 저녁 여기에 보입니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4)),
+              child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(width: 12),
+                Text('맛집 지도를 불러오는 중', style: TextStyle(fontSize: 14, color: kInk)),
               ]),
             ),
           ),
@@ -2152,246 +2279,110 @@ BoxDecoration _card({double r = 14}) => BoxDecoration(
     );
 
 class _Header extends StatelessWidget {
-  final SongdoData? data;
-  final Area area;
-  final String here; // 비어 있지 않으면 동네 이름 대신 (따라가기 중 지금 보는 곳)
-  final bool open;
-  final VoidCallback onRegion;
+  final String label; // 지금 보는 곳 (예: 인천 연수구 · 전국 · 인천 송도/연수)
+  final VoidCallback onRegion; // 지역 검색
   final String sub;
   final VoidCallback? onRank;
   final VoidCallback onSearch;
   final bool searching;
-  final Widget? middle;
   const _Header({
-    required this.data,
-    required this.area,
-    this.here = '',
-    required this.open,
+    required this.label,
     required this.onRegion,
     required this.sub,
     required this.onRank,
     required this.onSearch,
     required this.searching,
-    this.middle,
   });
 
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     final inline = w >= 600; // 넓으면 설명 글을 지역 이름 오른쪽에
-    final region = GestureDetector(
+    final cut = label.indexOf(' ');
+    final first = cut > 0 ? label.substring(0, cut) : '';
+    final rest = cut > 0 ? label.substring(cut + 1) : label;
+    final title = Semantics(
+      header: true,
+      label: '지금 보는 곳 $label',
+      excludeSemantics: true,
+      child: Text.rich(
+        TextSpan(children: [
+          if (first.isNotEmpty) TextSpan(text: '$first ', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: kInk)),
+          TextSpan(text: rest, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: kInk, letterSpacing: -0.4)),
+        ]),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+    final regionBtn = Semantics(
+      button: true,
+      label: '지역 검색',
       onTap: onRegion,
-      behavior: HitTestBehavior.opaque,
-      child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
-        // 네모 지역 단추 (열리면 ✕)
-        Container(
-          width: 42,
-          height: 42,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: kRegion, borderRadius: BorderRadius.circular(10)),
-          child: open ? const _XGlyph(size: 16) : const PinGlyph(size: 24, color: Colors.white, bg: kRegion),
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onRegion,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.only(left: 9, right: 12),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: kPillLine, width: 1)),
+          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+            LineIcon('pin', size: 16, color: kInk),
+            SizedBox(width: 4),
+            Text('지역 검색', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kInk)),
+          ]),
         ),
-        const SizedBox(width: 10),
-        Text(here.isNotEmpty ? (here.contains(' ') ? '${here.split(' ').first} ' : '') : '${area.sido} ',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: kInk)),
-        Flexible(
-          child: Text(here.isNotEmpty ? (here.contains(' ') ? here.substring(here.indexOf(' ') + 1) : here) : area.name,
-              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kInk)),
-        ),
-        Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 28, color: kInk),
-      ]),
+      ),
     );
     final subText = Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: kGray));
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
       decoration: _card(),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
-          if (!inline) Expanded(child: Align(alignment: Alignment.centerLeft, child: region)) else Flexible(child: region),
-          if (inline && middle == null) ...[const SizedBox(width: 16), Expanded(child: subText)],
-          if (inline && middle != null) ...[const SizedBox(width: 16), Flexible(flex: 0, child: subText)],
-        if (middle != null) ...[const SizedBox(width: 18), Expanded(child: middle!)],
-        const SizedBox(width: 8),
-        // 가게 이름 검색
-        InkWell(
-          onTap: onSearch,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: searching ? kDark : Colors.white,
+          Expanded(child: title),
+          if (inline) ...[const SizedBox(width: 12), Flexible(flex: 2, child: subText)],
+          const SizedBox(width: 8),
+          regionBtn,
+          const SizedBox(width: 6),
+          // 가게 이름 검색
+          Semantics(
+            button: true,
+            label: '가게 이름 검색',
+            onTap: onSearch,
+            excludeSemantics: true,
+            child: InkWell(
+              onTap: onSearch,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: searching ? kDark : kLine, width: 1),
-            ),
-            child: Icon(Icons.search_rounded, size: 21, color: searching ? Colors.white : kInk),
-          ),
-        ),
-        const SizedBox(width: 6),
-        TextButton(
-          onPressed: onRank,
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white,
-            backgroundColor: kPoint,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          child: const Text('순위', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-        ),
-        ]),
-        if (!inline) Padding(padding: const EdgeInsets.only(top: 6, left: 2), child: subText),
-      ]),
-    );
-  }
-}
-
-// 직접 그린 ✕ (지역 메뉴 닫기)
-class _XGlyph extends StatelessWidget {
-  final double size;
-  const _XGlyph({required this.size});
-  @override
-  Widget build(BuildContext context) => Transform.rotate(
-        angle: math.pi / 4,
-        child: Stack(alignment: Alignment.center, children: [
-          Container(width: size * 1.25, height: 2, color: Colors.white),
-          Container(width: 2, height: size * 1.25, color: Colors.white),
-        ]),
-      );
-}
-
-// 지역 고르기: 왼쪽 시·도 목록, 오른쪽에 그 시·도의 동네 목록 (머리말 아래로 펼침)
-class RegionPanel extends StatefulWidget {
-  final List<Sido> sidos;
-  final Area current;
-  final ValueChanged<Area> onPick;
-  final VoidCallback onNear;
-  const RegionPanel({super.key, required this.sidos, required this.current, required this.onPick, required this.onNear});
-  @override
-  State<RegionPanel> createState() => _RegionPanelState();
-}
-
-class _RegionPanelState extends State<RegionPanel> {
-  late String sel = widget.current.sido;
-  static const kSide = Color(0xFFF3F5F8);
-  static const kOff = Color(0xFFA9AEB8);
-  static const kSoft = Color(0xFFC9C0BA); // 진한 먹색 위의 흐린 글
-
-  @override
-  Widget build(BuildContext context) {
-    final cur = widget.sidos.where((x) => x.name == sel).firstOrNull ?? widget.sidos.first;
-    final h = math.min(MediaQuery.of(context).size.height * 0.6, 460.0);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: _card(),
-      clipBehavior: Clip.antiAlias,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
-          child: Row(children: [
-            const Text.rich(TextSpan(children: [
-              TextSpan(text: '전국 ', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w400, color: kInk)),
-              TextSpan(text: '지역 선택', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kInk)),
-            ])),
-            const Spacer(),
-            InkWell(
-              onTap: widget.onNear,
-              borderRadius: BorderRadius.circular(8),
               child: Container(
-                padding: const EdgeInsets.fromLTRB(9, 6, 12, 6),
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: kLine, width: 1)),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.near_me_rounded, size: 15, color: kPoint),
-                  SizedBox(width: 4),
-                  Text('내 주변으로', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kInk)),
-                ]),
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: searching ? kDark : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: searching ? kDark : kLine, width: 1),
+                ),
+                child: Icon(Icons.search_rounded, size: 21, color: searching ? Colors.white : kInk),
               ),
             ),
-          ]),
-        ),
-        const Divider(height: 1, thickness: 1, color: kLine),
-        SizedBox(
-          height: h,
-          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            // 시·도
-            Container(
-              width: 96,
-              color: kSide,
-              child: ListView(padding: const EdgeInsets.symmetric(vertical: 6), children: [
-                for (final x in widget.sidos)
-                  InkWell(
-                    onTap: () => setState(() => sel = x.name),
-                    child: Container(
-                      height: 46,
-                      color: x.name == cur.name ? kRegion : Colors.transparent,
-                      padding: const EdgeInsets.only(left: 18),
-                      alignment: Alignment.centerLeft,
-                      child: Row(children: [
-                        Text(x.name,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: x.name == cur.name ? FontWeight.w700 : FontWeight.w600,
-                              color: x.name == cur.name ? Colors.white : (x.ready ? kInk : kOff),
-                            )),
-                        if (x.ready) ...[
-                          const SizedBox(width: 5),
-                          Container(width: 5, height: 5, decoration: const BoxDecoration(color: kFoodTint, shape: BoxShape.circle)),
-                        ],
-                      ]),
-                    ),
-                  ),
-              ]),
-            ),
-            // 동네
-            Expanded(
-              child: Container(
-                color: kRegion,
-                child: ListView(padding: const EdgeInsets.fromLTRB(18, 8, 10, 12), children: [
-                  SizedBox(
-                    height: 44,
-                    child: Row(children: [
-                      Text(cur.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
-                      const SizedBox(width: 8),
-                      Text(cur.ready ? '${cur.areas.where((a) => a.ready).length}곳 이용 가능' : '준비 중',
-                          style: const TextStyle(fontSize: 12, color: kSoft)),
-                    ]),
-                  ),
-                  Container(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-                  if (cur.areas.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text('준비 중입니다. 인천부터 차례로 넓혀 갑니다.', style: TextStyle(fontSize: 13.5, color: kSoft, height: 1.5)),
-                    )
-                  else
-                    for (final a in cur.areas) _areaRow(a),
-                ]),
-              ),
-            ),
-          ]),
-        ),
-      ]),
-    );
-  }
-
-  Widget _areaRow(Area a) {
-    final ok = a.ready;
-    final on = a.id == widget.current.id;
-    return InkWell(
-      onTap: ok ? () => widget.onPick(a) : null,
-      child: SizedBox(
-        height: 46,
-        child: Row(children: [
-          Flexible(
-            child: Text(a.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 15, fontWeight: on ? FontWeight.w700 : FontWeight.w400, color: ok ? Colors.white : kSoft.withValues(alpha: 0.7))),
           ),
-          if (on) ...[const SizedBox(width: 6), const Icon(Icons.check_rounded, size: 17, color: Colors.white)],
-          if (!ok) ...[const SizedBox(width: 8), Text('준비 중', style: TextStyle(fontSize: 11.5, color: kSoft.withValues(alpha: 0.7)))],
-          const Spacer(),
-          if (ok) const Icon(Icons.chevron_right_rounded, size: 20, color: Colors.white),
+          const SizedBox(width: 6),
+          TextButton(
+            onPressed: onRank,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: kPoint,
+              disabledBackgroundColor: const Color(0xFFF0D3CB),
+              disabledForegroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              minimumSize: const Size(0, 38),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('순위', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+          ),
         ]),
-      ),
+        if (!inline) Padding(padding: const EdgeInsets.only(top: 5, left: 1), child: subText),
+      ]),
     );
   }
 }
@@ -2411,34 +2402,6 @@ class _ZoomBtn extends StatelessWidget {
         child: Stack(alignment: Alignment.center, children: [
           Container(width: 15, height: 2, decoration: BoxDecoration(color: kInk, borderRadius: BorderRadius.circular(1))),
           if (plus) Container(width: 2, height: 15, decoration: BoxDecoration(color: kInk, borderRadius: BorderRadius.circular(1))),
-        ]),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  final bool on;
-  final VoidCallback onTap;
-  final String emoji; // 앞에 붙는 색 그림 (작은 단추도 재미있게)
-  const _Chip({required this.label, required this.on, required this.onTap, this.emoji = ''});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(emoji.isEmpty ? 14 : 11, 6, 14, 6),
-        decoration: BoxDecoration(
-          color: on ? kInk : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: on ? kInk : kLine, width: 1),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (emoji.isNotEmpty) ...[Text(emoji, style: const TextStyle(fontSize: 15, height: 1.1)), const SizedBox(width: 5)],
-          Text(label, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: on ? Colors.white : kInk)),
         ]),
       ),
     );
@@ -2546,6 +2509,13 @@ class PlaceMarker extends StatelessWidget {
                         TextSpan(text: '★ ', style: TextStyle(fontSize: 10.5, color: focus ? Colors.white : const Color(0xFFF5A623))),
                         TextSpan(text: place.grate.toStringAsFixed(1), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: focus ? Colors.white : kInk)),
                         TextSpan(text: ' · 리뷰 ${commas(place.greviews)}', style: TextStyle(fontSize: 10, color: focus ? Colors.white.withValues(alpha: 0.85) : kGray)),
+                      ]), maxLines: 1)
+                    else if (place.vids.isNotEmpty)
+                      // 별점을 아직 모으지 않은 집: 빈 칸 대신 「유튜버 ○명 다녀감」
+                      Text.rich(TextSpan(children: [
+                        TextSpan(text: '유튜버 ', style: TextStyle(fontSize: 10.5, color: focus ? Colors.white : kPointText)),
+                        TextSpan(text: '${math.max(1, ytCount(place))}명', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: focus ? Colors.white : kPointText)),
+                        TextSpan(text: ' 다녀감', style: TextStyle(fontSize: 10.5, color: focus ? Colors.white : kPointText)),
                       ]), maxLines: 1)
                     else
                       Text(place.cat, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: focus ? Colors.white.withValues(alpha: 0.85) : kGray)),
@@ -2939,18 +2909,10 @@ class PlaceSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = place;
-    final naver = 'https://map.naver.com/p/search/${Uri.encodeComponent(p.name)}';
-    // 길찾기: 카카오맵 길안내 (도착지 = 이 가게)
-    final route = 'https://map.kakao.com/link/to/${Uri.encodeComponent(p.name)},${p.lat},${p.lng}';
     final open = openInfo(p);
     final today = '${kDays[nowKst().weekday % 7]}요일';
-    // 오른쪽 바로가기 (요약 옆 빈자리): 전화 · 길찾기 · 메뉴 · 블로그
-    final quick = <Widget>[
-      if (p.tel.isNotEmpty) _Quick(icon: Icons.call_outlined, label: '전화', strong: true, onTap: () => openUrl('tel:${p.tel}')),
-      _Quick(icon: Icons.directions_outlined, label: '길찾기', onTap: () => openUrl(route)),
-      _Quick(icon: Icons.photo_library_outlined, label: '메뉴', onTap: () => openUrl(p.kakao.isNotEmpty ? p.kakao : naver)),
-      if (p.home.isNotEmpty) _Quick(icon: Icons.public, label: p.home.contains('blog') ? '블로그' : '홈페이지', onTap: () => openUrl(p.home)),
-    ];
+    // 별점·영업시간을 아직 모으지 않은 집: 빈 칸 대신 「유튜버 ○명 다녀감」 「○○ 출연」 + 영상 사진
+    final poor = p.greviews == 0 && p.week.isEmpty;
     return _Sheet(
       initial: peek,
       snaps: [peek],
@@ -2974,10 +2936,11 @@ class PlaceSheet extends StatelessWidget {
             if (p.score > 0) ScoreTag(score: p.score),
             if (onKok != null) ...[const SizedBox(width: 8), KokButton(on: kok, onChanged: onKok!)],
           ]),
-          const SizedBox(height: 10),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (poor && p.vids.isNotEmpty) ...[const SizedBox(height: 12), _YtVisited(place: p)],
+          const SizedBox(height: 14),
+          PlaceActions(place: p), // 길안내(크게) · 전화 · 메뉴 · 블로그
+          const SizedBox(height: 14),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (p.greviews > 0)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
@@ -3012,20 +2975,20 @@ class PlaceSheet extends StatelessWidget {
               child: Text(open.text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: open.open ? kPointText : kGray)),
             ),
           if (p.addr.isNotEmpty) Text(p.addr, style: const TextStyle(fontSize: 13, color: kInk, height: 1.4)),
-              ]),
-            ),
-            const SizedBox(width: 10),
-            SizedBox(width: 114, child: Wrap(spacing: 6, runSpacing: 6, children: quick)),
           ]),
           if (p.feat.any(kFeat.containsKey)) ...[
             const SizedBox(height: 12),
             FeatRow(p.feat),
           ],
+          if (!poor) ...[
           const SizedBox(height: 22),
           const _Title(text: '영업시간'),
           const SizedBox(height: 8),
-          if (p.week.isEmpty)
-            const Text('구글에 등록된 영업시간이 없습니다. 카카오맵이나 네이버 지도에서 확인해 주세요.',
+          ],
+          if (poor)
+            const SizedBox()
+          else if (p.week.isEmpty)
+            const Text('구글에 등록된 영업시간이 없습니다. 카카오맵이나 네이버에서 확인해 주세요.',
                 style: TextStyle(fontSize: 12.5, color: kGray, height: 1.4))
           else
             for (final line in p.week)
@@ -3105,6 +3068,7 @@ class PlaceSheet extends StatelessWidget {
             const SizedBox(height: 22),
           ],
           PlaceReviews(place: p),
+          if (!poor || p.posts.isNotEmpty) ...[
           const SizedBox(height: 28),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             _Title(text: '최근 $recentDays일 블로그 ${p.blog}건'),
@@ -3138,6 +3102,7 @@ class PlaceSheet extends StatelessWidget {
             ),
           const SizedBox(height: 12),
           const Text('블로그 글은 제목과 앞부분만 보여 드리며, 누르면 원래 글로 이동합니다. 가게가 직접 쓴 글과 광고 의심 글은 점수에서 뺐습니다.', style: TextStyle(fontSize: 11, color: kGray)),
+          ],
           // 인스타: 가게 계정 주소만 (게시물·사진은 가져오지 않음), 주소 없는 가게는 숨김
           if (p.insta.isNotEmpty) ...[
             const SizedBox(height: 22),
@@ -3150,42 +3115,57 @@ class PlaceSheet extends StatelessWidget {
   }
 }
 
-class _Quick extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool strong; // 전화: 파랑 하나만 강조
-  final VoidCallback onTap;
-  const _Quick({required this.icon, required this.label, required this.onTap, this.strong = false});
+// 별점을 아직 모으지 않은 집의 머리: 영상 사진(누르면 영상) + 「유튜버 ○명 다녀감」 + 「○○ · ○○ 출연」
+class _YtVisited extends StatelessWidget {
+  final Place place;
+  const _YtVisited({required this.place});
   @override
   Widget build(BuildContext context) {
-    final c = strong ? kPoint : kInk;
-    return Semantics(
-      button: true,
-      label: label,
-      onTap: onTap,
-      excludeSemantics: true,
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: strong ? kPoint.withValues(alpha: 0.5) : kLine, width: 1),
-            ),
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(icon, size: 21, color: c),
-              const SizedBox(height: 3),
-              Text(label, maxLines: 1, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: c, height: 1.1)),
+    final p = place;
+    final v = p.vids.firstWhere((x) => !x.short, orElse: () => p.vids.first);
+    final yt = math.max(1, ytCount(p));
+    final chans = p.vids.map((x) => x.channel).where((x) => x.isNotEmpty).toSet().toList();
+    return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      GestureDetector(
+        onTap: () => openUrl('https://www.youtube.com/watch?v=${v.id}'),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 132,
+            height: 74,
+            child: Stack(fit: StackFit.expand, children: [
+              Image.network('https://i.ytimg.com/vi/${v.id}/mqdefault.jpg',
+                  fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => kindFill(p.kind, 30)),
+              Center(
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), shape: BoxShape.circle),
+                  child: const Center(child: Padding(padding: EdgeInsets.only(left: 2), child: LineIcon('play', size: 14, color: Colors.white))),
+                ),
+              ),
             ]),
           ),
         ),
       ),
-    );
+      const SizedBox(width: 14),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text.rich(
+            TextSpan(children: [
+              const TextSpan(text: '유튜버 ', style: TextStyle(fontWeight: FontWeight.w400)),
+              TextSpan(text: '$yt명', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+              const TextSpan(text: ' 다녀감', style: TextStyle(fontWeight: FontWeight.w400)),
+            ]),
+            style: const TextStyle(fontSize: 16, color: kPointText, letterSpacing: -0.4, height: 1.15),
+          ),
+          const SizedBox(height: 5),
+          if (chans.isNotEmpty)
+            Text('${chans.take(3).join(' · ')}${chans.length > 3 ? ' 외 ${chans.length - 3}' : ''} 출연',
+                maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: kInk, height: 1.3)),
+        ]),
+      ),
+    ]);
   }
 }
 
