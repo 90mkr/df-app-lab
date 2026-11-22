@@ -263,6 +263,24 @@ def region_ok(region, addr):
     return False if big else None
 
 
+def auto_ok(p, v):
+    """사람 확인 없이 맞음으로 해도 되는 확실한 후보: 의심 표시 없음 + 고른 가게 이름(지점명 뺀)이 영상 제목에 그대로 있음
+    + 음식점·카페(또는 시장) + 여러 지점 광고가 아님."""
+    if p.get("check") or p.get("manual") or p.get("best", -1) < 0 or float(p.get("conf") or 0) < 0.8:
+        return False
+    c = p["cands"][p["best"]]
+    core = norm(re.sub(r"\s*([가-힣A-Za-z0-9]+점)$", "", c.get("name", "")))
+    if len(core) < 2 or core not in norm(v.get("t", "")):
+        return False
+    if re.search(r"털기|털었|털러|투어|3대|어디가|모음|여러", v.get("t", "")):  # 여러 집을 도는 영상은 어느 집인지 사람이 봐야
+        return False
+    if c.get("g") not in ("FD6", "CE7") and "시장" not in c.get("name", ""):
+        return False
+    if "유료광고" in v.get("d", "") and sum(1 for x in p.get("cands", []) if sim(p.get("name", ""), x.get("name", "")) >= 0.9) >= 2:
+        return False
+    return True
+
+
 def rescore(m):
     """뽑은 후보를 다시 따져 「확인 필요」와 그 까닭을 단다 (카카오를 다시 부르지 않음)."""
     cands, best = m.get("cands") or [], m.get("best", -1)
@@ -436,8 +454,38 @@ def main():
     except Exception as e:
         print("관리자 결정 받기 실패:", str(e)[:120])
         dec = {}
+    # 김부장이 대표님 위임으로 정한 것 (관리자 화면에서 대표님이 정한 것이 있으면 그쪽이 먼저)
     auto = {k: v for k, v in load(OK_FILE, {}).items() if k not in dec}
-    dec.update(auto)
+    # 「다시 찾아 맞음」: 카카오로 다시 찾아 주소에 그 말이 든 첫 가게를 그 영상의 가게로 (처음 뽑힌 틀린 후보는 제외)
+    for qk, e in list(auto.items()):
+        if e.get("status") != "ok_query":
+            continue
+        del auto[qk]
+        vid = e.get("vid", "")
+        a = cache["ai"].setdefault(vid, {"at": dt.date.today().isoformat(), "p": []})
+        found = None
+        try:
+            for dd in kakao(e.get("query", "")):
+                if e.get("addr", "") in (dd.get("addr", "") + " " + dd.get("jibun", "")):
+                    found = dd
+                    break
+        except Exception as ex:
+            print("다시 찾기 실패:", e.get("query"), str(ex)[:80])
+        if not found:
+            print("다시 찾기 — 카카오에 없음:", e.get("query"))
+            continue
+        idx = next((i for i, x in enumerate(a["p"]) if x.get("manual") and x.get("cands") and x["cands"][0].get("id") == found.get("id")), -1)
+        if idx < 0:
+            a["p"].append({"name": e.get("query", ""), "region": e.get("addr", ""), "why": "김부장이 다시 찾음", "conf": 1.0,
+                           "cands": [found], "best": 0, "check": False, "note": "", "manual": True})
+            idx = len(a["p"]) - 1
+        key = f"{vid}_{idx}"
+        if key not in dec:
+            auto[key] = {"status": "ok", "vid": vid, "cid": e.get("cid", ""), "t": e.get("t", ""), "place": found, "by": e.get("by", "")}
+        for rk in e.get("replace", []):
+            if rk != key and rk not in dec and rk not in auto:
+                auto[rk] = {"status": "skip", "vid": vid, "why": "다시 찾은 가게로 바꿈", "by": e.get("by", "")}
+        print("다시 찾아 맞음:", e.get("query"), "→", found.get("name"), found.get("addr"))
     # 관리자가 「직접 연결」로 적은 가게 이름: 카카오로 찾아 그 영상의 후보로 더한다 (다시 확인)
     for k, d in dec.items():
         q = (d.get("query") or "").strip()
@@ -462,17 +510,24 @@ def main():
             nofind.append({"vid": vid, "t": v.get("t", ""), "date": v.get("date", ""), "ch": c["name"], "inc": any(k in text for k in INCHEON)})
             continue
         for i, p in enumerate(a["p"]):
-            rescore(p)
+            if not p.get("manual"):
+                rescore(p)
             key = f"{vid}_{i}"
             it = {"key": key, "vid": vid, "t": v.get("t", ""), "date": v.get("date", ""), "ch": c["name"], "cid": c.get("id", ""),
                   **p, "inc": any(k in (v.get("t", "") + v.get("d", "")[:600]) for k in INCHEON)}
-            if key in auto:  # 김부장이 대신 맞음 처리한 것 — 관리자 화면에서 「정한 것」으로 보이게
-                it["auto"] = {"status": "ok", "by": auto[key].get("by", ""), "place": auto[key].get("place")}
+            if key not in dec and key not in auto and auto_ok(p, v):  # 제목에 가게 이름이 그대로 나오는 확실한 것은 바로 맞음
+                auto[key] = {"status": "ok", "vid": vid, "cid": c.get("id", ""), "t": v.get("t", ""), "place": p["cands"][p["best"]],
+                             "by": "김부장 자동 확인 (제목에 가게 이름)"}
+            if key in auto:  # 김부장이 대신 정한 것 — 관리자 화면에서 「정한 것」으로 보이게
+                a2 = auto[key]
+                it["auto"] = {"status": a2.get("status", "ok"), "by": a2.get("by", ""), "why": a2.get("why", ""), "place": a2.get("place")}
             items.append(it)
     items.sort(key=lambda x: (x["check"], x["inc"], x["date"]), reverse=True)
     save(OUT, {"updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
                "items": items, "nofind": sorted(nofind, key=lambda x: (x["inc"], x["date"]), reverse=True)[:400]})
     print(f"후보 {len(items)}개 (확인 필요 {sum(1 for x in items if x['check'])}) · 못 찾은 영상 {len(nofind)}개")
+    dec.update(auto)
+    save(CACHE, cache)
     try:
         n = publish(cache, chans, dec)
         if n:

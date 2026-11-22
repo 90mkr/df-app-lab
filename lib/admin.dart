@@ -1185,8 +1185,8 @@ class _PicksTabState extends State<_PicksTab> {
                               padding: const EdgeInsets.only(top: 3),
                               child: Text(
                                   switch ('${d['status']}') {
-                                    'ok' => '맞음 · ${(d['place'] as Map?)?['name'] ?? ''} (다음 자료 갱신 때 지도에)',
-                                    'skip' => '제외함',
+                                    'ok' => '맞음 · ${(d['place'] as Map?)?['name'] ?? ''}${'${d['by'] ?? ''}'.isNotEmpty ? ' · 김부장 처리' : ' (다음 자료 갱신 때 지도에)'}',
+                                    'skip' => '${d['why'] ?? ''}'.isNotEmpty ? '제외 · ${d['why']} · 김부장 처리' : '제외함',
                                     'manual' => '직접 연결: ${d['query']}',
                                     _ => '${d['status']}',
                                   },

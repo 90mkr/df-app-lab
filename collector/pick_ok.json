@@ -70,5 +70,537 @@
    "url": "http://place.map.kakao.com/25048467"
   },
   "by": "김부장 (대표님 목록 확인 · 2026-11-22)"
+ },
+ "4AlE083qq4g_0": {
+  "status": "ok",
+  "vid": "4AlE083qq4g",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "사장님이 퇴근해도 되겠대요🤣 인천 1958년 개업한 신신옥 먹방",
+  "place": {
+   "id": "10523660",
+   "name": "신신옥",
+   "addr": "인천 제물포구 우현로49번길 7",
+   "cat": "음식점 > 분식",
+   "g": "FD6",
+   "lat": 37.4715936054944,
+   "lng": 126.627941022951,
+   "url": "http://place.map.kakao.com/10523660"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "RiQrl1R2EFE_0": {
+  "status": "ok",
+  "vid": "RiQrl1R2EFE",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "인천 30년 전통 불고기 맛집🤤 육개장이 맛있다는 일미정 먹방",
+  "place": {
+   "id": "16825778",
+   "name": "일미정",
+   "addr": "인천 제물포구 신포로23번길 5",
+   "cat": "음식점 > 한식",
+   "g": "FD6",
+   "lat": 37.4709624073995,
+   "lng": 126.624367400513,
+   "url": "http://place.map.kakao.com/16825778"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "BCRTR0jiTjs_0": {
+  "status": "ok",
+  "vid": "BCRTR0jiTjs",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "새벽 3시에 여는 부산 참치파는 국밥집?!😳 지나가던 외국인도 놀란 자갈치시장 국밥 먹방",
+  "place": {
+   "id": "11168886",
+   "name": "자갈치시장",
+   "addr": "부산 중구 자갈치해안로 52",
+   "jibun": "부산 중구 남포동5가 105-1",
+   "cat": "가정,생활 > 시장",
+   "g": "",
+   "lat": 35.09661988021089,
+   "lng": 129.03057978534403,
+   "url": "http://place.map.kakao.com/11168886"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "GxqXHXb91O4_0": {
+  "status": "ok",
+  "vid": "GxqXHXb91O4",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "여기 먹을거 천국이에요..🥹 초대형 의정부 제일시장 털기🔥 김밥 떡볶이 비빔밥 통닭 냉면",
+  "place": {
+   "id": "18526267",
+   "name": "의정부제일시장",
+   "addr": "경기 의정부시 태평로73번길 20",
+   "cat": "가정,생활 > 시장",
+   "g": "",
+   "lat": 37.7397661884649,
+   "lng": 127.050400528563,
+   "url": "http://place.map.kakao.com/18526267"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "IUfQCYRP6b0_0": {
+  "status": "ok",
+  "vid": "IUfQCYRP6b0",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "시장에서 한끼에 10000kcal 가능할까..?🤔 육거리시장 떡볶이 칼국수 만두 닭강정 길거리음식 먹방",
+  "place": {
+   "id": "1023738391",
+   "name": "육거리종합시장",
+   "addr": "충북 청주시 상당구 상당로1번길 17",
+   "cat": "가정,생활 > 시장",
+   "g": "",
+   "lat": 36.6281475986498,
+   "lng": 127.4900878094,
+   "url": "http://place.map.kakao.com/1023738391"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "hCctC02b808_0": {
+  "status": "ok",
+  "vid": "hCctC02b808",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "250년 전통 시장 털었더니.. 저보고 양심 없대요😂 정선시장 짜장면 짬뽕 콧등치기 옹심이 호떡",
+  "place": {
+   "id": "26884701",
+   "name": "정선아리랑시장",
+   "addr": "강원특별자치도 정선군 정선읍 봉양7길 39",
+   "cat": "가정,생활 > 시장",
+   "g": "",
+   "lat": 37.38038832769573,
+   "lng": 128.66521677926366,
+   "url": "http://place.map.kakao.com/26884701"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "FOmKdeHoFIs_0": {
+  "status": "ok",
+  "vid": "FOmKdeHoFIs",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "평양에서 시작된 100년 넘은 냉면집?!😳 인생 평냉 찾았습니다.. 통닭파는 냉면집 동해 권가냉면",
+  "place": {
+   "id": "2068573458",
+   "name": "냉면권가",
+   "addr": "강원특별자치도 동해시 중앙로 236-1",
+   "cat": "음식점 > 한식 > 냉면",
+   "g": "FD6",
+   "lat": 37.52197878066662,
+   "lng": 129.11504468307587,
+   "url": "http://place.map.kakao.com/2068573458"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "3Z-ngM3DVi0_0": {
+  "status": "ok",
+  "vid": "3Z-ngM3DVi0",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "간짜장과 잡채밥이 유명한 55년 전통 중국집?!😳 강릉 원성식당 짬뽕 짜장면 탕수육 먹방",
+  "place": {
+   "id": "11173666",
+   "name": "원성식당",
+   "addr": "강원특별자치도 강릉시 경강로 2024",
+   "cat": "음식점 > 중식 > 중국요리",
+   "g": "FD6",
+   "lat": 37.74978847693991,
+   "lng": 128.89094818485353,
+   "url": "http://place.map.kakao.com/11173666"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "Cm_16LY1v-g_0": {
+  "status": "ok",
+  "vid": "Cm_16LY1v-g",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "50년 동안 3대째 내려온 부침개 김밥?!😳 정읍 옛날김밥 라뽂이 비빔밥 돈까스 라면 먹방",
+  "place": {
+   "id": "16810771",
+   "name": "정읍옛날김밥",
+   "addr": "전북특별자치도 정읍시 새암길 7",
+   "cat": "음식점 > 분식",
+   "g": "FD6",
+   "lat": 35.56771200043047,
+   "lng": 126.85137869220848,
+   "url": "http://place.map.kakao.com/16810771"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "jclR0QeDr54_0": {
+  "status": "ok",
+  "vid": "jclR0QeDr54",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "4000원 삼겹살?!😱 살면서 이렇게 싼 고깃집은 본적이 없습니다.. 3KG 소,돼지고기 전메뉴 먹방",
+  "place": {
+   "id": "72467700",
+   "name": "민수정육식당",
+   "addr": "서울 동대문구 답십리로23길 9",
+   "cat": "음식점 > 한식 > 육류,고기",
+   "g": "FD6",
+   "lat": 37.57623614626523,
+   "lng": 127.0483248694939,
+   "url": "http://place.map.kakao.com/72467700"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "W8zkwvIrWoY_0": {
+  "status": "ok",
+  "vid": "W8zkwvIrWoY",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "서울에 4000원 백반집?!😱 말도안되는 가격의 상록분식 청국장 라면 오징어볶음 뚝불 털었습니다",
+  "place": {
+   "id": "20749964",
+   "name": "상록분식",
+   "addr": "서울 강동구 양재대로87길 35",
+   "cat": "음식점 > 분식",
+   "g": "FD6",
+   "lat": 37.52576469420241,
+   "lng": 127.13309339007154,
+   "url": "http://place.map.kakao.com/20749964"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "nB6QYKjrGyw_0": {
+  "status": "ok",
+  "vid": "nB6QYKjrGyw",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "제 방송이 거짓인줄 아셨다고 해서 증명했습니다🔥 천호역 숨은맛집 풍년비빔국수",
+  "place": {
+   "id": "16057416",
+   "name": "풍년비빔국수 천호점",
+   "addr": "서울 강동구 천호옛길 96",
+   "cat": "음식점 > 한식 > 국수",
+   "g": "FD6",
+   "lat": 37.5370960746039,
+   "lng": 127.126166390341,
+   "url": "http://place.map.kakao.com/16057416"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "KS_53b_YcvA_0": {
+  "status": "ok",
+  "vid": "KS_53b_YcvA",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "먹다가 짜증났습니다😡 평일 밤 12시에 웨이팅?! 극한의 매운 닭발! 신당동 떡볶이골목 우정",
+  "place": {
+   "id": "27388900",
+   "name": "우정",
+   "addr": "서울 중구 퇴계로76길 55",
+   "cat": "음식점 > 분식 > 떡볶이",
+   "g": "FD6",
+   "lat": 37.56279593622181,
+   "lng": 127.01490979074266,
+   "url": "http://place.map.kakao.com/27388900"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "dJONr8ZpwhM_0": {
+  "status": "ok",
+  "vid": "dJONr8ZpwhM",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "할머니께서 맛이 그저 그렇다고 했는데.. 김치찜 먹다 눈물날뻔 했습니다😂 가평 숨은맛집 온정식당",
+  "place": {
+   "id": "17038315",
+   "name": "온정식당",
+   "addr": "경기 가평군 가평읍 태봉안길 21-18",
+   "cat": "음식점 > 한식",
+   "g": "FD6",
+   "lat": 37.8048470383474,
+   "lng": 127.487880686038,
+   "url": "http://place.map.kakao.com/17038315"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "P6sTH0NiKN8_0": {
+  "status": "ok",
+  "vid": "P6sTH0NiKN8",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "외국인 손님분들이 놀라셨어요🤣 강남역 노포 모퉁이집 라면 먹방",
+  "place": {
+   "id": "8341662",
+   "name": "모퉁이집",
+   "addr": "서울 강남구 테헤란로1길 20",
+   "jibun": "서울 강남구 역삼동 818",
+   "cat": "음식점 > 분식",
+   "g": "FD6",
+   "lat": 37.49959286164025,
+   "lng": 127.02782102641962,
+   "url": "http://place.map.kakao.com/8341662"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "lx9-ecadk7U_0": {
+  "status": "ok",
+  "vid": "lx9-ecadk7U",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "여의도 주민은 다 안다는 40년전통 맛집?😳 청수모밀 먹방",
+  "place": {
+   "id": "20746105",
+   "name": "청수",
+   "addr": "서울 영등포구 국제금융로 112",
+   "jibun": "서울 영등포구 여의도동 53-11",
+   "cat": "음식점 > 한식 > 냉면",
+   "g": "FD6",
+   "lat": 37.518360928834404,
+   "lng": 126.93397342127108,
+   "url": "http://place.map.kakao.com/20746105"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "CPWwPVs5Ib4_0": {
+  "status": "ok",
+  "vid": "CPWwPVs5Ib4",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "리뷰만 10000개인 여의도 진주집?!😳 줄서서 먹는 콩국수 노포맛집 전메뉴 먹방",
+  "place": {
+   "id": "8094563",
+   "name": "진주집",
+   "addr": "서울 영등포구 국제금융로6길 33",
+   "jibun": "서울 영등포구 여의도동 36-2",
+   "cat": "음식점 > 한식 > 국수",
+   "g": "FD6",
+   "lat": 37.52059128119736,
+   "lng": 126.9269500559961,
+   "url": "http://place.map.kakao.com/8094563"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "di27zwr6s9I_0": {
+  "status": "ok",
+  "vid": "di27zwr6s9I",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "짜계치와 간장새우 xx마리! 의외의 환상조합😲 논현동 프로간장새우 먹방",
+  "place": {
+   "id": "384134146",
+   "name": "프로간장새우 본점",
+   "addr": "서울 강남구 강남대로122길 20",
+   "jibun": "서울 강남구 논현동 166-4",
+   "cat": "음식점 > 한식 > 해물,생선",
+   "g": "FD6",
+   "lat": 37.5080549149643,
+   "lng": 127.024619993483,
+   "url": "http://place.map.kakao.com/384134146"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "f0CLSz_6LDE_0": {
+  "status": "ok",
+  "vid": "f0CLSz_6LDE",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "여기가 여의도 성지래요..🤔 35년전통 버섯매운탕 칼국수 먹방",
+  "place": {
+   "id": "20746242",
+   "name": "가양칼국수버섯매운탕",
+   "addr": "서울 영등포구 국제금융로 86",
+   "jibun": "서울 영등포구 여의도동 43-4",
+   "cat": "음식점 > 한식 > 국수 > 칼국수",
+   "g": "FD6",
+   "lat": 37.52020584896475,
+   "lng": 126.93179988990671,
+   "url": "http://place.map.kakao.com/20746242"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "OvsiOSWhDuk_0": {
+  "status": "ok",
+  "vid": "OvsiOSWhDuk",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "84세 사장님도 놀라셨어요🤣 연예인 맛집으로 유명한 잠원동 떡볶이 먹방",
+  "place": {
+   "id": "26974119",
+   "name": "잠원떡볶이",
+   "addr": "서울 서초구 잠원로4길 45",
+   "jibun": "서울 서초구 잠원동 61-17",
+   "cat": "음식점 > 분식 > 떡볶이",
+   "g": "FD6",
+   "lat": 37.5131782986176,
+   "lng": 127.010777073395,
+   "url": "http://place.map.kakao.com/26974119"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "gHE7_aGHE8I_0": {
+  "status": "ok",
+  "vid": "gHE7_aGHE8I",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "생애 두번째 도전!🙂미슐랭맛집 논현동 진미평양냉면,불고기 먹방",
+  "place": {
+   "id": "658541467",
+   "name": "진미평양냉면 본관",
+   "addr": "서울 강남구 학동로 307",
+   "jibun": "서울 강남구 논현동 115-16",
+   "cat": "음식점 > 한식 > 냉면",
+   "g": "FD6",
+   "lat": 37.51600328239411,
+   "lng": 127.03624504347212,
+   "url": "http://place.map.kakao.com/658541467"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "XhUJ-ChfPQw_0": {
+  "status": "ok",
+  "vid": "XhUJ-ChfPQw",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "튀김순대가 미쳤다는 곳..🔥 구반포 40년 전통 미소의집 즉석떡볶이 먹방",
+  "place": {
+   "id": "21236775",
+   "name": "미소의집",
+   "addr": "서울 서초구 신반포로 27-6",
+   "jibun": "서울 서초구 반포동 885",
+   "cat": "음식점 > 분식",
+   "g": "FD6",
+   "lat": 37.50202819976089,
+   "lng": 126.98756885260006,
+   "url": "http://place.map.kakao.com/21236775"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "ZI6nTSMCel4_0": {
+  "status": "ok",
+  "vid": "ZI6nTSMCel4",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "사심방송 2탄..🥺 이거 먹으러 광안리 왔습니다🔥 부산 바다 앞 만두와 밀면 먹방",
+  "place": {
+   "id": "457755669",
+   "name": "이가네가야밀면왕만두",
+   "addr": "부산 수영구 광안해변로277번길 10",
+   "cat": "음식점 > 한식 > 국수",
+   "g": "FD6",
+   "lat": 35.1563995280752,
+   "lng": 129.124225208633,
+   "url": "http://place.map.kakao.com/457755669"
+  },
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "-C4280KT3S4_1": {
+  "status": "skip",
+  "vid": "-C4280KT3S4",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "핵불닭급 매운맛 대왕 철판쭈꾸미?!🔥 진심으로 코박고 먹었습니다.. 들기름막국수 파스타 볶음밥 먹방",
+  "why": "광고 영상에 적힌 다른 지점 (다녀간 곳 아님)",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "-C4280KT3S4_2": {
+  "status": "skip",
+  "vid": "-C4280KT3S4",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "핵불닭급 매운맛 대왕 철판쭈꾸미?!🔥 진심으로 코박고 먹었습니다.. 들기름막국수 파스타 볶음밥 먹방",
+  "why": "광고 영상에 적힌 다른 지점 (다녀간 곳 아님)",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "JPEWVoGyT6s_0": {
+  "status": "skip",
+  "vid": "JPEWVoGyT6s",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "익산을 제패한 치킨집..?!😳 먹으면 깜짝 놀란다는 다사랑치킨 8가지 메뉴 먹었습니다",
+  "why": "프랜차이즈 광고 — 지점을 알 수 없음",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "a8UqiECd_yQ_0": {
+  "status": "skip",
+  "vid": "a8UqiECd_yQ",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "50년 경력 김치명인이 만든 보쌈?!😱 역대급 김치와 냉면 동태탕 먹방",
+  "why": "프랜차이즈 광고 — 지점을 알 수 없음",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "ZxwXeF5p3sg_0": {
+  "status": "skip",
+  "vid": "ZxwXeF5p3sg",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "메뉴판에 있는거 다주세요를 해봤습니다😎 타코와 파스타 그리고 고수에이드?? 먹방",
+  "why": "프랜차이즈 광고 — 지점을 알 수 없음",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "fvYDGXvibQ0_0": {
+  "status": "skip",
+  "vid": "fvYDGXvibQ0",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "추억의 아웃백 스테이크 오랜만에 가봤더니..🤔 스테이크와 치즈폭탄 폭립 먹방",
+  "why": "체인점 — 지점을 알 수 없음",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "GJ0TXbKNk-g_0": {
+  "status": "skip",
+  "vid": "GJ0TXbKNk-g",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "🔥전국구 매운맛 쭈꾸미?🔥 매운 대창 쭈꾸미 먹방",
+  "why": "프랜차이즈 광고 — 지점을 알 수 없음",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "jkMs-U187T0_0": {
+  "status": "skip",
+  "vid": "jkMs-U187T0",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "전국에서 소가 가장 많은 지역?!😳 최고급 한우가 반값인 정읍 소고기 XX인분 먹방  ",
+  "why": "음식점이 아님 (미디어아트관)",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "Oq0Ad1hZDNg_0": {
+  "status": "skip",
+  "vid": "Oq0Ad1hZDNg",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "사장님:직원들이 다 놀라고 있어요..🤯 고깃집가서 3.5kg 먹었더니ㅋㅋ 압구정 핫플 고깃집 먹방",
+  "why": "영상에 가게 이름이 없음",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)"
+ },
+ "DNGGl1-jFcU_q": {
+  "status": "ok_query",
+  "vid": "DNGGl1-jFcU",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "인천 신포시장 다 못털었습니다😂 어딜가나 50년 전통?! 닭강정 떡볶이 핫바 길거리음식 먹방",
+  "query": "신포국제시장",
+  "addr": "제물포구",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)",
+  "replace": [
+   "DNGGl1-jFcU_0"
+  ]
+ },
+ "ENTR_1viik4_q": {
+  "status": "ok_query",
+  "vid": "ENTR_1viik4",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "우동집인데 철판볶음밥이 유명하다구요..?🤔 압구정맛집 하나우동 먹방",
+  "query": "하나우동",
+  "addr": "강남구",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)",
+  "replace": [
+   "ENTR_1viik4_0"
+  ]
+ },
+ "JUIQs7ytf5U_q": {
+  "status": "ok_query",
+  "vid": "JUIQs7ytf5U",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "처음으로 먹다가 포기했어요.. 총 9단계 매운맛🔥 신림동 짬뽕갑 짜장 먹방",
+  "query": "짬뽕갑",
+  "addr": "관악구",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)",
+  "replace": [
+   "JUIQs7ytf5U_0"
+  ]
+ },
+ "VXSIQ7XuUQ8_q": {
+  "status": "ok_query",
+  "vid": "VXSIQ7XuUQ8",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "오픈 한달만에 월매출 4억이라구요?😳 강남역 핫플 청간막국수 따뀌(?) 꼬리찜 먹방",
+  "query": "청간막국수",
+  "addr": "강남구",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)",
+  "replace": [
+   "VXSIQ7XuUQ8_0"
+  ]
+ },
+ "DncejNvRvTM_q": {
+  "status": "ok_query",
+  "vid": "DncejNvRvTM",
+  "cid": "UCfpaSruWW3S4dibonKXENjA",
+  "t": "우리나라서 가장 큰? 1M솥뚜껑에서 삼겹살?!😳 강화도 꼭대기집 약수터 삼겹살과 포기김치 먹방",
+  "query": "꼭대기집",
+  "addr": "강화",
+  "by": "김부장 (대표님 위임 · 2026-11-22 확인)",
+  "replace": [
+   "DncejNvRvTM_0"
+  ]
  }
 }
