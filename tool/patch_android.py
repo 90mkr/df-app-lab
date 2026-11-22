@@ -46,4 +46,38 @@ for gp, line in (("android/app/build.gradle.kts", "    lint {\n        checkRele
         if "checkReleaseBuilds" not in g:
             g = g.replace("android {\n", "android {\n" + line, 1)
             open(gp, "w", encoding="utf-8").write(g)
+# 고정 서명: android/app/upload.jks 가 있으면 그 키로 (비밀번호는 KEY_PASS 환경 변수)
+kts = "android/app/build.gradle.kts"
+if os.path.exists(kts):
+    g = open(kts, encoding="utf-8").read()
+    if 'create("upload")' not in g:
+        g = g.replace("    buildTypes {", """    signingConfigs {
+        create("upload") {
+            storeFile = file("upload.jks")
+            storePassword = System.getenv("KEY_PASS")
+            keyAlias = "kokple"
+            keyPassword = System.getenv("KEY_PASS")
+        }
+    }
+
+    buildTypes {""", 1)
+        g = g.replace('signingConfig = signingConfigs.getByName("debug")',
+                      'signingConfig = if (file("upload.jks").exists()) signingConfigs.getByName("upload") else signingConfigs.getByName("debug")', 1)
+        open(kts, "w", encoding="utf-8").write(g)
+grv = "android/app/build.gradle"
+if os.path.exists(grv):
+    g = open(grv, encoding="utf-8").read()
+    if "upload.jks" not in g:
+        g = g.replace("    buildTypes {", """    signingConfigs {
+        upload {
+            storeFile file("upload.jks")
+            storePassword System.getenv("KEY_PASS")
+            keyAlias "kokple"
+            keyPassword System.getenv("KEY_PASS")
+        }
+    }
+
+    buildTypes {""", 1)
+        g = g.replace("signingConfig signingConfigs.debug", 'signingConfig file("upload.jks").exists() ? signingConfigs.upload : signingConfigs.debug', 1)
+        open(grv, "w", encoding="utf-8").write(g)
 print("안드로이드 설정 완료")

@@ -168,11 +168,25 @@ jobs:
           flutter create --org kr.designfeel --project-name df_app_lab --platforms android,web .
           python3 tool/patch_android.py "콕플"
 
+      - name: 앱 서명 키 풀기
+        env:
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          if [ -n "$KEY_PASS" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in tool/upload.jks.enc -out android/app/upload.jks -pass env:KEY_PASS
+            echo "고정 서명 키로 만듭니다"
+          else
+            echo "서명 키 비밀번호(ANDROID_KEY_PASS)가 아직 없어 임시 서명으로 만듭니다"
+          fi
+
       - name: 안드로이드 설치 파일 만들기
+        env:
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: |
           flutter pub get
           flutter build apk --release
           cp build/app/outputs/flutter-apk/app-release.apk df-app-lab.apk
+          keytool -printcert -jarfile df-app-lab.apk | grep -E "SHA1|SHA256" || true
 
       - name: 설치 파일 올리기
         uses: actions/upload-artifact@v7
