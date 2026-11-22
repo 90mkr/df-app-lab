@@ -63,13 +63,17 @@ def run(pg):
     shot("지도_음식종류_단추")
     if tap("음식 종류 고르기", 2):
         shot("음식종류_창")
-        if tap("카페", 3, exact=False):
-            shot("지도_카페만")
+        if tap("카페", 1.5, exact=False):
+            shot("음식종류_카페_고름")
+            tap("한식", 1.5, exact=False)
+            shot("음식종류_카페_한식")
+            tap("한식·카페 보기", 3, exact=False)
+            shot("지도_한식_카페")
             if tap("순위", 2.5):
                 shot("순위_카페")
                 pg.mouse.click(W / 2, 40)
                 time.sleep(1.2)
-            if tap("카페만 보는 중, 음식 종류 바꾸기", 2):
+            if tap("한식·카페 보는 중, 음식 종류 바꾸기", 2):
                 shot("음식종류_바꾸기")
                 pg.mouse.click(W / 2, 40)
                 time.sleep(1.2)

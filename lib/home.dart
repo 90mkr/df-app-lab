@@ -285,9 +285,10 @@ const kCuisineEmoji = {'한식': '🍲', '중식': '🥟', '일식': '🍣', '�
 
 class CuisinePills extends StatelessWidget {
   final String current;
+  final Set<String>? selected; // 여러 개 고르기 (지도) — 주면 이것으로 켜짐 표시
   final bool withAll;
   final ValueChanged<String> onPick;
-  const CuisinePills({super.key, required this.current, required this.onPick, this.withAll = false});
+  const CuisinePills({super.key, required this.current, required this.onPick, this.withAll = false, this.selected});
   // 한 줄을 꽉 채워 같은 너비로 (8개면 4칸씩 두 줄, 9개면 3칸씩 세 줄)
   @override
   Widget build(BuildContext context) {
@@ -298,7 +299,13 @@ class CuisinePills extends StatelessWidget {
       final w = ((box.maxWidth - gap * (cols - 1)) / cols).floorToDouble();
       return Wrap(spacing: gap, runSpacing: 9, children: [
         for (final (key, label, emoji) in items)
-          SizedBox(width: w, child: _FillChip(label: label, emoji: emoji, on: current == key, onTap: () => onPick(key))),
+          SizedBox(
+              width: w,
+              child: _FillChip(
+                  label: label,
+                  emoji: emoji,
+                  on: selected == null ? current == key : (key.isEmpty ? selected!.isEmpty : selected!.contains(key)),
+                  onTap: () => onPick(key))),
       ]);
     });
   }
@@ -1045,20 +1052,29 @@ class HomeView extends StatelessWidget {
       if (pick != null) used.add(pick.id);
       covers.add(pick);
     }
+    // 넘기지 않고 한눈에: 맨 앞 테마는 넓게 1칸, 나머지는 2개씩 (모두 16:9) — 홀수로 남으면 마지막도 넓게
+    Widget banner(int i, {bool big = false}) => ThemeBanner(list[i], cover: covers[i], big: big, onTap: () => onCourse(list[i]));
+    final rest = list.length - 1;
+    final pairs = rest ~/ 2;
     return Padding(
       padding: const EdgeInsets.only(top: 30),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         sectionHead('테마 ', '골라 보기'),
         const SizedBox(height: 14),
-        SizedBox(
-          height: 200,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, i) => ThemeCard(list[i], cover: covers[i], onTap: () => onCourse(list[i])),
-          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(children: [
+            banner(0, big: true),
+            for (var r = 0; r < pairs; r++) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: banner(1 + r * 2)),
+                const SizedBox(width: 10),
+                Expanded(child: banner(2 + r * 2)),
+              ]),
+            ],
+            if (rest.isOdd) ...[const SizedBox(height: 10), banner(list.length - 1, big: true)],
+          ]),
         ),
       ]),
     );
@@ -1483,47 +1499,74 @@ class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin
 }
 
 // 테마 카드: 사진 한 장을 크게 깔고 그 위에 글자 (아래쪽만 살짝 어둡게)
-class ThemeCard extends StatelessWidget {
+// 테마마다 고유 색 (어두운 필터용, 채도는 조금 낮춰 서로 튀지 않게)
+const kThemeColor = <String, Color>{
+  'proven': Color(0xFFB4470F), // 검증 맛집: 진한 주황
+  'yt': Color(0xFFA8231C), // 먹방 유튜버 코스: 진한 빨강
+  'tour': Color(0xFF1F5F8B), // 동네 한 바퀴: 진한 하늘
+  'soup': Color(0xFF6E4222), // 국밥·해장: 진한 갈색
+  'noodle': Color(0xFF8C6410), // 칼국수·면: 진한 겨자
+  'bread': Color(0xFF7A2A63), // 빵지순례: 진한 자주
+  'meat': Color(0xFF2F5E3A), // 고기 맛집: 진한 녹색
+  'late': Color(0xFF1F2A5E), // 늦게까지 여는 집: 남색
+  'cook': Color(0xFF4A3478), // 요리 경연 방송: 진한 보라
+  'tv': Color(0xFF3B4556), // 방송 맛집: 짙은 회청
+};
+
+// 테마 배너: 영상 사진(16:9, 흐림 없이) + 테마 색 필터(글자 있는 왼쪽 아래 진하게 → 오른쪽 위 옅게) + 흰 글자
+class ThemeBanner extends StatelessWidget {
   final Course c;
-  final Video? cover; // 카드 사진 (앞 카드와 겹치지 않게 골라서 넘김)
+  final Video? cover; // 배경 사진 (앞 배너와 겹치지 않게 골라서 넘김)
+  final bool big;
   final VoidCallback onTap;
-  const ThemeCard(this.c, {super.key, this.cover, required this.onTap});
+  const ThemeBanner(this.c, {super.key, this.cover, this.big = false, required this.onTap});
   @override
   Widget build(BuildContext context) {
     final cover = this.cover;
     final kind = c.stops.isNotEmpty ? c.stops.first.kind : 'food';
-    final tint = kindTint(kind);
-    final plain = Container(
-      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [tint, tint.withValues(alpha: 0.7)])),
-      alignment: Alignment.topRight,
-      padding: const EdgeInsets.all(18),
-      child: KindGlyph(kind: kind, size: 44, bg: tint),
-    );
+    final tone = kThemeColor[c.id] ?? kindTint(kind);
+    final plain = Container(color: tone);
+    const shadow = [Shadow(color: Color(0x40000000), blurRadius: 6)];
     return Semantics(
       button: true,
-      label: c.name,
+      label: '${c.name} ${c.stops.length}곳',
       onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: SizedBox(
-            width: 292,
-            height: 200,
+          borderRadius: BorderRadius.circular(big ? 14 : 12),
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
             child: Stack(fit: StackFit.expand, children: [
               if (cover == null) plain else ytWide(cover, fallback: plain),
+              // 색 필터 1: 대각선 (왼쪽 아래 진하게 → 오른쪽 위 옅게)
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomLeft,
+                    end: Alignment.topRight,
+                    colors: [tone.withValues(alpha: 0.62), tone.withValues(alpha: 0.38), tone.withValues(alpha: 0.12)],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
+                ),
+              ),
+              // 색 필터 2: 글자 자리(아래쪽)는 거의 꽉 차게 — 썸네일 속 큰 글씨가 테마 이름과 겹쳐 보이지 않게
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [tone.withValues(alpha: 0.94), tone.withValues(alpha: 0.78), tone.withValues(alpha: 0.0)],
+                    stops: big ? const [0.0, 0.3, 0.6] : const [0.0, 0.4, 0.75],
+                  ),
+                ),
+              ),
               Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                    child: Container(
-                      color: const Color(0x73000000),
-                      padding: const EdgeInsets.fromLTRB(18, 13, 18, 14),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                left: big ? 18 : 12,
+                right: big ? 18 : 10,
+                bottom: big ? 15 : 10,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text.rich(
                     TextSpan(children: [
                       TextSpan(text: c.bold, style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -1531,14 +1574,14 @@ class ThemeCard extends StatelessWidget {
                     ]),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 21, color: Colors.white, letterSpacing: -0.5, height: 1.25),
+                    style: TextStyle(fontSize: big ? 24 : 15.5, color: Colors.white, letterSpacing: -0.5, height: 1.2, shadows: shadow),
                   ),
-                  const SizedBox(height: 3),
-                  Text(c.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: Color(0xE6FFFFFF))),
+                  SizedBox(height: big ? 4 : 2),
+                  Text(big ? c.sub : '${c.stops.length}곳',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: big ? 13 : 11.5, color: const Color(0xEBFFFFFF), height: 1.2, shadows: shadow)),
                 ]),
-                    ),
-                  ),
-                ),
               ),
             ]),
           ),

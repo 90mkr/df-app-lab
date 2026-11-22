@@ -603,7 +603,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> recents = []; // 최근 본 집 (휴대폰 안에만, 최대 30곳)
   LatLngBounds? bounds; // 지금 지도에 보이는 범위
   Course? course; // 지도에서 보는 중인 테마 코스
-  String cuisine = ''; // 음식 종류 고르기 (한식·중식 …, 비면 전체)
+  final Set<String> cuisines = {}; // 음식 종류 고르기 — 여러 개 함께 (비면 전체)
+  String get cuisine => [for (final c in kCuisines) if (cuisines.contains(c)) c].join('·');
   FollowData? follow; // 유명 유튜버 따라가기 (전국)
   bool followOn = true; // 지도 기본: 유튜버 따라 먹기 (전국) — 인천 「자세히」 동네만 별점·영업시간 지도로 바꿔 볼 수 있음
   bool _placed = false, _moved = false; // 처음 지도 자리를 잡았는지 · 손으로 지도를 움직였는지
@@ -650,7 +651,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       }
     }
     Iterable<Place> l = byId.values;
-    if (cuisine.isNotEmpty) l = l.where((p) => cuisineOf(p) == cuisine);
+    if (cuisines.isNotEmpty) l = l.where((p) => cuisines.contains(cuisineOf(p)));
     if (multi) l = l.where((p) => ytCount(p) >= 2);
     _mp = l.toList();
     _score
@@ -740,7 +741,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       focus = null;
       tab = 2;
       kind = 'all';
-      cuisine = c;
+      cuisines
+        ..clear()
+        ..add(c);
       course = null;
     });
     final d = data;
@@ -759,9 +762,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     });
   }
 
-  // 음식 종류 고르기 (지도 분류 줄의 「음식 종류」 · 홈의 음식 알약)
+  // 음식 종류 고르기 (지도 분류 줄의 「음식 종류」): 누를 때마다 넣고 빼기, 「전체」나 ×는 모두 풀기
   void pickCuisine(String c) => setState(() {
-        cuisine = c;
+        if (c.isEmpty) {
+          cuisines.clear();
+        } else if (!cuisines.remove(c)) {
+          cuisines.add(c);
+        }
         course = null;
         focus = null;
       });
@@ -771,32 +778,51 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       context: context,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.08),
-      builder: (ctx) => Align(
-        alignment: Alignment.bottomCenter,
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.fromLTRB(20, 18, 20, 22 + MediaQuery.of(ctx).padding.bottom),
-            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              mixTitle('음식 ', '종류', size: 17),
-              const SizedBox(height: 14),
-              CuisinePills(
-                current: cuisine,
-                withAll: true,
-                onPick: (c) {
-                  Navigator.pop(ctx);
-                  pickCuisine(c);
-                },
-              ),
-            ]),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => Align(
+          alignment: Alignment.bottomCenter,
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 16 + MediaQuery.of(ctx).padding.bottom),
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  mixTitle('음식 ', '종류', size: 17),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('여러 개를 함께 고를 수 있어요', style: TextStyle(fontSize: 12, color: kSub))),
+                ]),
+                const SizedBox(height: 14),
+                CuisinePills(
+                  current: '',
+                  selected: cuisines,
+                  withAll: true,
+                  onPick: (c) {
+                    pickCuisine(c);
+                    set(() {});
+                  },
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: FilledButton.styleFrom(backgroundColor: kAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: Text(cuisines.isEmpty ? '전체 보기' : '$cuisine 보기',
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
+                ),
+              ]),
+            ),
           ),
         ),
       ),
     );
   }
+
 
   // 내 주변 (홈 지역 메뉴): 지도로 가서 내 위치 둘레를 크게
   Future<void> pickKind(String k) async {
@@ -1406,7 +1432,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Semantics(
           button: true,
-          label: on ? '$cuisine만 보는 중, 음식 종류 바꾸기' : '음식 종류 고르기',
+          label: on ? '$cuisine 보는 중, 음식 종류 바꾸기' : '음식 종류 고르기',
           onTap: openCuisine,
           excludeSemantics: true,
           child: GestureDetector(
@@ -1415,7 +1441,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             child: Padding(
               padding: EdgeInsets.only(left: 11, right: on ? 1 : 7),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(on ? '${kCuisineEmoji[cuisine] ?? '🍱'} $cuisine' : '음식 종류',
+                Text(
+                    !on
+                        ? '음식 종류'
+                        : cuisines.length == 1
+                            ? '${kCuisineEmoji[cuisine] ?? '🍱'} $cuisine'
+                            : cuisines.length == 2
+                                ? cuisine
+                                : '${cuisine.split('·').first} 외 ${cuisines.length - 1}',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: on ? Colors.white : kInk)),
                 Icon(Icons.keyboard_arrow_down_rounded, size: 17, color: on ? Colors.white : kInk),
               ]),
