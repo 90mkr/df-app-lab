@@ -365,6 +365,8 @@ def main():
                 time.sleep(GAP)
                 continue
             cache["ai"][vid] = {"at": dt.date.today().isoformat(), "p": [match(p) for p in ps if (p.get("name") or "").strip()]}
+            v["d"] = v.get("d", "")[:600]  # 본 영상은 설명 앞부분만 남긴다 (저장소가 불어나지 않게)
+            v.pop("cmt", None)
             done += 1
             if done % 10 == 0:
                 save(CACHE, cache)
