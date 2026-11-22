@@ -1,0 +1,21 @@
+rules_version = '2';
+// 콕플 파이어베이스 규칙: 읽기는 모두(앱에 보이는 내용), 쓰기는 관리자만. 회원 자기 문서는 본인만.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'dfmail@naver.com';
+    }
+    match /config/{doc} { allow read: if true; allow write: if isAdmin(); }
+    match /banners/{doc} { allow read: if true; allow write: if isAdmin(); }
+    match /bannerImg/{doc} { allow read: if true; allow write: if isAdmin(); }
+    match /places/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+      match /history/{h} { allow read, write: if isAdmin(); }
+    }
+    match /picks/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
