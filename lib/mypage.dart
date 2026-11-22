@@ -327,12 +327,14 @@ List<Widget> myMenus(BuildContext context) {
       builder: (_, l, __) => menuGroup('콕플 안내', [
         menuRow('공지사항', icon: Icons.campaign_outlined, sub: (l == null || l.isEmpty) ? null : l.first.title, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NoticePage()))),
         menuRow('콕플 사용법', icon: Icons.help_outline_rounded, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GuidePage()))),
-        menuRow('개선 제안하기', icon: Icons.lightbulb_outline_rounded, sub: '불편한 점, 있었으면 하는 기능',
-            onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플] 개선 제안')}')),
-        menuRow('제휴·광고 문의', icon: Icons.handshake_outlined, sub: '가게 등록·협업 제안',
-            onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플 제휴 문의]')}'
-                '&body=${Uri.encodeComponent('회사·가게 이름:\n담당자 연락처:\n제안 내용:\n')}')),
-        menuRow('문의하기', icon: Icons.mail_outline_rounded, sub: kContactMail, onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플] 문의')}')),
+        // 메일 대신 앱 안에서 글로 접수 (대표님 지시 11-23) — 답변은 「내 문의」에서
+        menuRow('개선 제안하기', icon: Icons.lightbulb_outline_rounded, sub: '불편한 점, 있었으면 하는 기능', onTap: () => openAsk(context, 'idea')),
+        menuRow('제휴·광고 문의', icon: Icons.handshake_outlined, sub: '가게 등록·협업 제안', onTap: () => openAsk(context, 'biz')),
+        menuRow('문의하기', icon: Icons.edit_note_rounded, sub: '앱 안에서 바로 접수돼요', onTap: () => openAsk(context, 'ask')),
+        ValueListenableBuilder<List<Ask>?>(
+          valueListenable: myAsks,
+          builder: (_, a, __) => menuRow('내 문의', icon: Icons.forum_outlined, sub: myAskSub(a), onTap: () => openMyAsks(context)),
+        ),
       ]),
     ),
     const SizedBox(height: 24),

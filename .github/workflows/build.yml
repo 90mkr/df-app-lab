@@ -85,7 +85,7 @@ jobs:
 
       - name: 맛집 자료 모으기
         if: ${{ !inputs.follow_only && !inputs.pick_only }}
-        timeout-minutes: 150
+        timeout-minutes: 300
         env:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
@@ -106,6 +106,8 @@ jobs:
         run: python3 -u collector/auto_areas.py --report
 
       - name: 모은 자료 저장
+        # 수집이 시간 제한으로 끊겨도 그때까지 모은 동네와 구글 사용 횟수는 꼭 저장 (안 그러면 다음 수집이 쓴 만큼을 모름)
+        if: ${{ !cancelled() }}
         run: |
           git config user.name "df-app-lab"
           git config user.email "dfmail@naver.com"

@@ -177,7 +177,7 @@ class AdminPage extends StatefulWidget {
 
 class _AdminPageState extends State<AdminPage> {
   int tab = 0;
-  static const tabs = ['메인 순서', '배너', '팝업', '공지사항', '가게 관리', '확인 대기', '후보 확인', '후기 신고', '지역 수집'];
+  static const tabs = ['메인 순서', '배너', '팝업', '공지사항', '문의함', '가게 관리', '확인 대기', '후보 확인', '후기 신고', '지역 수집'];
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -227,10 +227,11 @@ class _AdminPageState extends State<AdminPage> {
                 1 => _BannerTab(onChanged: widget.onChanged),
                 2 => _PopupTab(onChanged: widget.onChanged),
                 3 => const NoticeAdminTab(),
-                4 => _PlaceTab(places: widget.places, onChanged: widget.onChanged),
-                5 => _PendingTab(places: widget.places, onChanged: widget.onChanged),
-                6 => const _PicksTab(),
-                7 => const ReviewAdminTab(),
+                4 => const AskAdminTab(), // 앱 안으로 들어온 제안·제휴·문의·정보 수정 (메일 대신)
+                5 => _PlaceTab(places: widget.places, onChanged: widget.onChanged),
+                6 => _PendingTab(places: widget.places, onChanged: widget.onChanged),
+                7 => const _PicksTab(),
+                8 => const ReviewAdminTab(),
                 _ => const RegionProgressTab(),
               },
             ),
@@ -1653,6 +1654,9 @@ class _RegionProgressTabState extends State<RegionProgressTab> {
     final refill = '${g['refill'] ?? ''}';
     final rm = RegExp(r'\d{4}-(\d{2})-(\d{2})').firstMatch(refill);
     final refillText = rm == null ? '다음 달 1일' : '${int.parse(rm.group(1)!)}월 ${int.parse(rm.group(2)!)}일';
+    final rf = RegExp(r'(\d{4})-(\d{2})').firstMatch('${g['refresh_from'] ?? ''}');
+    final refreshText = rf == null ? '' : '${rf.group(1)}년 ${int.parse(rf.group(2)!)}월';
+    final full = g['full'] is List ? g['full'] as List : null, lite = g['lite'] is List ? g['lite'] as List : null;
     final run = rows.where((r) => r['st'] == 'run').firstOrNull;
     final next = rows.where((r) => r['st'] == 'queue').firstOrNull;
     return RefreshIndicator(
@@ -1678,11 +1682,16 @@ class _RegionProgressTabState extends State<RegionProgressTab> {
             const SizedBox(height: 7),
             Text(
               [
+                if (full != null && lite != null && full.length > 1 && lite.length > 1)
+                  '편의 정보까지 ${full[0]} / ${full[1]}번 · 기본 정보 ${lite[0]} / ${lite[1]}번',
                 if (((g['paid'] as num?)?.toInt() ?? 0) > 0)
-                  '무료 ${g['free'] ?? 1800}번 + 승인한 유료 ${g['paid']}번 (약 42달러, 이번 달만)'
+                  '이번 달은 승인한 유료 ${g['paid']}번 포함 (이번 달만)'
                 else
-                  '모두 무료 (조회 종류 두 가지 × 900번)',
-                d['wait'] == true ? '새 동네를 시작할 만큼 남지 않아 $refillText에 다시 채워지면 이어서 모읍니다' : '남은 조회 ${g['left'] ?? '-'}번 · 유튜버 집부터 별점·영업시간을 받습니다',
+                  '조회 종류마다 무료분 + 조금 넘는 몫까지 (상한으로 막음)',
+                d['wait'] == true
+                    ? '새 동네를 시작할 만큼 남지 않아 $refillText에 다시 채워지면 이어서 모읍니다'
+                    : '남은 조회 ${g['left'] ?? '-'}번 · 유튜버 집은 편의 정보까지, 블로그 후보는 기본 정보부터',
+                if (refreshText.isNotEmpty) '이미 받은 가게 다시 받기는 $refreshText부터 (그 전엔 전부 새 동네에)',
               ].join('\n'),
               style: const TextStyle(fontSize: 12, color: kSub, height: 1.4),
             ),

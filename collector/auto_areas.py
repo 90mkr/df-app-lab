@@ -18,10 +18,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from collect import (fs_docs, load_json, save_json, REGIONS, DATA_DIR, USAGE, GOOGLE_MONTH, GOOGLE_MONTH_B, GOOGLE_PAID,  # noqa: E402
+                     GOOGLE_MONTH_C, GOOGLE_MONTH_D, REFRESH_FROM,
                      GOOGLE_NEW_MAX, GOOGLE_NEW_CAP, GOOGLE_YT_REST, google_left)
 
 NEW_MIN = 120  # collect.py가 새 동네를 시작하는 최소 남은 구글 조회 수 (같은 값)
-MAX_ADD = int(os.environ.get("AUTO_MAX_ADD", "6"))  # 한 번 수집에 새로 더하는 동네 수 (수집 시간 안에 끝나게)
+MAX_ADD = int(os.environ.get("AUTO_MAX_ADD", "4"))  # 한 번 수집에 새로 더하는 동네 수 (수집이 길어져 앱 만들기를 오래 막지 않게 — 6에서 4로)
 PROGRESS = os.path.join(DATA_DIR, "progress.json")
 GROUP = {"서울": "서울", "부산": "부산", "제주": "제주", "경기": "경기", "인천": "인천", "강원": "강원",
          "경북": "경상", "경남": "경상", "대구": "경상", "울산": "경상",
@@ -221,11 +222,14 @@ def write_progress(rows, usage):
     m = today.strftime("%Y-%m")
     left = google_left(usage, m)
     paid = GOOGLE_PAID.get(m, 0)
-    used = usage.get(m, 0) + usage.get(m + ":B", 0)
+    full_used, full_cap = usage.get(m, 0) + usage.get(m + ":B", 0), GOOGLE_MONTH + GOOGLE_MONTH_B + paid   # 편의 정보까지 (A·B)
+    lite_used, lite_cap = usage.get(m + ":C", 0) + usage.get(m + ":D", 0), GOOGLE_MONTH_C + GOOGLE_MONTH_D  # 기본 정보 (C·D)
     data = {
         "updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
-        "google": {"month": m, "used": used, "limit": GOOGLE_MONTH + GOOGLE_MONTH_B + paid, "free": GOOGLE_MONTH + GOOGLE_MONTH_B,
-                   "paid": paid, "left": left, "new_min": NEW_MIN, "per_area": GOOGLE_NEW_MAX, "refill": nxt.isoformat()},
+        "google": {"month": m, "used": full_used + lite_used, "limit": full_cap + lite_cap, "free": GOOGLE_MONTH + GOOGLE_MONTH_B,
+                   "full": [full_used, full_cap], "lite": [lite_used, lite_cap],
+                   "paid": paid, "left": left, "new_min": NEW_MIN, "per_area": GOOGLE_NEW_MAX, "refill": nxt.isoformat(),
+                   "refresh_from": REFRESH_FROM.isoformat()},
         "wait": left < NEW_MIN,
         "phases": PHASES,
         "rows": out,

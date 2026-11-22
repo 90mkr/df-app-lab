@@ -120,6 +120,26 @@ service cloud.firestore {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       allow write: if isAdmin();
     }
+    // 콕플 문의함 (메일 대신 앱 안에서): 개선 제안·제휴·광고 문의·문의·정보 수정
+    // 로그인한 회원이 자기 이름으로만 쓰고, 쓴 사람과 관리자만 봄 · 답변(ans)은 관리자만 · 지우기는 쓴 사람이나 관리자
+    match /asks/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'nick', 'kind', 'title', 'text', 'contact', 'pid', 'pname', 'items', 'at', 'st'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.nick is string && request.resource.data.nick.size() >= 1 && request.resource.data.nick.size() <= 12
+        && request.resource.data.kind in ['idea', 'biz', 'ask', 'fix']
+        && request.resource.data.title is string && request.resource.data.title.size() >= 1 && request.resource.data.title.size() <= 40
+        && request.resource.data.text is string && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 1000
+        && request.resource.data.contact is string && request.resource.data.contact.size() <= 60
+        && request.resource.data.pid is string && request.resource.data.pid.size() <= 40
+        && request.resource.data.pname is string && request.resource.data.pname.size() <= 60
+        && request.resource.data.items is list && request.resource.data.items.size() <= 6
+        && request.resource.data.at == request.time
+        && request.resource.data.st == 'new';
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update: if isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ans', 'st', 'aat']);
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
     // 후기 신고 (한 사람이 한 후기에 한 번) → 관리자가 보고 숨김
     match /reports/{id} {
       allow create: if signedIn()

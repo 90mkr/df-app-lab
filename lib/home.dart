@@ -1008,26 +1008,8 @@ class HomeView extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 5, 20, 0),
           child: Text('맛집 채널이 영상에 주소를 적어 둔 집 · 전국 ${commas(f.places.length)}곳', style: const TextStyle(fontSize: 13, color: kSub)),
         ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 132,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: f.channels.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, i) {
-              final c = f.channels[i];
-              return Semantics(
-                button: true,
-                label: '${c.name} 따라 먹기',
-                onTap: () => onFollow(c.id),
-                excludeSemantics: true,
-                child: GestureDetector(onTap: () => onFollow(c.id), child: ChanAvatar(c, size: 82, lift: true)),
-              );
-            },
-          ),
-        ),
+        const SizedBox(height: 10),
+        FollowStrip(channels: f.channels, active: active, onTap: onFollow),
       ]),
     );
   }
@@ -1513,6 +1495,46 @@ const kThemeColor = <String, Color>{
   'tv': Color(0xFF3B4556), // 방송 맛집: 짙은 회청
 };
 
+// 큰 배너에 붙는 스티커 (테마마다 어울리는 콕플 캐릭터) — 「검증 맛집」은 윙크하며 「인정」 도장
+const kThemeSticker = <String, String>{'proven': 'yt_ok', 'yt': 'life', 'soup': 'again', 'noodle': 'value', 'meat': 'big', 'bread': 'kind', 'late': 'solo', 'tour': 'date'};
+
+// 스티커가 살짝 까딱거림 (움직임 줄이기를 켠 휴대폰은 가만히)
+class _Wobble extends StatefulWidget {
+  final Widget child;
+  const _Wobble({required this.child});
+  @override
+  State<_Wobble> createState() => _WobbleState();
+}
+
+class _WobbleState extends State<_Wobble> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1700));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final still = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (still) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        // 왼쪽으로 기운 채 -6° ~ +1° 사이를 천천히 오감 (발밑을 축으로)
+        builder: (_, child) => Transform.rotate(angle: -0.10 + 0.12 * Curves.easeInOut.transform(_c.value), alignment: Alignment.bottomCenter, child: child),
+        child: widget.child,
+      );
+}
+
 // 테마 배너: 영상 사진(16:9, 흐림 없이) + 테마 색 필터(글자 있는 왼쪽 아래 진하게 → 오른쪽 위 옅게) + 흰 글자
 class ThemeBanner extends StatelessWidget {
   final Course c;
@@ -1562,25 +1584,35 @@ class ThemeBanner extends StatelessWidget {
                   ),
                 ),
               ),
+              // 큰 배너(맨 앞, 주로 「검증 맛집」): 자리가 넓으니 글자를 크게 + 오른쪽 아래에 까딱거리는 스티커 (대표님 지시 11-23)
+              if (big)
+                Positioned(
+                  right: 8,
+                  bottom: 4,
+                  child: _Wobble(child: StickerFace(kThemeSticker[c.id] ?? 'yt_ok', size: 112)),
+                ),
               Positioned(
-                left: big ? 18 : 12,
-                right: big ? 18 : 10,
-                bottom: big ? 15 : 10,
+                left: big ? 20 : 12,
+                right: big ? 118 : 10,
+                bottom: big ? 17 : 10,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text.rich(
-                    TextSpan(children: [
-                      TextSpan(text: c.bold, style: const TextStyle(fontWeight: FontWeight.w800)),
-                      TextSpan(text: c.light, style: const TextStyle(fontWeight: FontWeight.w300)),
-                    ]),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: big ? 24 : 15.5, color: Colors.white, letterSpacing: -0.5, height: 1.2, shadows: shadow),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: c.bold, style: const TextStyle(fontWeight: FontWeight.w800)),
+                        TextSpan(text: c.light, style: const TextStyle(fontWeight: FontWeight.w300)),
+                      ]),
+                      maxLines: 1,
+                      style: TextStyle(fontSize: big ? 34 : 15.5, color: Colors.white, letterSpacing: big ? -1 : -0.5, height: 1.15, shadows: shadow),
+                    ),
                   ),
-                  SizedBox(height: big ? 4 : 2),
-                  Text(big ? c.sub : '${c.stops.length}곳',
+                  SizedBox(height: big ? 5 : 2),
+                  Text(big ? (c.desc.isNotEmpty ? c.desc : c.sub) : '${c.stops.length}곳', // 큰 배너는 설명만 (스티커 자리를 비워 두려고 곳 수는 뺌)
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: big ? 13 : 11.5, color: const Color(0xEBFFFFFF), height: 1.2, shadows: shadow)),
+                      style: TextStyle(fontSize: big ? 14.5 : 11.5, fontWeight: big ? FontWeight.w500 : FontWeight.w400, color: const Color(0xF2FFFFFF), height: 1.2, shadows: shadow)),
                 ]),
               ),
             ]),
@@ -2386,6 +2418,105 @@ class _PointerPainter extends CustomPainter {
 // 유튜버 동그라미 + 이름 + 다녀간 수
 // 사진은 유튜브 공식 연동(채널 정보)으로 받은 프로필 이미지 — 수집기가 30일 안에 새로 받고, 못 받은 채널은 이름 첫 글자
 // (스토어 소개 사진·광고에는 유튜버 이미지를 쓰지 않는다)
+// 유튜버 따라 먹기 줄 (대표님 지시 11-22): 동그라미를 키워 3개 반만 보이게 하고 한 칸씩 저절로 넘김 (끝없이 돎).
+// 인기 유튜버(쯔양 등)는 셋째 칸부터 — 맨 뒤 두 명을 앞에 둔다. 홈 탭에서 이 줄이 화면에 보일 때만 움직이고,
+// 손으로 넘기면 6초 쉬었다가 다시 움직인다. 손으로 넘겨도 한 칸씩 딱 맞춰 선다.
+class FollowStrip extends StatefulWidget {
+  final List<Chan> channels;
+  final bool active;
+  final ValueChanged<String> onTap;
+  const FollowStrip({super.key, required this.channels, required this.active, required this.onTap});
+  @override
+  State<FollowStrip> createState() => _FollowStripState();
+}
+
+class _FollowStripState extends State<FollowStrip> {
+  static const _inset = 16.0; // 왼쪽 여백 (동그라미가 제목 글자 줄에 맞게)
+  static const _gap = 16.0; // 칸 사이 — 멈췄을 때 앞 칸이 왼쪽 끝에 조금도 걸치지 않는 너비
+  static const _lead = 2; // 맨 뒤 두 명을 앞에 → 인기 유튜버는 셋째 칸부터
+  PageController? _pc;
+  double _w = 0;
+  Timer? _timer;
+  DateTime _touched = DateTime(2000);
+
+  int get n => widget.channels.length;
+  bool get loop => n >= 5;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 3200), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _pc?.dispose();
+    super.dispose();
+  }
+
+  void _tick() {
+    final pc = _pc;
+    if (!mounted || !loop || !widget.active || pc == null || !pc.hasClients) return;
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null || mq.disableAnimations) return; // 움직임 줄이기를 켠 휴대폰은 그대로
+    if (DateTime.now().difference(_touched).inSeconds < 6) return;
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return;
+    final mid = box.localToGlobal(Offset(0, box.size.height / 2)).dy;
+    if (mid < 0 || mid > mq.size.height) return; // 아직 내려오지 않았으면 기다림
+    pc.nextPage(duration: const Duration(milliseconds: 650), curve: Curves.easeInOutCubic);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, box) {
+      final w = box.maxWidth;
+      // 3개 반: 왼쪽 여백 뒤로 칸 3.5개 — 너무 작거나(작은 휴대폰) 너무 크면(태블릿) 82~112로 묶음
+      final size = ((w - _inset) / 3.5 - 8 - _gap).clamp(82.0, 112.0).toDouble();
+      final pitch = size + 8 + _gap;
+      if (_pc == null || (w - _w).abs() > 0.5) {
+        final old = _pc;
+        final at = old != null && old.hasClients ? (old.page ?? 0).round() : (loop ? n * 1000 - _lead : 0);
+        _pc = PageController(viewportFraction: pitch / w, initialPage: at);
+        _w = w;
+        if (old != null) WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+      }
+      return SizedBox(
+        height: size + 56,
+        child: NotificationListener<ScrollStartNotification>(
+          onNotification: (s) {
+            if (s.dragDetails != null) _touched = DateTime.now();
+            return false;
+          },
+          child: PageView.builder(
+            key: ValueKey(w.round()),
+            controller: _pc,
+            padEnds: false,
+            itemCount: loop ? null : n,
+            itemBuilder: (_, i) {
+              final c = widget.channels[i % n];
+              return Padding(
+                padding: const EdgeInsets.only(left: _inset, top: 6), // 위 6: 동그라미 그림자가 잘리지 않게
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Semantics(
+                    button: true,
+                    label: '${c.name} 따라 먹기',
+                    onTap: () => widget.onTap(c.id),
+                    excludeSemantics: true,
+                    child: GestureDetector(onTap: () => widget.onTap(c.id), child: ChanAvatar(c, size: size, lift: true)),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    });
+  }
+}
+
 class ChanAvatar extends StatelessWidget {
   final Chan c;
   final Color ring;
@@ -3380,11 +3511,9 @@ class SettingsPage extends StatelessWidget {
               ]),
               const SizedBox(height: 24),
               group('문의', [
-                row('문의하기', sub: kContactMail, onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플] 문의')}')),
-                row('제휴 문의',
-                    sub: '광고·협업 제안',
-                    onTap: () => openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플 제휴 문의]')}'
-                        '&body=${Uri.encodeComponent('회사·가게 이름:\n담당자 연락처:\n제안 내용:\n')}')),
+                row('문의하기', sub: '앱 안에서 바로 접수돼요', onTap: () => openAsk(context, 'ask')),
+                row('제휴 문의', sub: '광고·협업 제안', onTap: () => openAsk(context, 'biz')),
+                row('내 문의', sub: '보낸 글과 답변', onTap: () => openMyAsks(context)),
               ]),
               const SizedBox(height: 24),
               group('약관·정책', [
@@ -3412,7 +3541,7 @@ class SettingsPage extends StatelessWidget {
 }
 
 // ---- 정보 수정 신고 ----
-// 로그인 기능이 열리기 전까지는 메일로 보낸다 (보낸 사람이 남아 장난 신고가 줄고, 같은 휴대폰에서 같은 가게는 하루 한 번)
+// 앱 안 문의함(asks)으로 접수 — 로그인한 회원만 (장난 신고가 줄고, 같은 휴대폰에서 같은 가게는 하루 한 번)
 class ReportSheet extends StatefulWidget {
   final Place place;
   const ReportSheet({super.key, required this.place});
@@ -3447,9 +3576,24 @@ class _ReportSheetState extends State<ReportSheet> {
       setState(() => note = '이 가게는 오늘 이미 신고하셨어요. 내일 다시 보낼 수 있어요.');
       return;
     }
+    // 메일 대신 앱 안 문의함으로 바로 접수 (대표님 지시 11-23) — 로그인한 회원만
+    if (!mounted || !await _askLogin(context) || !mounted) return;
     final p = widget.place;
-    final body = '가게: ${p.name}\n주소: ${p.addr}\n항목: ${picks.join(', ')}\n내용: ${memo.text.trim()}\n\n(콕플 앱에서 보냄 · 가게 번호 ${p.id})';
-    await openUrl('mailto:$kContactMail?subject=${Uri.encodeComponent('[콕플 정보 수정] ${p.name}')}&body=${Uri.encodeComponent(body)}');
+    final memoText = memo.text.trim();
+    final e = await sendAsk(
+      kind: 'fix',
+      title: '${p.name} 정보 수정',
+      text: memoText.isEmpty ? '${picks.join(', ')}이(가) 달라요' : memoText,
+      contact: '',
+      pid: p.id,
+      pname: p.name,
+      items: [for (final t in items) if (picks.contains(t)) t],
+    );
+    if (!mounted) return;
+    if (e != null) {
+      setState(() => note = e);
+      return;
+    }
     try {
       await sp?.setBool(todayKey, true);
     } catch (_) {}
@@ -3479,7 +3623,7 @@ class _ReportSheetState extends State<ReportSheet> {
               Text(p.name, style: const TextStyle(fontSize: 12, color: kSub)),
               const SizedBox(height: 14),
               if (sent) ...[
-                const Text('메일 앱에서 「보내기」를 누르면 접수됩니다.\n확인한 뒤 바로 고칠게요. 알려 주셔서 고맙습니다.', style: TextStyle(fontSize: 13, color: kInk, height: 1.45)),
+                const Text('확인한 뒤 바로 고칠게요. 알려 주셔서 고맙습니다.\n처리 결과는 내 콕 › 「내 문의」에서 볼 수 있어요.', style: TextStyle(fontSize: 13, color: kInk, height: 1.45)),
                 const SizedBox(height: 18),
                 SizedBox(
                   width: double.infinity,
@@ -3539,7 +3683,7 @@ class _ReportSheetState extends State<ReportSheet> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text('지금은 메일로 보내져요. 로그인 기능이 열리면 앱 안에서 바로 접수됩니다.', style: TextStyle(fontSize: 10.5, color: kSub)),
+                const Text('앱 안에서 바로 접수돼요. 로그인한 회원만 보낼 수 있어요.', style: TextStyle(fontSize: 10.5, color: kSub)),
               ],
             ]),
           ),

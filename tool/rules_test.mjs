@@ -122,6 +122,30 @@ await t('지역 세기 이름과 문서 다름 → 막힘', assertFails(setDoc(d
 await t('지역 세기 처음부터 100 → 막힘', assertFails(setDoc(doc(nobody, 'regionViews', '부산_해운대구'), { n: 100, sido: '부산', city: '해운대구', at: serverTimestamp() })));
 await t('지역 세기 읽기 → 됨', assertSucceeds(getDoc(rv)));
 
+const ask = (uid, extra = {}) => ({
+  uid, nick: '콕플러 1234', kind: 'ask', title: '후기 사진이 안 올라가요', text: '사진을 고르면 멈춰요', contact: '', pid: '', pname: '', items: [],
+  at: serverTimestamp(), st: 'new', ...extra,
+});
+await t('문의 쓰기 → 됨', assertSucceeds(setDoc(doc(alice, 'asks', 'a1'), ask('alice'))));
+await t('정보 수정 쓰기 → 됨', assertSucceeds(setDoc(doc(bob, 'asks', 'b1'), ask('bob', { kind: 'fix', title: '군봉묵은지김치찜 정보 수정', pid: '13635514', pname: '군봉묵은지김치찜', items: ['영업시간'] }))));
+await t('비회원 문의 → 막힘', assertFails(setDoc(doc(nobody, 'asks', 'n1'), ask('nobody'))));
+await t('남의 이름으로 문의 → 막힘', assertFails(setDoc(doc(bob, 'asks', 'b2'), ask('alice'))));
+await t('없는 종류 → 막힘', assertFails(setDoc(doc(alice, 'asks', 'a2'), ask('alice', { kind: 'spam' }))));
+await t('제목 없음 → 막힘', assertFails(setDoc(doc(alice, 'asks', 'a3'), ask('alice', { title: '' }))));
+await t('내용 1001자 → 막힘', assertFails(setDoc(doc(alice, 'asks', 'a4'), ask('alice', { text: '가'.repeat(1001) }))));
+await t('답변을 미리 넣고 쓰기 → 막힘', assertFails(setDoc(doc(alice, 'asks', 'a5'), ask('alice', { ans: '네', st: 'done' }))));
+await t('내 문의 보기 → 됨', assertSucceeds(getDoc(doc(alice, 'asks', 'a1'))));
+await t('내 문의만 모아 보기 → 됨', assertSucceeds(getDocs(query(collection(alice, 'asks'), where('uid', '==', 'alice')))));
+await t('남의 문의 엿보기 → 막힘', assertFails(getDoc(doc(bob, 'asks', 'a1'))));
+await t('문의 전체 목록 (회원) → 막힘', assertFails(getDocs(collection(bob, 'asks'))));
+await t('관리자 문의 목록 → 됨', assertSucceeds(getDocs(collection(admin, 'asks'))));
+await t('쓴 사람이 답변 달기 → 막힘', assertFails(updateDoc(doc(alice, 'asks', 'a1'), { ans: '스스로 답변', st: 'done' })));
+await t('관리자 답변 → 됨', assertSucceeds(updateDoc(doc(admin, 'asks', 'a1'), { ans: '고쳤어요', st: 'done', aat: serverTimestamp() })));
+await t('관리자가 글 내용 고치기 → 막힘', assertFails(updateDoc(doc(admin, 'asks', 'a1'), { text: '바꿈' })));
+await t('남의 문의 지우기 → 막힘', assertFails(deleteDoc(doc(bob, 'asks', 'a1'))));
+await t('내 문의 지우기 → 됨', assertSucceeds(deleteDoc(doc(alice, 'asks', 'a1'))));
+await t('관리자 문의 지우기 → 됨', assertSucceeds(deleteDoc(doc(admin, 'asks', 'b1'))));
+
 await env.cleanup();
 console.log(`\n시험 ${n}개 중 실패 ${bad}개`);
 process.exit(bad ? 1 : 0);

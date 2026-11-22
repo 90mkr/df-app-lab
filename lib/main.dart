@@ -28,6 +28,7 @@ part 'region.dart';
 part 'near.dart';
 part 'nav.dart';
 part 'mypage.dart';
+part 'ask.dart';
 
 const kPoint = kAccent; // 콕플 주색 (빨강주황): 단추·고른 탭·강조
 const kPointText = Color(0xFFDC3519); // 작은 강조 글씨 (흰 바탕에서 또렷하게 한 톤 진하게)
@@ -79,9 +80,14 @@ class DfApp extends StatelessWidget {
           ),
         ),
       ),
-      home: kIsWeb && reviews.demo && Uri.base.queryParameters['view'] == 'progress'
-          ? const Scaffold(backgroundColor: Colors.white, body: SafeArea(child: RegionProgressTab()))
-          : const MapPage(),
+      // 화면 점검(?demo=1&view=…): 화면 하나만 바로 띄움
+      home: switch (kIsWeb && reviews.demo ? Uri.base.queryParameters['view'] ?? '' : '') {
+        'progress' => const Scaffold(backgroundColor: Colors.white, body: SafeArea(child: RegionProgressTab())),
+        'ask' => const AskPage(kind: 'biz'),
+        'myask' => const MyAsksPage(),
+        'asks' => const Scaffold(backgroundColor: Colors.white, body: SafeArea(child: AskAdminTab())),
+        _ => const MapPage(),
+      },
     );
   }
 }

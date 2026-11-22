@@ -60,7 +60,14 @@ GOOGLE_MONTH_B = 1200  # B 상세 조회 한 달 상한 (무료 1,000 + 넘으�
 GOOGLE_PRO_MONTH = 4500  # B 가게 찾기 한 달 상한 (무료 5,000회 안쪽)
 # 대표님 승인(2026-11-22, 45달러): 2026년 11월에만 B를 1,600번 더 → B 합계 2,800번 = 무료 1,000 + 유료 1,800번(45달러)
 GOOGLE_PAID = {"2026-11": 1600}
-USAGE = os.path.join(os.path.dirname(__file__), "google_usage.json")
+# 대표님 지시(2026-11-22): 편의 정보(주차·예약·포장 등)를 빼고 받으면 구글에서 다른 조회 종류(Enterprise)로 잡혀 무료분이 따로 있다
+#  → 그 두 종류도 새 동네 넓히기에 쓴다. 무료분 1,000번까지만 (추가 비용 없음)
+GOOGLE_MONTH_C = 1000   # C: 글 찾기 한 번에 별점·리뷰 수·영업시간·홈페이지 (Text Search Enterprise, 무료 1,000)
+GOOGLE_MONTH_D = 1000   # D: 가게 찾기(Pro) → 상세 기본형 (Place Details Enterprise, 무료 1,000)
+# 대표님 지시(2026-11-22): 6개월 동안은 이미 받은 가게를 다시 받지 않고 조회를 전부 새 동네에 쓴다
+#  → 2027년 6월 1일부터 저절로 재수집 (기본 정보로 받은 순위권 가게의 편의 정보 채우기 포함)
+REFRESH_FROM = dt.date(2027, 6, 1)
+USAGE =os.path.join(os.path.dirname(__file__), "google_usage.json")
 TV_CACHE = os.path.join(os.path.dirname(__file__), "tv_cache.json")   # 방송 출연 확인 결과
 TV_DAYS = 30           # 방송 출연은 한 달마다 다시 확인 (무료)
 MIN_REVIEWS = int(os.environ.get("MIN_REVIEWS", "30"))  # 구글 리뷰가 이보다 적으면 순위 제외
@@ -78,8 +85,11 @@ def load_json(path, default):
 
 
 def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
+    """다 쓴 뒤 한 번에 바꿔치기 — 수집이 시간 제한으로 끊겨도 반쯤 쓴 파일(특히 구글 사용 횟수)이 남지 않게"""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, path)
 
 
 class KakaoDown(Exception):
@@ -142,17 +152,31 @@ def dist_m(lat1, lng1, lat2, lng2):
 
 
 def google_left(usage=None, month=None):
-    """이번 달 남은 구글 조회 수 (A + B, 승인된 유료분 포함)"""
+    """이번 달 남은 구글 조회 수 (A + B + C + D, 승인된 유료분 포함 — B·D는 가게 찾기 횟수 안에서)"""
     u = load_json(USAGE, {}) if usage is None else usage
     m = month or dt.date.today().strftime("%Y-%m")
     a = max(0, GOOGLE_MONTH - u.get(m, 0))
     b = max(0, GOOGLE_MONTH_B + GOOGLE_PAID.get(m, 0) - u.get(m + ":B", 0))
-    b = min(b, max(0, GOOGLE_PRO_MONTH - u.get(m + ":P", 0)))
-    return a + b
+    c = max(0, GOOGLE_MONTH_C - u.get(m + ":C", 0))
+    d = max(0, GOOGLE_MONTH_D - u.get(m + ":D", 0))
+    bd = min(b + d, max(0, GOOGLE_PRO_MONTH - u.get(m + ":P", 0)))
+    return a + bd + c
 
 
-def google_lookup(p):
-    """구글 지도에서 같은 가게를 찾아 별점·리뷰 수를 받는다 (300m 안, 이름 일부 일치)."""
+# A 길(편의 정보까지): 주차·애견 동반 같은 편의 정보가 들어가면 「Enterprise + Atmosphere」 종류로 잡힌다
+G_TEXT_FULL = ("places.id,places.displayName,places.rating,places.userRatingCount,places.location,"
+               "places.googleMapsUri,places.regularOpeningHours,places.businessStatus,"
+               "places.parkingOptions,places.allowsDogs,places.goodForChildren,places.reservable,"
+               "places.outdoorSeating,places.takeout,places.delivery,places.goodForGroups,places.accessibilityOptions,"
+               "places.websiteUri")  # 가게 홈페이지(인스타 계정을 적어 둔 가게가 많다)
+# C 길(기본 정보): 별점·리뷰 수·영업시간·홈페이지까지만 → 「Enterprise」 종류 (무료분이 A와 따로)
+G_TEXT_LITE = ("places.id,places.displayName,places.rating,places.userRatingCount,places.location,"
+               "places.googleMapsUri,places.regularOpeningHours,places.businessStatus,places.accessibilityOptions,"
+               "places.websiteUri")
+
+
+def google_lookup(p, lite=False):
+    """구글 지도에서 같은 가게를 찾아 별점·리뷰 수를 받는다 (300m 안, 이름 일부 일치). lite면 편의 정보 없이 (C 길)."""
     lat, lng = float(p["y"]), float(p["x"])
     body = {
         "textQuery": f'{p["place_name"]} {p.get("road_address_name") or p.get("address_name") or ""}',
@@ -160,17 +184,9 @@ def google_lookup(p):
         "locationBias": {"circle": {"center": {"latitude": lat, "longitude": lng}, "radius": 300.0}},
     }
     res = post_json("https://places.googleapis.com/v1/places:searchText", body, {
-        "X-Goog-Api-Key": GOOGLE_KEY,
-        # 영업시간·영업 상태는 별점과 같은 등급. 주차·애견 동반 같은 편의 정보는 한 단계 위 등급이지만
-        # 그 등급도 한 달 1,000번까지 무료라, 한 달 900번 상한 안에서는 비용이 없다
-        "X-Goog-FieldMask": "places.id,places.displayName,places.rating,places.userRatingCount,places.location,"
-                            "places.googleMapsUri,places.regularOpeningHours,places.businessStatus,"
-                            "places.parkingOptions,places.allowsDogs,places.goodForChildren,places.reservable,"
-                            "places.outdoorSeating,places.takeout,places.delivery,places.goodForGroups,places.accessibilityOptions,"
-                            "places.websiteUri",  # 같은 등급 — 가게 홈페이지(인스타 계정을 적어 둔 가게가 많다)
-    })
+        "X-Goog-Api-Key": GOOGLE_KEY, "X-Goog-FieldMask": G_TEXT_LITE if lite else G_TEXT_FULL})
     g = google_match(p, res.get("places", []))
-    return google_out(g) if g else {"r": 0, "n": 0, "u": "", "v": 4}
+    return google_out(g, lite) if g else {"r": 0, "n": 0, "u": "", "v": 4}
 
 
 def google_match(p, places):
@@ -190,31 +206,36 @@ def google_match(p, places):
 
 G_DETAIL = ("rating,userRatingCount,googleMapsUri,regularOpeningHours,businessStatus,parkingOptions,allowsDogs,goodForChildren,"
             "reservable,outdoorSeating,takeout,delivery,goodForGroups,accessibilityOptions,websiteUri")
+# D 길(상세 기본형): 편의 정보 없이 → 「Place Details Enterprise」 종류 (무료분이 B와 따로)
+G_DETAIL_LITE = "rating,userRatingCount,googleMapsUri,regularOpeningHours,businessStatus,accessibilityOptions,websiteUri"
 
 
-def google_lookup_b(p, cnt):
-    """B 길: 가게 찾기(이름·자리만, Pro) → 찾았으면 상세(별점·영업시간 등). cnt에 P·B 횟수를 센다."""
+def google_lookup_b(p, cnt, lite=False):
+    """B 길: 가게 찾기(이름·자리만, Pro) → 찾았으면 상세(별점·영업시간 등). cnt에 P·B 횟수를 센다.
+    lite면 D 길: 같은 찾기 → 편의 정보 없는 상세 (cnt["D"]로 센다)."""
     lat, lng = float(p["y"]), float(p["x"])
     body = {
         "textQuery": f'{p["place_name"]} {p.get("road_address_name") or p.get("address_name") or ""}',
         "languageCode": "ko", "regionCode": "KR", "maxResultCount": 3,
         "locationBias": {"circle": {"center": {"latitude": lat, "longitude": lng}, "radius": 300.0}},
     }
+    cnt["P"] += 1   # 보낸 순간부터 센다 (실패해도 넉넉히 셈)
     res = post_json("https://places.googleapis.com/v1/places:searchText", body, {
         "X-Goog-Api-Key": GOOGLE_KEY, "X-Goog-FieldMask": "places.id,places.displayName,places.location"})
-    cnt["P"] += 1
     g = google_match(p, res.get("places", []))
     if not g or not g.get("id"):
         return {"r": 0, "n": 0, "u": "", "v": 4}
-    cnt["B"] += 1
+    cnt["D" if lite else "B"] += 1
     d = get_json(f"https://places.googleapis.com/v1/places/{g['id']}?languageCode=ko&regionCode=KR",
-                 {"X-Goog-Api-Key": GOOGLE_KEY, "X-Goog-FieldMask": G_DETAIL})
-    return google_out(d)
+                 {"X-Goog-Api-Key": GOOGLE_KEY, "X-Goog-FieldMask": G_DETAIL_LITE if lite else G_DETAIL})
+    return google_out(d, lite)
 
 
-def google_out(g):
-    """구글 가게 자료 → 저장 모양 (별점·리뷰 수·주소·편의·영업 상태·영업시간)"""
+def google_out(g, lite=False):
+    """구글 가게 자료 → 저장 모양 (별점·리뷰 수·주소·편의·영업 상태·영업시간). lite: 편의 정보 없이 받은 것 (나중에 채움)"""
     out = {"r": g.get("rating", 0), "n": g.get("userRatingCount", 0), "u": g.get("googleMapsUri", ""), "v": 4}
+    if lite:
+        out["lite"] = 1
     if g.get("websiteUri"):
         out["web"] = g["websiteUri"]
     feat = []  # 편의 정보: 구글에 '있음'으로 등록된 것만
@@ -1186,9 +1207,10 @@ def main():
     save_json(BLOG_CACHE, bc)
     check_kakao()
 
-    # 구글 별점·리뷰: 무료 범위(월 1,000회) 안에서만 조회한다.
-    #  - 한 달 최대 GOOGLE_MONTH회, 하루 최대 GOOGLE_MAX회 (넘으면 저장값 그대로 씀)
-    #  - 순위권(지난 순위 상위) 가게는 한 달, 나머지는 석 달 지나면 오래된 순서로 새로 받음
+    # 구글 별점·리뷰: 조회 종류마다 따로 있는 무료분(+대표님이 정한 상한) 안에서만 조회한다.
+    #  - A·B는 편의 정보까지, C·D는 기본 정보(별점·리뷰 수·영업시간·홈페이지)만 — 각 길의 한 달 상한을 넘지 않음
+    #  - 이미 모은 동네는 한 번에 GOOGLE_MAX곳까지, 새 동네는 유튜버 집 수만큼 더
+    #  - 2027년 6월부터 다시 받기: 순위권 두 달, 나머지 여섯 달 (그 전엔 전부 새 동네에)
     use_google = False
     if GOOGLE_KEY:
         today = dt.date.today()
@@ -1196,8 +1218,10 @@ def main():
         usage = load_json(USAGE, {})
         used = usage.get(month, 0)
         used_b, used_p = usage.get(month + ":B", 0), usage.get(month + ":P", 0)
+        used_c, used_d = usage.get(month + ":C", 0), usage.get(month + ":D", 0)
         cap_b = GOOGLE_MONTH_B + GOOGLE_PAID.get(month, 0)
-        cnt = {"B": 0, "P": 0}
+        cnt = {"A": 0, "B": 0, "C": 0, "D": 0, "P": 0}
+        refresh = today >= REFRESH_FROM   # 2027년 6월 전에는 이미 받은 가게를 다시 받지 않음
         ranked = set(prev.keys())
         pri = sorted(rows, key=lambda r: (r["pop"] > 0, r["est"]), reverse=True)
         keep = [r for r in pri if str(r["p"]["id"]) in ranked]
@@ -1211,9 +1235,11 @@ def main():
             hit = cache.get(pid)
             if hit:
                 r["g"] = hit
+                if not refresh:
+                    continue   # 대표님 지시: 6개월(2027년 5월까지)은 조회를 전부 새 동네에 — 이미 받은 가게는 그대로 씀
                 age = (today - dt.date.fromisoformat(hit["d"])).days
-                if pid in ranked and hit.get("v", 1) < 4:
-                    need.append((0, rank_of.get(pid, 99), r))  # 순위권인데 영업시간·편의 정보·홈페이지가 없음: 맨 먼저 (무료량 안에서)
+                if pid in ranked and (hit.get("v", 1) < 4 or hit.get("lite")):
+                    need.append((0, rank_of.get(pid, 99), r))  # 순위권인데 영업시간·편의 정보·홈페이지가 없음(기본 정보로 받은 집 포함): 맨 먼저
                     continue
                 limit = GOOGLE_DAYS_TOP if pid in ranked else GOOGLE_DAYS
                 if age < limit:
@@ -1222,23 +1248,36 @@ def main():
             else:
                 need.append((1, 0, r))      # 그다음 처음 보는 가게
         need.sort(key=lambda t: (t[0], t[1]))
-        new_calls, fails = 0, 0
+        def route_for(full_first):
+            """남은 무료분·상한 안에서 길 고르기 — 유튜버 집·순위권은 편의 정보까지(A·B) 먼저, 블로그 후보는 기본 정보(C·D) 먼저"""
+            for rt in ("ABCD" if full_first else "CDAB"):
+                if rt == "A" and used + cnt["A"] < GOOGLE_MONTH:
+                    return rt
+                if rt == "B" and used_b + cnt["B"] < cap_b and used_p + cnt["P"] < GOOGLE_PRO_MONTH:
+                    return rt
+                if rt == "C" and used_c + cnt["C"] < GOOGLE_MONTH_C:
+                    return rt
+                if rt == "D" and used_d + cnt["D"] < GOOGLE_MONTH_D and used_p + cnt["P"] < GOOGLE_PRO_MONTH:
+                    return rt
+            return None
+
+        def tries():
+            return cnt["A"] + cnt["C"] + cnt["P"]   # 이 동네에서 이번에 조회한 가게 수
+
+        fails = 0
         for _, _, r in need:
-            if new_calls + cnt["P"] >= (new_max if NEW_AREA else GOOGLE_MAX):
+            if tries() >= (new_max if NEW_AREA else GOOGLE_MAX):
                 break
-            if used + new_calls < GOOGLE_MONTH:
-                route = "A"
-            elif used_b + cnt["B"] < cap_b and used_p + cnt["P"] < GOOGLE_PRO_MONTH:
-                route = "B"
-            else:
-                break   # 이번 달 쓸 수 있는 양을 다 씀 (안전 상한)
             pid = str(r["p"]["id"])
+            route = route_for(pid in ytids or pid in ranked)
+            if route is None:
+                break   # 이번 달 쓸 수 있는 양을 다 씀 (안전 상한)
             try:
-                if route == "A":
-                    g = google_lookup(r["p"])
-                    new_calls += 1
+                if route in ("A", "C"):
+                    cnt[route] += 1   # 보낸 순간부터 센다 (실패해도 넉넉히 셈)
+                    g = google_lookup(r["p"], lite=(route == "C"))
                 else:
-                    g = google_lookup_b(r["p"], cnt)
+                    g = google_lookup_b(r["p"], cnt, lite=(route == "D"))
                 g["d"] = today.isoformat()
                 cache[pid] = g
                 r["g"] = g
@@ -1247,14 +1286,19 @@ def main():
                 print("구글 실패:", str(e)[:200])
                 if fails >= 3:
                     break
-        usage[month] = used + new_calls
+        usage[month] = used + cnt["A"]
         usage[month + ":B"] = used_b + cnt["B"]
+        usage[month + ":C"] = used_c + cnt["C"]
+        usage[month + ":D"] = used_d + cnt["D"]
         usage[month + ":P"] = used_p + cnt["P"]
-        save_json(USAGE, {k: usage[k] for k in sorted(usage)[-18:]})
-        print(f"이번 달 구글 조회 A {usage[month]}/{GOOGLE_MONTH} · B 상세 {usage[month + ':B']}/{cap_b} · B 찾기 {usage[month + ':P']}/{GOOGLE_PRO_MONTH}, "
-              f"이번에 {new_calls + cnt['P']}곳 (유튜버 집 {len(yt)}곳 먼저), 남은 갱신 대기 {max(0, len(need) - new_calls - cnt['P'])}곳")
+        save_json(USAGE, {k: usage[k] for k in sorted(usage)[-36:]})
+        print(f"이번 달 구글 조회 A {usage[month]}/{GOOGLE_MONTH} · B 상세 {usage[month + ':B']}/{cap_b} · "
+              f"C 기본 {usage[month + ':C']}/{GOOGLE_MONTH_C} · D 기본 상세 {usage[month + ':D']}/{GOOGLE_MONTH_D} · "
+              f"가게 찾기 {usage[month + ':P']}/{GOOGLE_PRO_MONTH}, 이번에 {tries()}곳 (A {cnt['A']} · B {cnt['B']} · C {cnt['C']} · D {cnt['D']}, "
+              f"유튜버 집 {len(yt)}곳 먼저), 남은 대기 {max(0, len(need) - tries())}곳"
+              + ("" if refresh else f" · 다시 받기는 {REFRESH_FROM.isoformat()}부터"))
         have = sum(1 for r in rows if r["g"]["n"] >= MIN_REVIEWS)
-        print(f"구글 새 조회 {new_calls}회, 리뷰 {MIN_REVIEWS}개 이상 {have}곳")
+        print(f"구글 새 조회 {tries()}회, 리뷰 {MIN_REVIEWS}개 이상 {have}곳")
         use_google = have >= 20
         with open(CACHE, "w", encoding="utf-8") as f:
             json.dump(cache, f, ensure_ascii=False, separators=(",", ":"))
@@ -1446,6 +1490,7 @@ def run_all():
         if n >= 10 and not a.get("ready"):
             a["ready"] = True
             print(f"{AREA_LABEL}: {n}곳 — 이제 앱에서 열 수 있습니다")
+        save_json(REGIONS, regions)   # 동네마다 저장 — 시간 제한으로 끊겨도 다 모은 동네는 남음
     save_json(REGIONS, regions)
 
 
