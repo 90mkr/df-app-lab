@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -1197,24 +1198,25 @@ class _MapPageState extends State<MapPage> {
         scrollDirection: Axis.horizontal,
         child: Row(children: [
           for (final k in const [
-            ['all', '전체'],
-            ['near', '내 주변'],
-            ['open', '영업 중'],
-            ['tv', '방송탄'],
-            ['food', '맛집'],
-            ['cafe', '카페'],
-            ['big', '대형 카페'],
-            ['view', '뷰 맛집'],
-            ['rise', '새로 뜨는 집'],
+            ['all', '전체', '🏆'],
+            ['near', '내 주변', '📍'],
+            ['open', '영업 중', '⏰'],
+            ['tv', '방송탄', '📺'],
+            ['food', '맛집', '🍽️'],
+            ['cafe', '카페', '☕'],
+            ['big', '대형 카페', '🪴'],
+            ['view', '뷰 맛집', '🌇'],
+            ['rise', '새로 뜨는 집', '🚀'],
           ])
             Padding(
               padding: const EdgeInsets.only(right: 6),
-              child: _Chip(label: k[1], on: kind == k[0], onTap: () => pickKind(k[0])),
+              child: _Chip(label: k[1], emoji: k[2], on: kind == k[0], onTap: () => pickKind(k[0])),
             ),
           Padding(
             padding: const EdgeInsets.only(right: 6),
             child: _Chip(
               label: cuisine.isEmpty ? '음식 종류' : '$cuisine ✕',
+              emoji: cuisine.isEmpty ? '🍱' : (kCuisineEmoji[cuisine] ?? '🍱'),
               on: cuisine.isNotEmpty,
               onTap: () {
                 if (cuisine.isEmpty) {
@@ -1225,7 +1227,7 @@ class _MapPageState extends State<MapPage> {
               },
             ),
           ),
-          _Chip(label: feats.isEmpty ? '편의 필터' : '편의 필터 ${feats.length}', on: feats.isNotEmpty, onTap: openFeats),
+          _Chip(label: feats.isEmpty ? '편의 필터' : '편의 필터 ${feats.length}', emoji: '🛎️', on: feats.isNotEmpty, onTap: openFeats),
         ]),
       );
 
@@ -1545,6 +1547,7 @@ class _MapPageState extends State<MapPage> {
           tab = i;
           regionOpen = false;
         }),
+        onCenter: openRoulette,
       ),
     );
   }
@@ -2032,21 +2035,25 @@ class _Chip extends StatelessWidget {
   final String label;
   final bool on;
   final VoidCallback onTap;
-  const _Chip({required this.label, required this.on, required this.onTap});
+  final String emoji; // 앞에 붙는 색 그림 (작은 단추도 재미있게)
+  const _Chip({required this.label, required this.on, required this.onTap, this.emoji = ''});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: EdgeInsets.fromLTRB(emoji.isEmpty ? 14 : 11, 6, 14, 6),
         decoration: BoxDecoration(
           color: on ? kInk : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: on ? kInk : kLine, width: 1),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
         ),
-        child: Text(label, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: on ? Colors.white : kInk)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (emoji.isNotEmpty) ...[Text(emoji, style: const TextStyle(fontSize: 15, height: 1.1)), const SizedBox(width: 5)],
+          Text(label, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: on ? Colors.white : kInk)),
+        ]),
       ),
     );
   }

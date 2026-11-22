@@ -180,6 +180,8 @@ String oneLine(Place p) {
 }
 
 // 음식 종류 알약 (홈 · 지도)
+const kCuisineEmoji = {'한식': '🍲', '중식': '🥟', '일식': '🍣', '양식': '🍝', '아시안': '🍜', '분식': '🍢', '빵': '🥐', '카페': '☕'};
+
 class CuisinePills extends StatelessWidget {
   final String current;
   final bool withAll;
@@ -187,8 +189,8 @@ class CuisinePills extends StatelessWidget {
   const CuisinePills({super.key, required this.current, required this.onPick, this.withAll = false});
   @override
   Widget build(BuildContext context) => Wrap(spacing: 6, runSpacing: 8, children: [
-        if (withAll) _SegChip(label: '전체', on: current.isEmpty, onTap: () => onPick('')),
-        for (final c in kCuisines) _SegChip(label: c, on: current == c, onTap: () => onPick(c)),
+        if (withAll) _SegChip(label: '전체', emoji: '🍽️', on: current.isEmpty, onTap: () => onPick('')),
+        for (final c in kCuisines) _SegChip(label: c, emoji: kCuisineEmoji[c] ?? '', on: current == c, onTap: () => onPick(c)),
       ]);
 }
 
@@ -536,7 +538,9 @@ class _SegChip extends StatelessWidget {
   final String label;
   final bool on;
   final VoidCallback onTap;
-  const _SegChip({required this.label, required this.on, required this.onTap});
+  final String emoji; // 앞에 붙는 색 그림 글자
+  final Widget? lead; // 또는 앞에 붙는 작은 그림 (채널 사진 등)
+  const _SegChip({required this.label, required this.on, required this.onTap, this.emoji = '', this.lead});
   @override
   Widget build(BuildContext context) => Semantics(
         button: true,
@@ -546,17 +550,20 @@ class _SegChip extends StatelessWidget {
         child: GestureDetector(
           onTap: onTap,
           child: Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            height: 32,
+            padding: EdgeInsets.fromLTRB(lead != null ? 4 : (emoji.isEmpty ? 14 : 10), 0, 14, 0),
             decoration: BoxDecoration(
               color: on ? kInk : Colors.white,
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: on ? kInk : kPillLine, width: 1),
             ),
             // 글자 폭만큼만 (줄바꿈 칸에서도 가로로 늘어나지 않게)
             child: Center(
               widthFactor: 1,
-              child: Text(label, style: TextStyle(fontSize: 12, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : kInk)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (lead != null) ...[lead!, const SizedBox(width: 6)] else if (emoji.isNotEmpty) ...[Text(emoji, style: const TextStyle(fontSize: 14.5, height: 1.1)), const SizedBox(width: 5)],
+                Text(label, style: TextStyle(fontSize: 12, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : kInk)),
+              ]),
             ),
           ),
         ),
@@ -1163,10 +1170,24 @@ class FollowBar extends StatelessWidget {
       SizedBox(
         height: 30,
         child: ListView(scrollDirection: Axis.horizontal, children: [
-          _SegChip(label: '전체', on: current.isEmpty, onTap: () => onPick('')),
+          _SegChip(label: '전체', emoji: '🎬', on: current.isEmpty, onTap: () => onPick('')),
           for (final c in f.channels) ...[
             const SizedBox(width: 6),
-            _SegChip(label: c.name, on: current == c.id, onTap: () => onPick(c.id)),
+            _SegChip(
+              label: c.name,
+              on: current == c.id,
+              onTap: () => onPick(c.id),
+              lead: ClipOval(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: c.thumb.isEmpty
+                      ? Container(color: kAccentTint, alignment: Alignment.center, child: Text(c.initial, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: kAccent)))
+                      : Image.network(c.thumb, fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                          errorBuilder: (_, __, ___) => Container(color: kAccentTint)),
+                ),
+              ),
+            ),
           ],
         ]),
       ),
@@ -1841,9 +1862,9 @@ class _SavedViewState extends State<SavedView> {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 12, 6),
           child: Row(children: [
-            _SegChip(label: koks.isEmpty ? '콕한 집' : '콕한 집 ${koks.length}', on: w == 0, onTap: () => setState(() => which = 0)),
+            _SegChip(label: koks.isEmpty ? '콕한 집' : '콕한 집 ${koks.length}', emoji: '📌', on: w == 0, onTap: () => setState(() => which = 0)),
             const SizedBox(width: 6),
-            _SegChip(label: recents.isEmpty ? '최근 본 집' : '최근 본 집 ${recents.length}', on: w == 1, onTap: () => setState(() => which = 1)),
+            _SegChip(label: recents.isEmpty ? '최근 본 집' : '최근 본 집 ${recents.length}', emoji: '🕘', on: w == 1, onTap: () => setState(() => which = 1)),
             const Spacer(),
             if (w == 1 && recents.isNotEmpty)
               Semantics(
@@ -1882,13 +1903,58 @@ class _SavedViewState extends State<SavedView> {
 }
 
 // ---- 아래 탭 ----
+// 아래 탭 아이콘: 가는 선 + 색 채움 (고른 탭은 진한 색, 안 고른 탭은 옅은 색) — 김부장 그림
+const kNavIcons = <String, String>{
+  'home_on': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><g fill="none" stroke="#23262D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23.4 3.6c.5-1 1.9-1.2 2.6-.4" stroke-width="1.2"/><rect x="20.4" y="6" width="3.4" height="6.2" rx=".7" fill="#FF4B2B"/><path d="M7.8 14.2v11a2 2 0 0 0 2 2h12.4a2 2 0 0 0 2-2v-11" fill="#FFF4E2"/><path d="M3.9 15.6L15 6.1a1.6 1.6 0 0 1 2 0l11.1 9.5a.9.9 0 0 1-.6 1.6H4.5a.9.9 0 0 1-.6-1.6z" fill="#FF4B2B"/><path d="M13.4 27.2v-4.6a2.6 2.6 0 0 1 5.2 0v4.6z" fill="#FFC531"/><circle cx="17.3" cy="24.6" r=".6" fill="#23262D" stroke="none"/><rect x="9.6" y="19.4" width="2.6" height="2.6" rx=".5" fill="#7CC4FF" stroke-width="1.3"/><rect x="19.8" y="19.4" width="2.6" height="2.6" rx=".5" fill="#7CC4FF" stroke-width="1.3"/></g></svg>',
+  'home_off': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><g fill="none" stroke="#23262D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23.4 3.6c.5-1 1.9-1.2 2.6-.4" stroke-width="1.2"/><rect x="20.4" y="6" width="3.4" height="6.2" rx=".7" fill="#FFC9BD"/><path d="M7.8 14.2v11a2 2 0 0 0 2 2h12.4a2 2 0 0 0 2-2v-11" fill="#FFFFFF"/><path d="M3.9 15.6L15 6.1a1.6 1.6 0 0 1 2 0l11.1 9.5a.9.9 0 0 1-.6 1.6H4.5a.9.9 0 0 1-.6-1.6z" fill="#FFC9BD"/><path d="M13.4 27.2v-4.6a2.6 2.6 0 0 1 5.2 0v4.6z" fill="#FFE7A6"/><circle cx="17.3" cy="24.6" r=".6" fill="#23262D" stroke="none"/><rect x="9.6" y="19.4" width="2.6" height="2.6" rx=".5" fill="#D9EEFF" stroke-width="1.3"/><rect x="19.8" y="19.4" width="2.6" height="2.6" rx=".5" fill="#D9EEFF" stroke-width="1.3"/></g></svg>',
+  'video_on': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><g fill="none" stroke="#23262D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 9.6L11.2 4.4M16 9.6l5.3-5.8"/><circle cx="11" cy="4.2" r="1.3" fill="#FF4B2B"/><circle cx="21.5" cy="3.6" r="1.3" fill="#FF4B2B"/><rect x="3.8" y="9.6" width="24.4" height="16.6" rx="4" fill="#FFC531"/><rect x="6.8" y="12.6" width="14.4" height="10.6" rx="2.4" fill="#FFFFFF"/><path d="M12.6 15.3v5.2l4.4-2.6z" fill="#FF4B2B" stroke-width="1.3"/><circle cx="24.6" cy="15.2" r="1.25" fill="#FFFFFF" stroke-width="1.3"/><circle cx="24.6" cy="20.2" r="1.25" fill="#FFFFFF" stroke-width="1.3"/><path d="M9.2 26.2l-1.2 2.4M22.8 26.2l1.2 2.4"/></g></svg>',
+  'video_off': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><g fill="none" stroke="#23262D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 9.6L11.2 4.4M16 9.6l5.3-5.8"/><circle cx="11" cy="4.2" r="1.3" fill="#FFC9BD"/><circle cx="21.5" cy="3.6" r="1.3" fill="#FFC9BD"/><rect x="3.8" y="9.6" width="24.4" height="16.6" rx="4" fill="#FFE7A6"/><rect x="6.8" y="12.6" width="14.4" height="10.6" rx="2.4" fill="#FFFFFF"/><path d="M12.6 15.3v5.2l4.4-2.6z" fill="#FFC9BD" stroke-width="1.3"/><circle cx="24.6" cy="15.2" r="1.25" fill="#FFFFFF" stroke-width="1.3"/><circle cx="24.6" cy="20.2" r="1.25" fill="#FFFFFF" stroke-width="1.3"/><path d="M9.2 26.2l-1.2 2.4M22.8 26.2l1.2 2.4"/></g></svg>',
+  'map_on': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><g fill="none" stroke="#23262D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 8.4L11 5.6v19.3l-7.4 2.8z" fill="#7EDBB9"/><path d="M11 5.6l9.8 2.8v19.3L11 24.9z" fill="#3EC79B"/><path d="M20.8 8.4l7.6-2.8v19.3l-7.6 2.8z" fill="#7EDBB9"/><path d="M6.4 22.6c2.2-1.2 3.4-3 5.8-3.4 2.4-.4 3.4 1 5.6-.2" stroke-dasharray="1.6 2.2" stroke-width="1.4"/><path d="M21.8 21.4s-4.4-4.2-4.4-7.6a4.4 4.4 0 0 1 8.8 0c0 3.4-4.4 7.6-4.4 7.6z" fill="#FF4B2B"/><circle cx="21.8" cy="13.8" r="1.6" fill="#FFFFFF" stroke-width="1.3"/></g></svg>',
+  'map_off': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><g fill="none" stroke="#23262D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 8.4L11 5.6v19.3l-7.4 2.8z" fill="#DDF5EC"/><path d="M11 5.6l9.8 2.8v19.3L11 24.9z" fill="#C3EEDF"/><path d="M20.8 8.4l7.6-2.8v19.3l-7.6 2.8z" fill="#DDF5EC"/><path d="M6.4 22.6c2.2-1.2 3.4-3 5.8-3.4 2.4-.4 3.4 1 5.6-.2" stroke-dasharray="1.6 2.2" stroke-width="1.4"/><path d="M21.8 21.4s-4.4-4.2-4.4-7.6a4.4 4.4 0 0 1 8.8 0c0 3.4-4.4 7.6-4.4 7.6z" fill="#FFC9BD"/><circle cx="21.8" cy="13.8" r="1.6" fill="#FFFFFF" stroke-width="1.3"/></g></svg>',
+  'kok_on': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><g fill="none" stroke="#23262D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="16" cy="28.4" rx="5" ry="1.3" fill="#23262D" fill-opacity="0.16" stroke="none"/><path d="M16 27.4s-9-8.2-9-14.4a9 9 0 0 1 18 0c0 6.2-9 14.4-9 14.4z" fill="#FF4B2B"/><path d="M16 17.6c-.3-.2-4-2.7-4-5.2a2.2 2.2 0 0 1 4-1.3 2.2 2.2 0 0 1 4 1.3c0 2.5-3.7 5-4 5.2z" fill="#FFFFFF" stroke-width="1.3"/><path d="M27.2 3.4v3.2M25.6 5h3.2" stroke="#FFC531" stroke-width="1.6"/><path d="M4.6 6.2v2.2M3.5 7.3h2.2" stroke="#FFC531" stroke-width="1.4"/></g></svg>',
+  'kok_off': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><g fill="none" stroke="#23262D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="16" cy="28.4" rx="5" ry="1.3" fill="#23262D" fill-opacity="0.08" stroke="none"/><path d="M16 27.4s-9-8.2-9-14.4a9 9 0 0 1 18 0c0 6.2-9 14.4-9 14.4z" fill="#FFC9BD"/><path d="M16 17.6c-.3-.2-4-2.7-4-5.2a2.2 2.2 0 0 1 4-1.3 2.2 2.2 0 0 1 4 1.3c0 2.5-3.7 5-4 5.2z" fill="#FFFFFF" stroke-width="1.3"/><path d="M27.2 3.4v3.2M25.6 5h3.2" stroke="#FFE7A6" stroke-width="1.6"/><path d="M4.6 6.2v2.2M3.5 7.3h2.2" stroke="#FFE7A6" stroke-width="1.4"/></g></svg>',
+};
+
+class NavIcon extends StatelessWidget {
+  final String name;
+  final bool on;
+  final double size;
+  const NavIcon(this.name, {super.key, required this.on, this.size = 32});
+  @override
+  Widget build(BuildContext context) => AnimatedScale(
+        scale: on ? 1.1 : 1.0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutBack,
+        child: SvgPicture.string(kNavIcons['${name}_${on ? 'on' : 'off'}']!, width: size, height: size),
+      );
+}
+
 class KokNav extends StatelessWidget {
   final int tab;
   final ValueChanged<int> onTap;
-  const KokNav({super.key, required this.tab, required this.onTap});
+  final VoidCallback onCenter; // 가운데 「오늘 뭐 먹지?」 (룰렛)
+  const KokNav({super.key, required this.tab, required this.onTap, required this.onCenter});
   @override
   Widget build(BuildContext context) {
-    const items = [('home', '홈'), ('video', '영상'), ('map', '지도'), ('kok', '내 콕')];
+    Widget item(int i, String icon, String label) => Expanded(
+          child: Semantics(
+            button: true,
+            label: label,
+            selected: tab == i,
+            onTap: () => onTap(i),
+            excludeSemantics: true,
+            child: InkWell(
+              onTap: () => onTap(i),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                NavIcon(icon, on: tab == i),
+                const SizedBox(height: 3),
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 12, fontWeight: tab == i ? FontWeight.w700 : FontWeight.w500, color: tab == i ? kInk : const Color(0xFF555A63), height: 1.1)),
+              ]),
+            ),
+          ),
+        );
     return Container(
       decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: kHair, width: 1))),
       child: SafeArea(
@@ -1898,27 +1964,25 @@ class KokNav extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: kHomeMax),
             child: SizedBox(
-              height: 62,
+              height: 66,
               child: Row(children: [
-                for (var i = 0; i < items.length; i++)
-                  Expanded(
-                    child: Semantics(
-                      button: true,
-                      label: items[i].$2,
-                      selected: tab == i,
-                      onTap: () => onTap(i),
-                      excludeSemantics: true,
-                      child: InkWell(
-                        onTap: () => onTap(i),
-                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          LineIcon(items[i].$1, size: 26, stroke: tab == i ? 2.2 : 2.0, color: tab == i ? kAccent : kNavOff),
-                          const SizedBox(height: 4),
-                          Text(items[i].$2,
-                              style: TextStyle(fontSize: 11.5, fontWeight: tab == i ? FontWeight.w700 : FontWeight.w500, color: tab == i ? kAccent : kNavOff, height: 1.1)),
-                        ]),
-                      ),
+                item(0, 'home', '홈'),
+                item(1, 'video', '영상'),
+                Expanded(
+                  child: Semantics(
+                    button: true,
+                    label: '뭐 먹지 돌리기',
+                    onTap: onCenter,
+                    excludeSemantics: true,
+                    child: GestureDetector(
+                      onTap: onCenter,
+                      behavior: HitTestBehavior.opaque,
+                      child: Center(child: Transform.translate(offset: const Offset(0, -13), child: const _CenterBtn())),
                     ),
                   ),
+                ),
+                item(2, 'map', '지도'),
+                item(3, 'kok', '내 콕'),
               ]),
             ),
           ),
@@ -1926,6 +1990,26 @@ class KokNav extends StatelessWidget {
       ),
     );
   }
+}
+
+// 가운데 둥근 단추: 오늘 뭐 먹지? (누르면 룰렛)
+class _CenterBtn extends StatelessWidget {
+  const _CenterBtn();
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 62,
+        height: 62,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFFFF3D5E), Color(0xFFFF7A2E)]),
+          boxShadow: [BoxShadow(color: const Color(0xFFFF5A3C).withValues(alpha: 0.32), blurRadius: 16)],
+        ),
+        child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text('오늘', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xE6FFFFFF), height: 1.1)),
+          SizedBox(height: 1),
+          Text('뭐 먹지?', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white, height: 1.1, letterSpacing: -0.3)),
+        ]),
+      );
 }
 
 // ---- 가게 화면의 「콕」 단추 ----
