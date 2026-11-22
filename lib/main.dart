@@ -9,7 +9,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart' show YoutubePlayer, YoutubePlayerController, YoutubePlayerParams;
-import 'package:connectivity_plus/connectivity_plus.dart' show Connectivity, ConnectivityResult;
 import 'package:firebase_core/firebase_core.dart' as fc;
 import 'package:firebase_auth/firebase_auth.dart' as fa;
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;

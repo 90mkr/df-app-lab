@@ -1056,8 +1056,9 @@ class HomeView extends StatelessWidget {
       );
 }
 
-// 맨 위 큰 비주얼: 오늘의 영상(와이파이면 소리 없이 자동 재생) + 배너를 옆으로 넘김
-// 유튜브 규칙: 영상 위에는 글씨·표시를 올리지 않는다 · 화면에 보일 때만 자동 재생 · 한 화면에 하나
+// 맨 위 큰 비주얼: 오늘의 영상 사진(천천히 다가가는 움직임) — 누르면 그때 영상 재생 + 배너를 옆으로 넘김
+// 자동 재생은 하지 않는다: 수익 영상은 유튜브가 앞에 광고를 붙여 첫 화면이 남의 광고가 되기 때문
+// 유튜브 규칙: 영상 위에는 글씨·표시를 올리지 않는다 · 안 보이면 멈춘다 · 한 화면에 하나
 class HomeHero extends StatefulWidget {
   final Place place;
   final Video? video;
@@ -1070,15 +1071,16 @@ class HomeHero extends StatefulWidget {
   State<HomeHero> createState() => _HomeHeroState();
 }
 
-class _HomeHeroState extends State<HomeHero> {
+class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin {
   final page = PageController();
   int index = 0;
   YoutubePlayerController? yt;
-  bool auto = false; // 와이파이: 소리 없이 자동 재생
-  bool sound = false; // 눌러서 소리 켜고 보는 중
+  bool sound = false; // 눌러서 영상을 보는 중
   bool seen = true; // 영상이 화면에 절반 넘게 보이는지
   ScrollPosition? _pos;
   Timer? _flip;
+  // 사진이 아주 천천히 다가갔다 물러나는 움직임 (영상 대신 살아 있는 느낌만)
+  late final AnimationController _zoom = AnimationController(vsync: this, duration: const Duration(seconds: 14));
 
   bool get hasVideo => widget.video != null;
   int get count => math.max(1, (hasVideo ? 1 : 0) + widget.banners.length);
@@ -1087,64 +1089,52 @@ class _HomeHeroState extends State<HomeHero> {
   @override
   void initState() {
     super.initState();
-    _net();
     _flip = Timer.periodic(const Duration(seconds: 6), (_) => _next());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
   }
 
-  // 와이파이(또는 유선)일 때만 소리 없이 자동 재생 — 휴대폰 데이터면 사진 + 재생 단추
-  Future<void> _net() async {
-    if (!hasVideo) return;
-    try {
-      final r = await Connectivity().checkConnectivity();
-      final wifi = r.contains(ConnectivityResult.wifi) || r.contains(ConnectivityResult.ethernet) || (kIsWeb && !r.contains(ConnectivityResult.mobile));
-      if (!mounted || !wifi || sound) return;
-      setState(() {
-        auto = true;
-        yt = _player(mute: true);
-      });
-    } catch (_) {}
-  }
-
-  YoutubePlayerController _player({required bool mute}) => YoutubePlayerController.fromVideoId(
+  YoutubePlayerController _player() => YoutubePlayerController.fromVideoId(
         videoId: widget.video!.id,
-        autoPlay: widget.active && seen,
-        params: YoutubePlayerParams(
-          mute: mute,
-          showControls: !mute,
-          showFullscreenButton: !mute,
+        autoPlay: true, // 누른 다음에만 만든다
+        params: const YoutubePlayerParams(
+          showControls: true,
+          showFullscreenButton: true,
           playsInline: true,
           strictRelatedVideos: true,
           showVideoAnnotations: false,
         ),
       );
 
-  // 소리 켜고 처음부터 (누른 뒤에만 소리)
+  // 누르면 그때 소리 켜고 재생
   void playSound() {
     if (!hasVideo) return;
     if (index != 0 && page.hasClients) page.jumpToPage(0);
     final old = yt;
     setState(() {
       sound = true;
-      yt = _player(mute: false);
+      yt = _player();
     });
     old?.close();
+    _sync();
   }
 
-  // 보일 때만 재생: 안 보이면 멈추고, 다시 보이면 (소리 없는 미리보기만) 다시 재생
+  // 안 보이면 영상은 멈추고, 사진 움직임도 쉰다 (보일 때만 천천히 움직임)
   void _sync() {
-    final c = yt;
-    if (c == null) return;
+    if (!mounted) return;
     final show = widget.active && seen && onVideo;
-    if (!show) {
-      c.pauseVideo().catchError((_) {});
-    } else if (!sound) {
-      c.playVideo().catchError((_) {});
+    final c = yt;
+    if (c != null && !show) c.pauseVideo().catchError((_) {});
+    final still = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (show && c == null && !still) {
+      if (!_zoom.isAnimating) _zoom.repeat(reverse: true);
+    } else if (_zoom.isAnimating) {
+      _zoom.stop();
     }
   }
 
   void _next() {
     if (!mounted || count < 2 || !page.hasClients) return;
-    if (onVideo && (auto || sound)) return; // 영상이 도는 동안은 넘기지 않음
+    if (onVideo && sound) return; // 영상을 보는 동안은 넘기지 않음
     page.animateToPage((index + 1) % count, duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
   }
 
@@ -1178,6 +1168,7 @@ class _HomeHeroState extends State<HomeHero> {
   void dispose() {
     _pos?.removeListener(_onScroll);
     _flip?.cancel();
+    _zoom.dispose();
     yt?.close();
     page.dispose();
     super.dispose();
@@ -1194,8 +1185,8 @@ class _HomeHeroState extends State<HomeHero> {
     );
     Widget videoSlide() {
       final c = yt;
-      if (c != null) return YoutubePlayer(key: ValueKey(sound), controller: c, aspectRatio: 16 / 9);
-      // 사진 + 재생 단추 (누르면 소리 켜고 재생)
+      if (c != null) return YoutubePlayer(controller: c, aspectRatio: 16 / 9);
+      // 사진(천천히 다가감) + 가운데 재생 표시 — 누르면 그때 영상
       return Semantics(
         button: true,
         label: '영상 보기',
@@ -1204,14 +1195,36 @@ class _HomeHeroState extends State<HomeHero> {
         child: GestureDetector(
           onTap: playSound,
           child: Stack(fit: StackFit.expand, children: [
-            ytWide(v!, fallback: plain),
+            ClipRect(
+              child: AnimatedBuilder(
+                animation: _zoom,
+                builder: (_, child) => Transform.scale(
+                  scale: 1.0 + 0.07 * Curves.easeInOut.transform(_zoom.value),
+                  alignment: const Alignment(0, -0.15),
+                  child: child,
+                ),
+                child: ytWide(v!, fallback: plain),
+              ),
+            ),
             Center(
-              child: Container(
-                width: 60,
-                height: 60,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), shape: BoxShape.circle),
-                child: const LineIcon('play', size: 22),
+              child: ClipOval(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    width: 58,
+                    height: 58,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.32),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.55), width: 1),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 3),
+                      child: Icon(Icons.play_arrow_rounded, size: 34, color: Colors.white),
+                    ),
+                  ),
+                ),
               ),
             ),
           ]),
@@ -1282,18 +1295,18 @@ class _HomeHeroState extends State<HomeHero> {
         if (v != null && !sound)
           Semantics(
             button: true,
-            label: '소리 켜고 보기',
+            label: '영상 보기',
             onTap: playSound,
             excludeSemantics: true,
             child: GestureDetector(
               onTap: playSound,
               behavior: HitTestBehavior.opaque,
-              child: const Padding(
-                padding: EdgeInsets.fromLTRB(10, 4, 4, 4),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.volume_up_rounded, size: 17, color: kSub),
-                  SizedBox(width: 3),
-                  Text('소리 켜고 보기', style: TextStyle(fontSize: 12.5, color: kSub)),
+                  const Icon(Icons.play_circle_outline_rounded, size: 17, color: kSub),
+                  const SizedBox(width: 3),
+                  Text(v.dur > 0 ? '영상 보기 · ${durText(v.dur)}' : '영상 보기', style: const TextStyle(fontSize: 12.5, color: kSub)),
                 ]),
               ),
             ),
