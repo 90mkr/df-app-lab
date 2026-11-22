@@ -76,7 +76,7 @@ class _LoginSheetState extends State<LoginSheet> {
             const SizedBox(height: 6),
             const Text('콕한 집을 다른 휴대폰에서도 보고, 후기를 남길 수 있어요', style: TextStyle(fontSize: 13, color: kSub)),
             const SizedBox(height: 18),
-            social('카카오로 계속하기 (준비 중)', const Color(0xFFFEE500), const Color(0xFF191919), const Icon(Icons.chat_bubble_rounded, size: 18), null),
+            social('카카오로 계속하기', const Color(0xFFFEE500), const Color(0xFF191919), const Icon(Icons.chat_bubble_rounded, size: 18), () => run(signInKakao)),
             const SizedBox(height: 8),
             social('구글로 계속하기', Colors.white, kInk, const Text('G', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
                 () => run(signInGoogle),

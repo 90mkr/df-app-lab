@@ -2902,7 +2902,7 @@ class SettingsPage extends StatelessWidget {
                       ]),
                     ),
                     if (u == null)
-                      row('로그인 · 회원가입', sub: '구글 · 이메일 (카카오 준비 중)', onTap: () => openLogin(context))
+                      row('로그인 · 회원가입', sub: '카카오 · 구글 · 이메일', onTap: () => openLogin(context))
                     else ...[
                       if (adminUnverified)
                         row('관리자 메일 인증',

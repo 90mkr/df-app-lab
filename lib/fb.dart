@@ -242,6 +242,29 @@ Future<String?> signInGoogle() async {
   }
 }
 
+// 카카오: 파이어베이스 새 인증(OpenID Connect, 제공업체 oidc.kakao)으로 로그인 — 카카오 닉네임·사진을 계정 이름·사진으로
+Future<String?> signInKakao() async {
+  try {
+    final p = fa.OAuthProvider('oidc.kakao');
+    final c = kIsWeb ? await fbAuth.signInWithPopup(p) : await fbAuth.signInWithProvider(p);
+    final u = c.user;
+    final prof = c.additionalUserInfo?.profile ?? const <String, dynamic>{};
+    final nick = (prof['nickname'] ?? prof['name'] ?? '').toString().trim();
+    final pic = (prof['picture'] ?? '').toString().trim();
+    if (u != null) {
+      if ((u.displayName ?? '').isEmpty) await u.updateDisplayName(nick.isNotEmpty ? nick : '카카오 회원');
+      if ((u.photoURL ?? '').isEmpty && pic.startsWith('http')) await u.updatePhotoURL(pic);
+      await u.reload();
+      authTick.value++;
+    }
+    return null;
+  } on fa.FirebaseAuthException catch (e) {
+    return authMsg(e.code);
+  } catch (_) {
+    return '카카오 로그인을 마치지 못했습니다';
+  }
+}
+
 Future<String?> signInEmail(String email, String pass, {bool join = false}) async {
   try {
     if (join) {
