@@ -606,6 +606,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     allPlaces = () => [...loaded.values.expand((d) => d.places), ...?follow?.places];
     onAdminChanged = _adminChanged;
+    authTick.addListener(_onAuth);
     _start();
     _remoteStart();
   }
@@ -614,8 +615,53 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     myPos.removeListener(_onPos);
+    authTick.removeListener(_onAuth);
     _sync?.cancel();
+    _kokPush?.cancel();
     super.dispose();
+  }
+
+  // ---- 내 콕을 계정에 맞추기 ----
+  // 이 휴대폰이 그 계정과 처음 만나면 휴대폰 목록 + 계정 목록을 합치고,
+  // 이미 맞춘 적이 있으면 계정 쪽을 기준으로 (다른 휴대폰에서 뺀 집이 되살아나지 않게)
+  String? _syncUid;
+  bool _koksReady = false;
+  Timer? _kokPush;
+  Future<void> _onAuth() async {
+    final u = fbOn ? fbUser : null;
+    if (u == null) {
+      // 로그아웃: 다음 로그인 때는 그동안 휴대폰에 콕한 집도 합치도록 표시를 지운다
+      if (_syncUid != null) SharedPreferences.getInstance().then((sp) => sp.remove('kok_uid')).catchError((_) => false);
+      _syncUid = null;
+      return;
+    }
+    if (!_koksReady || u.uid == _syncUid) return;
+    _syncUid = u.uid;
+    final cloud = await cloudKoks();
+    if (!mounted || cloud == null || (fbUser?.uid ?? '') != u.uid) return;
+    String? last;
+    try {
+      last = (await SharedPreferences.getInstance()).getString('kok_uid');
+    } catch (_) {}
+    final List<Map<String, dynamic>> next;
+    if (last == u.uid) {
+      next = cloud;
+    } else {
+      final have = {for (final k in koks) '${k['id']}'};
+      next = [...koks, ...cloud.where((k) => !have.contains('${k['id']}'))];
+    }
+    setState(() => koks = next);
+    _saveList('koks', koks);
+    SharedPreferences.getInstance().then((sp) => sp.setString('kok_uid', u.uid)).catchError((_) => false);
+    if (last != u.uid) pushKoks(koks);
+  }
+
+  // 콕을 넣거나 뺄 때: 휴대폰에 바로 저장, 로그인했으면 잠시 뒤 계정에도
+  void _kokChanged() {
+    _saveList('koks', koks);
+    if (!fbOn || fbUser == null) return;
+    _kokPush?.cancel();
+    _kokPush = Timer(const Duration(milliseconds: 1200), () => pushKoks(koks));
   }
 
   // 다른 앱에 갔다 돌아오면: 마지막 확인에서 10분이 지났으면 조용히 새 정보 확인
@@ -780,6 +826,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       for (final k in savedRecents)
         if (k.startsWith('{')) jsonDecode(k) as Map<String, dynamic>
     ];
+    _koksReady = true;
+    _onAuth(); // 이미 로그인돼 있으면 계정의 내 콕과 맞춘다
     final all = [for (final s in list) ...s.areas.where((a) => a.ready)];
     // 홈 첫 동네: 내 위치가 서비스 동네 안이나 근처면 그 동네, 아니면 마지막에 고른 동네 (위치는 잠깐만 기다림)
     final at = await locF.timeout(const Duration(milliseconds: 1500), onTimeout: () => null);
@@ -1190,7 +1238,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       koks.removeWhere((k) => k['id'] == p.id);
       if (on) koks.insert(0, placeRec(p));
     });
-    _saveList('koks', koks);
+    _kokChanged();
   }
 
   // 최근 본 집: 가게 화면을 열 때마다 맨 위로 (같은 집은 한 번만, 30곳까지)
@@ -1778,7 +1826,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           onOpen: openKok,
           onRemove: (k) {
             setState(() => koks.removeWhere((x) => x['id'] == k['id']));
-            _saveList('koks', koks);
+            _kokChanged();
           },
           onRemoveRecent: (k) {
             setState(() => recents.removeWhere((x) => x['id'] == k['id']));

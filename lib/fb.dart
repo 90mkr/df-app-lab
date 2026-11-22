@@ -281,6 +281,30 @@ Future<String?> signInEmail(String email, String pass, {bool join = false}) asyn
   }
 }
 
+// 내 콕을 계정에 저장 (users/{uid} — 본인만 읽고 쓰는 칸). 로그인하면 휴대폰을 바꿔도 그대로
+Future<List<Map<String, dynamic>>?> cloudKoks() async {
+  final u = fbUser;
+  if (u == null) return null;
+  try {
+    final d = await fsdb.collection('users').doc(u.uid).get();
+    final l = (d.data()?['koks'] as List?) ?? const [];
+    return [
+      for (final x in l)
+        if (x is Map) Map<String, dynamic>.from(x)
+    ];
+  } catch (_) {
+    return null; // 못 읽으면 휴대폰 목록을 그대로 둔다
+  }
+}
+
+Future<void> pushKoks(List<Map<String, dynamic>> koks) async {
+  final u = fbUser;
+  if (u == null) return;
+  try {
+    await fsdb.collection('users').doc(u.uid).set({'koks': koks.take(500).toList(), 'at': fs.FieldValue.serverTimestamp()}, fs.SetOptions(merge: true));
+  } catch (_) {}
+}
+
 // 관리자 메일 인증 확인: 메일의 링크를 누른 뒤 이걸 누르면 새 표시를 받아 관리자 화면이 열린다
 Future<String> checkVerify() async {
   final u = fbAuth.currentUser;

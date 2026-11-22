@@ -90,6 +90,17 @@ def run(pg):
 
     shot("홈")
     log.append("홈 글자: " + " / ".join(labels()[:80]))
+    # 위쪽 사람 단추 → 로그인 창
+    if tap_text("로그인", 2):
+        shot("로그인창")
+        pg.keyboard.press("Escape")
+        time.sleep(1.2)
+    # 작은 휴대폰(360) 머리줄
+    pg.set_viewport_size({"width": 360, "height": 780})
+    time.sleep(2)
+    shot("홈_360")
+    pg.set_viewport_size({"width": W, "height": H})
+    time.sleep(2)
     # 아래로 당겨 새로 고침
     drag(195, 240, 600, wait=0.35, steps=12)
     shot("새로고침")

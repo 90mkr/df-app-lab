@@ -652,16 +652,21 @@ class KokHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 10, 12),
+      padding: const EdgeInsets.fromLTRB(18, 14, 6, 12),
       child: Row(children: [
         if (title == null) ...[
           const Text('콕', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w900, color: kAccent, letterSpacing: -1, height: 1.1)),
           const Text('플', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w300, color: kInk, letterSpacing: -1, height: 1.1)),
           const SizedBox(width: 8),
-          const Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(top: 7),
-              child: Text('유튜브 맛집 지도', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: kSub)),
+          // 작은 휴대폰에선 글자가 잘려 보이느니 통째로 숨긴다
+          Expanded(
+            child: LayoutBuilder(
+              builder: (_, c) => c.maxWidth < 104
+                  ? const SizedBox()
+                  : const Padding(
+                      padding: EdgeInsets.only(top: 7),
+                      child: Text('유튜브 맛집 지도', maxLines: 1, overflow: TextOverflow.clip, style: TextStyle(fontSize: 12.5, color: kSub)),
+                    ),
             ),
           ),
         ] else
@@ -696,8 +701,9 @@ class KokHeader extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 4),
-        IconButton(onPressed: onSearch, tooltip: '검색', icon: const LineIcon('search', size: 24)),
+        const SizedBox(width: 2),
+        IconButton(onPressed: onSearch, tooltip: '검색', visualDensity: VisualDensity.compact, icon: const LineIcon('search', size: 24)),
+        const AccountButton(), // 로그인·내 계정 (설정 안에 숨기지 않고 늘 보이게)
       ]),
     );
   }
@@ -2552,6 +2558,10 @@ class _SavedViewState extends State<SavedView> {
               ),
             ),
           ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 14),
+          child: AccountStrip(koks: koks.length),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 12, 6),

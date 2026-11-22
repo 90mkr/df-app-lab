@@ -74,7 +74,7 @@ class _LoginSheetState extends State<LoginSheet> {
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             mixTitle(join ? '콕플 ' : '콕플에 ', join ? '회원가입' : '로그인', size: 19),
             const SizedBox(height: 6),
-            const Text('콕한 집을 다른 휴대폰에서도 보고, 후기를 남길 수 있어요', style: TextStyle(fontSize: 13, color: kSub)),
+            const Text('콕한 집이 계정에 남아 휴대폰을 바꿔도 그대로예요', style: TextStyle(fontSize: 13, color: kSub)),
             const SizedBox(height: 18),
             social('카카오로 계속하기', const Color(0xFFFEE500), const Color(0xFF191919), const Icon(Icons.chat_bubble_rounded, size: 18), () => run(signInKakao)),
             const SizedBox(height: 8),
@@ -1273,7 +1273,7 @@ Future<void> leaveAccount(BuildContext context) async {
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('회원 탈퇴', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-      content: const Text('계정을 지우면 되돌릴 수 없어요. 휴대폰에 저장한 콕한 집은 그대로 남아요.', style: TextStyle(fontSize: 14, height: 1.45)),
+      content: const Text('계정과 계정에 저장한 콕한 집을 지우면 되돌릴 수 없어요. 이 휴대폰에 있는 목록은 그대로 남아요.', style: TextStyle(fontSize: 14, height: 1.45)),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
         TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('탈퇴하기', style: TextStyle(color: kAccent, fontWeight: FontWeight.w700))),
@@ -1282,9 +1282,231 @@ Future<void> leaveAccount(BuildContext context) async {
   );
   if (ok != true) return;
   try {
+    final uid = fbUser?.uid;
+    if (uid != null) await fsdb.collection('users').doc(uid).delete().catchError((_) {});
     await fbUser?.delete();
     if (context.mounted) admToast(context, '탈퇴했어요. 그동안 고마웠어요');
   } on fa.FirebaseAuthException catch (e) {
     if (context.mounted) admToast(context, e.code == 'requires-recent-login' ? '보안을 위해 다시 로그인한 뒤 탈퇴해 주세요' : authMsg(e.code));
   }
+}
+
+// ---------- 계정 (위쪽 사람 단추 · 내 콕 맨 위) ----------
+String userName(fa.User u) => (u.displayName ?? '').trim().isNotEmpty ? u.displayName!.trim() : ((u.email ?? '').isNotEmpty ? u.email!.split('@').first : '회원');
+
+String userSub(fa.User u) {
+  final ids = u.providerData.map((p) => p.providerId).toList();
+  if (ids.any((x) => x.contains('kakao'))) return '카카오 계정';
+  if (ids.contains('google.com')) return '구글 계정';
+  return u.email ?? '이메일 계정';
+}
+
+// 계정 사진: 카카오·구글 사진이 있으면 그 사진, 없으면 이름 첫 글자
+class UserAvatar extends StatelessWidget {
+  final fa.User? user;
+  final double size;
+  const UserAvatar(this.user, {super.key, this.size = 30});
+  @override
+  Widget build(BuildContext context) {
+    final u = user;
+    final initial = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(color: kAccentTint, shape: BoxShape.circle),
+      child: u == null
+          ? LineIcon('user', size: size * 0.62, color: kAccent)
+          : Text(userName(u).characters.first, style: TextStyle(fontSize: size * 0.42, fontWeight: FontWeight.w700, color: kAccent)),
+    );
+    final url = u?.photoURL ?? '';
+    if (!url.startsWith('http')) return initial;
+    return ClipOval(
+      child: Image.network(url,
+          width: size, height: size, fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => initial),
+    );
+  }
+}
+
+// 카카오 바로 시작 (내 콕 맨 위 단추) — 창을 거치지 않고 한 번에
+Future<void> quickKakao(BuildContext context) async {
+  if (!await fbReady()) {
+    if (context.mounted) admToast(context, '로그인은 준비 중이에요');
+    return;
+  }
+  final e = await signInKakao();
+  if (e != null && context.mounted) admToast(context, e);
+}
+
+void openAdmin(BuildContext context) =>
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => AdminPage(places: allPlaces(), onChanged: onAdminChanged)));
+
+// 위쪽 사람 단추: 로그인 전이면 로그인 창, 로그인했으면 계정 메뉴
+Future<void> openAccount(BuildContext context) async {
+  final u = fbOn ? fbUser : null;
+  if (u == null) {
+    await openLogin(context);
+    return;
+  }
+  if (!context.mounted) return;
+  Widget item(BuildContext ctx, String label, VoidCallback onTap, {Color color = kInk}) => InkWell(
+        onTap: () {
+          Navigator.pop(ctx);
+          onTap();
+        },
+        child: Container(
+          height: 50,
+          alignment: Alignment.centerLeft,
+          decoration: const BoxDecoration(border: Border(top: BorderSide(color: kHair))),
+          child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: color)),
+        ),
+      );
+  await showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.08),
+    builder: (ctx) => Align(
+      alignment: Alignment.bottomCenter,
+      heightFactor: 1,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(22, 22, 22, 12 + MediaQuery.of(ctx).padding.bottom),
+          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              UserAvatar(u, size: 46),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(userName(u), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: kInk)),
+                  const SizedBox(height: 2),
+                  Text(userSub(u), style: const TextStyle(fontSize: 12, color: kSub)),
+                ]),
+              ),
+            ]),
+            const SizedBox(height: 14),
+            if (isAdmin) item(ctx, '관리자 화면', () => openAdmin(context)),
+            item(ctx, '설정', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsPage()))),
+            item(ctx, '로그아웃', () => fbAuth.signOut(), color: kSub),
+          ]),
+        ),
+      ),
+    ),
+  );
+}
+
+// 위쪽 사람 단추 (홈·영상 머리줄)
+class AccountButton extends StatelessWidget {
+  const AccountButton({super.key});
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: authTick,
+        builder: (context, __, ___) {
+          final u = fbOn ? fbUser : null;
+          return IconButton(
+            onPressed: () => openAccount(context),
+            visualDensity: VisualDensity.compact,
+            tooltip: u == null ? '로그인' : '내 계정',
+            icon: u == null ? const LineIcon('user', size: 24) : UserAvatar(u, size: 28),
+          );
+        },
+      );
+}
+
+// 내 콕 맨 위 계정 줄: 로그인 전이면 카카오로 바로 시작, 로그인했으면 내 계정 (관리자면 관리자 단추)
+class AccountStrip extends StatelessWidget {
+  final int koks;
+  const AccountStrip({super.key, required this.koks});
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: authTick,
+        builder: (context, __, ___) {
+          final u = fbOn ? fbUser : null;
+          final box = BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE6E8EC)),
+            boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 14)],
+          );
+          if (u == null) {
+            return Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+              decoration: box,
+              child: Row(children: [
+                const UserAvatar(null, size: 40),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => openLogin(context),
+                    behavior: HitTestBehavior.opaque,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text.rich(const TextSpan(children: [
+                        TextSpan(text: '로그인', style: TextStyle(fontWeight: FontWeight.w700)),
+                        TextSpan(text: '하고 콕한 집 지키기', style: TextStyle(fontWeight: FontWeight.w400)),
+                      ]), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14.5, color: kInk, letterSpacing: -0.3)),
+                      const SizedBox(height: 2),
+                      const Text('구글 · 이메일로도 돼요 ›', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: kSub)),
+                    ]),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Semantics(
+                  button: true,
+                  label: '카카오로 로그인',
+                  onTap: () => quickKakao(context),
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    onTap: () => quickKakao(context),
+                    child: Container(
+                      height: 38,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(color: const Color(0xFFFEE500), borderRadius: BorderRadius.circular(19)),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.chat_bubble_rounded, size: 15, color: Color(0xFF191919)),
+                        SizedBox(width: 6),
+                        Text('카카오 로그인', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF191919))),
+                      ]),
+                    ),
+                  ),
+                ),
+              ]),
+            );
+          }
+          return InkWell(
+            onTap: () => openAccount(context),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+              decoration: box,
+              child: Row(children: [
+                UserAvatar(u, size: 40),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(userName(u), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: kInk)),
+                    const SizedBox(height: 2),
+                    Text('${userSub(u)} · 콕한 집${koks > 0 ? ' $koks곳' : ''} 계정에 저장 중',
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: kSub)),
+                  ]),
+                ),
+                if (isAdmin) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => openAdmin(context),
+                    child: Container(
+                      height: 30,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(15), border: Border.all(color: kPillLine)),
+                      child: const Text('관리자', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: kInk)),
+                    ),
+                  ),
+                ],
+                const Icon(Icons.chevron_right_rounded, size: 22, color: kSub),
+              ]),
+            ),
+          );
+        },
+      );
 }
