@@ -6,6 +6,20 @@ const kAccent = Color(0xFFFF4B2B); // 콕플 대표색 (시안)
 const kSub = Color(0xFF6B6B75); // 보조 글색 (시안)
 const kHair = Color(0xFFECECF0); // 가는 구분선
 const kNavOff = Color(0xFF858D98); // 아래 탭: 안 고른 아이콘·글
+const kPageBg = Color(0xFFF2F3F5); // 홈 바탕 (흰 카드 뒤 옅은 회색)
+
+// 홈 흰 카드 (회색 바탕 위에)
+Widget homeCard(Widget child, {EdgeInsets padding = const EdgeInsets.symmetric(vertical: 20), EdgeInsets margin = const EdgeInsets.fromLTRB(14, 0, 14, 12)}) => Container(
+      margin: margin,
+      padding: padding,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.025), blurRadius: 10)],
+      ),
+      child: child,
+    );
 const kPillLine = Color(0xFFDCDCE2);
 const kCardLine = Color(0xFFE4E4E9);
 const kAccentTint = Color(0xFFFFF1EE);
@@ -187,11 +201,57 @@ class CuisinePills extends StatelessWidget {
   final bool withAll;
   final ValueChanged<String> onPick;
   const CuisinePills({super.key, required this.current, required this.onPick, this.withAll = false});
+  // 한 줄을 꽉 채워 같은 너비로 (8개면 4칸씩 두 줄, 9개면 3칸씩 세 줄)
   @override
-  Widget build(BuildContext context) => Wrap(spacing: 6, runSpacing: 8, children: [
-        if (withAll) _SegChip(label: '전체', emoji: '🍽️', on: current.isEmpty, onTap: () => onPick('')),
-        for (final c in kCuisines) _SegChip(label: c, emoji: kCuisineEmoji[c] ?? '', on: current == c, onTap: () => onPick(c)),
+  Widget build(BuildContext context) {
+    final items = [if (withAll) ('', '전체', '🍽️'), for (final c in kCuisines) (c, c, kCuisineEmoji[c] ?? '')];
+    final cols = items.length % 4 == 0 ? 4 : 3;
+    return LayoutBuilder(builder: (_, box) {
+      const gap = 6.0;
+      final w = ((box.maxWidth - gap * (cols - 1)) / cols).floorToDouble();
+      return Wrap(spacing: gap, runSpacing: 8, children: [
+        for (final (key, label, emoji) in items)
+          SizedBox(width: w, child: _FillChip(label: label, emoji: emoji, on: current == key, onTap: () => onPick(key))),
       ]);
+    });
+  }
+}
+
+// 칸을 꽉 채우는 단추 (그림 글자 + 이름, 가운데)
+class _FillChip extends StatelessWidget {
+  final String label, emoji;
+  final bool on;
+  final VoidCallback onTap;
+  const _FillChip({required this.label, required this.emoji, required this.on, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: label,
+        onTap: onTap,
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: on ? kInk : Colors.white,
+              borderRadius: BorderRadius.circular(19),
+              border: Border.all(color: on ? kInk : kPillLine, width: 1),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              if (emoji.isNotEmpty) ...[Text(emoji, style: const TextStyle(fontSize: 16, height: 1.1)), const SizedBox(width: 4)],
+              Flexible(
+                child: Text(label,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.fade,
+                    style: TextStyle(fontSize: 12.5, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : kInk)),
+              ),
+            ]),
+          ),
+        ),
+      );
 }
 
 // ---- 테마 (자동으로 묶이는 것부터) ----
@@ -638,10 +698,10 @@ class KokHeader extends StatelessWidget {
 }
 
 // 섹션 제목 줄 (굵은 앞말 + 가는 뒷말 + 오른쪽 작은 링크)
-Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLink}) => Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+Widget sectionHead(String bold, String light, {String? link, VoidCallback? onLink, double pad = 20, double size = 15}) => Padding(
+      padding: EdgeInsets.symmetric(horizontal: pad),
       child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-        mixTitle(bold, light),
+        mixTitle(bold, light, size: size),
         const Spacer(),
         if (link != null)
           Semantics(
@@ -699,7 +759,9 @@ class HomeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = data;
-    return SafeArea(
+    return ColoredBox(
+      color: kPageBg,
+      child: SafeArea(
       bottom: false,
       child: narrow(Column(children: [
         KokHeader(area: area, open: regionOpen, onRegion: onRegion, onSearch: onSearch),
@@ -711,14 +773,12 @@ class HomeView extends StatelessWidget {
                       ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
                       : TextButton(onPressed: onRetry, child: const Text('자료를 받지 못했습니다 · 다시 불러오기')),
                 )
-              : ListView(padding: const EdgeInsets.only(bottom: 28), children: [
+              : ListView(padding: const EdgeInsets.only(top: 4, bottom: 36), children: [
                   _hero(d),
-                  const SizedBox(height: 18),
-                  Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: RouletteBanner(onTap: onRoulette)),
-                  const SizedBox(height: 22),
-                  sectionHead('무엇이 ', '당기세요?'),
-                  const SizedBox(height: 10),
-                  Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: CuisinePills(current: '', onPick: onCuisine)),
+                  const SizedBox(height: 40), // 룰렛 판이 카드 위로 튀어나올 자리
+                  Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: RouletteBanner(onTap: onRoulette)),
+                  const SizedBox(height: 12),
+                  _find(),
                   _follow(),
                   _fresh(),
                   _creators(d),
@@ -727,8 +787,53 @@ class HomeView extends StatelessWidget {
                 ]),
         ),
       ])),
+      ),
     );
   }
+
+  // 무엇이 당기세요? — 찾기 칸 + 음식 종류
+  Widget _find() => homeCard(
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          sectionHead('무엇이 ', '당기세요?', pad: 18, size: 16),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Semantics(
+              button: true,
+              label: '가게 찾기',
+              onTap: onSearch,
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: onSearch,
+                child: Container(
+                  height: 46,
+                  padding: const EdgeInsets.only(left: 6, right: 14),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(23), border: Border.all(color: kInk, width: 1)),
+                  child: Row(children: [
+                    const Text('🍜', style: TextStyle(fontSize: 24, height: 1.1)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(children: [
+                          TextSpan(text: area.name.split('/').first, style: const TextStyle(fontWeight: FontWeight.w700, color: kAccent)),
+                          const TextSpan(text: ' 맛집을 찾아보세요'),
+                        ]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13.5, color: kInk),
+                      ),
+                    ),
+                    const LineIcon('search', size: 21),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: CuisinePills(current: '', onPick: onCuisine)),
+        ]),
+        padding: const EdgeInsets.fromLTRB(0, 22, 0, 22),
+      );
 
   Widget _hero(SongdoData d) {
     final p = todaysPlace(d);
@@ -745,7 +850,7 @@ class HomeView extends StatelessWidget {
       child: KindGlyph(kind: p.kind, size: 64, bg: tint),
     );
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         GestureDetector(
           onTap: () {
@@ -756,7 +861,7 @@ class HomeView extends StatelessWidget {
             }
           },
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(18),
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: Stack(fit: StackFit.expand, children: [
@@ -787,8 +892,9 @@ class HomeView extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const SizedBox(width: 6),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(v == null ? '오늘의 추천' : '오늘의 영상', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: kAccent)),
@@ -828,21 +934,20 @@ class HomeView extends StatelessWidget {
   Widget _follow() {
     final f = follow;
     if (f == null || f.channels.isEmpty) return const SizedBox();
-    return Padding(
-      padding: const EdgeInsets.only(top: 28),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('유튜버 ', '따라 먹기', link: '전국 지도', onLink: () => onFollow('')),
+    return homeCard(
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        sectionHead('유튜버 ', '따라 먹기', link: '전국 지도', onLink: () => onFollow(''), pad: 18, size: 16),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
           child: Text('맛집 채널이 영상에 주소를 적어 둔 집 · 전국 ${commas(f.places.length)}곳',
               style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         SizedBox(
           height: 100,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
             itemCount: f.channels.length,
             separatorBuilder: (_, __) => const SizedBox(width: 14),
             itemBuilder: (_, i) {
@@ -858,6 +963,7 @@ class HomeView extends StatelessWidget {
           ),
         ),
       ]),
+      padding: const EdgeInsets.fromLTRB(0, 22, 0, 16),
     );
   }
 
@@ -866,10 +972,10 @@ class HomeView extends StatelessWidget {
     final f = follow;
     if (f == null || f.fresh.isEmpty) return const SizedBox();
     return Padding(
-      padding: const EdgeInsets.only(top: 24),
+      padding: const EdgeInsets.fromLTRB(0, 14, 0, 22),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('새로 ', '올라온 영상'),
-        const SizedBox(height: 10),
+        sectionHead('새로 ', '올라온 영상', size: 16),
+        const SizedBox(height: 12),
         SizedBox(
           height: 196,
           child: ListView.separated(
@@ -890,22 +996,22 @@ class HomeView extends StatelessWidget {
   Widget _creators(SongdoData d) {
     final list = channelsOf(d).take(12).toList();
     if (list.isEmpty) return const SizedBox();
-    return Padding(
-      padding: const EdgeInsets.only(top: 28),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('이 동네 ', '다녀간 유튜버', link: '전체 보기', onLink: onAllChannels),
-        const SizedBox(height: 12),
+    return homeCard(
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        sectionHead('이 동네 ', '다녀간 유튜버', link: '전체 보기', onLink: onAllChannels, pad: 18, size: 16),
+        const SizedBox(height: 14),
         SizedBox(
           height: 100,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
             itemCount: list.length,
             separatorBuilder: (_, __) => const SizedBox(width: 14),
             itemBuilder: (_, i) => GestureDetector(onTap: () => onChannel(list[i]), child: ChanAvatar(list[i], ring: i == 0 ? kAccent : kPillLine)),
           ),
         ),
       ]),
+      padding: const EdgeInsets.fromLTRB(0, 22, 0, 16),
     );
   }
 
@@ -913,30 +1019,23 @@ class HomeView extends StatelessWidget {
     final yt = ytRank(d);
     final list = (yt.isNotEmpty ? yt : popRank(d)).take(5).toList();
     if (list.isEmpty) return const SizedBox();
-    return Padding(
-      padding: const EdgeInsets.only(top: 26),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return homeCard(
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         yt.isNotEmpty
-            ? sectionHead('유튜버가 ', '많이 찾은 집', link: '순위 전체', onLink: onRankAll)
-            : sectionHead('지금 ', '인기 많은 집', link: '순위 전체', onLink: onRankAll),
+            ? sectionHead('유튜버가 ', '많이 찾은 집', link: '순위 전체', onLink: onRankAll, pad: 18, size: 16)
+            : sectionHead('지금 ', '인기 많은 집', link: '순위 전체', onLink: onRankAll, pad: 18, size: 16),
         if (yt.isEmpty)
           const Padding(
-            padding: EdgeInsets.fromLTRB(20, 4, 20, 0),
+            padding: EdgeInsets.fromLTRB(18, 4, 18, 0),
             child: Text('이 동네 유튜브 영상은 모으는 중이라, 구글 별점·리뷰 순으로 보여 드려요', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
           ),
-        const SizedBox(height: 10),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          clipBehavior: Clip.antiAlias,
-          decoration: kokCard(),
-          child: Column(children: [
-            for (var i = 0; i < list.length; i++) ...[
-              if (i > 0) const Divider(height: 1, thickness: 1, color: kHair),
-              YtRow(place: list[i], rank: i + 1, onTap: () => onWhere(list[i])),
-            ],
-          ]),
-        ),
+        const SizedBox(height: 6),
+        for (var i = 0; i < list.length; i++) ...[
+          if (i > 0) const Divider(height: 1, thickness: 1, color: kHair, indent: 18, endIndent: 18),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: YtRow(place: list[i], rank: i + 1, onTap: () => onWhere(list[i]))),
+        ],
       ]),
+      padding: const EdgeInsets.fromLTRB(0, 22, 0, 8),
     );
   }
 
@@ -944,9 +1043,9 @@ class HomeView extends StatelessWidget {
     final list = coursesOf(d, area);
     if (list.isEmpty) return const SizedBox();
     return Padding(
-      padding: const EdgeInsets.only(top: 28),
+      padding: const EdgeInsets.only(top: 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        sectionHead('테마 ', '골라 보기'),
+        sectionHead('테마 ', '골라 보기', size: 16),
         const SizedBox(height: 12),
         SizedBox(
           height: 150,
@@ -964,43 +1063,154 @@ class HomeView extends StatelessWidget {
 }
 
 // 오늘 뭐 먹지? (홈 띠)
-class RouletteBanner extends StatelessWidget {
+class RouletteBanner extends StatefulWidget {
   final VoidCallback onTap;
   const RouletteBanner({super.key, required this.onTap});
+  @override
+  State<RouletteBanner> createState() => _RouletteBannerState();
+}
+
+class _RouletteBannerState extends State<RouletteBanner> with SingleTickerProviderStateMixin {
+  static const turns = [1.35, 0.8, 1.6, 1.1]; // 한 번에 도는 바퀴 (멈추는 자리가 매번 다르게)
+  double base = 0; // 지금까지 돈 바퀴
+  int round = 0;
+  late final AnimationController ctl = AnimationController(vsync: this, duration: const Duration(milliseconds: 3000))
+    ..addStatusListener((st) {
+      if (st == AnimationStatus.completed && mounted) {
+        base += turns[round % turns.length];
+        round++;
+        ctl.forward(from: 0);
+      }
+    })
+    ..forward();
+
+  @override
+  void dispose() {
+    ctl.dispose();
+    super.dispose();
+  }
+
+  // 앞 45%: 휙 돌다가 살짝 넘쳤다 멈춤, 나머지: 쉼
+  double get angle {
+    final t = ctl.value;
+    final f = t < 0.45 ? Curves.easeOutBack.transform(t / 0.45) : 1.0;
+    return (base + turns[round % turns.length] * f) * 2 * math.pi;
+  }
+
   @override
   Widget build(BuildContext context) => Semantics(
         button: true,
         label: '오늘 뭐 먹지?',
-        onTap: onTap,
+        onTap: widget.onTap,
         excludeSemantics: true,
         child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-            decoration: kokCard(),
-            child: Row(children: [
-              const LineIcon('wheel', size: 30, color: kAccent),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  mixTitle('오늘 ', '뭐 먹지?', size: 14),
-                  const SizedBox(height: 2),
-                  const Text('유튜버·방송 맛집 가운데 한 곳을 뽑아 드려요',
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub)),
-                ]),
+          onTap: widget.onTap,
+          child: Stack(clipBehavior: Clip.none, children: [
+            Container(
+              height: 118,
+              padding: const EdgeInsets.fromLTRB(20, 18, 150, 16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFE6DD), Color(0xFFFFF3E2)]),
               ),
-              const SizedBox(width: 8),
-              Container(
-                height: 30,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(15)),
-                child: const Text('돌리기', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('고민될 땐 돌려 보세요', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFFB4532F))),
+                const SizedBox(height: 3),
+                mixTitle('오늘 ', '뭐 먹지?', size: 20),
+                const Spacer(),
+                Container(
+                  height: 30,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(color: kInk, borderRadius: BorderRadius.circular(15)),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('룰렛 돌리기', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                    SizedBox(width: 4),
+                    Icon(Icons.play_arrow_rounded, size: 16, color: Colors.white),
+                  ]),
+                ),
+              ]),
+            ),
+            Positioned(
+              right: 4,
+              top: -34,
+              child: AnimatedBuilder(
+                animation: ctl,
+                builder: (_, __) => SizedBox(width: 146, height: 150, child: CustomPaint(painter: _BannerWheel(angle))),
               ),
-            ]),
-          ),
+            ),
+          ]),
         ),
       );
+}
+
+// 홈 띠의 룰렛 판: 색 칸 + 음식 그림 + 가운데 「콕」 + 위 바늘
+class _BannerWheel extends CustomPainter {
+  final double angle;
+  _BannerWheel(this.angle);
+  static const colors = [Color(0xFFFF5A4E), Color(0xFFFFC531), Color(0xFF3EC79B), Color(0xFFFF9A3D), Color(0xFF5AA9FF), Color(0xFFFF7AA2), Color(0xFF9B7BFF), Color(0xFFFFD86B)];
+  static const foods = ['🍜', '🍣', '🍕', '☕', '🥟', '🍰', '🍗', '🍔'];
+  @override
+  void paint(Canvas c, Size s) {
+    final r = s.width / 2 - 4;
+    final center = Offset(s.width / 2, s.height - r - 4);
+    // 판 그림자 (고르게 퍼지게)
+    c.drawCircle(center, r + 2, Paint()..color = const Color(0x22000000)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8));
+    c.drawCircle(center, r + 3, Paint()..color = Colors.white);
+    c.save();
+    c.translate(center.dx, center.dy);
+    c.rotate(angle);
+    const n = 8;
+    const seg = 2 * math.pi / n;
+    final rect = Rect.fromCircle(center: Offset.zero, radius: r);
+    for (var i = 0; i < n; i++) {
+      c.drawArc(rect, -math.pi / 2 + i * seg, seg, true, Paint()..color = colors[i]);
+    }
+    final sep = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2;
+    for (var i = 0; i < n; i++) {
+      final a = -math.pi / 2 + i * seg;
+      c.drawLine(Offset.zero, Offset(math.cos(a) * r, math.sin(a) * r), sep);
+    }
+    for (var i = 0; i < n; i++) {
+      final mid = -math.pi / 2 + (i + 0.5) * seg;
+      final tp = TextPainter(text: TextSpan(text: foods[i], style: const TextStyle(fontSize: 17)), textDirection: TextDirection.ltr)..layout();
+      c.save();
+      c.rotate(mid + math.pi / 2);
+      tp.paint(c, Offset(-tp.width / 2, -r * 0.78));
+      c.restore();
+    }
+    c.restore();
+    // 테두리 점 (전구처럼)
+    for (var i = 0; i < 16; i++) {
+      final a = i * math.pi / 8 + angle * 0.0;
+      c.drawCircle(center + Offset(math.cos(a), math.sin(a)) * (r + 0.5), 1.6, Paint()..color = i.isEven ? const Color(0xFFFFE08A) : Colors.white);
+    }
+    // 가운데
+    c.drawCircle(center, r * 0.25, Paint()..color = Colors.white);
+    c.drawCircle(center, r * 0.25, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = const Color(0xFFFFD2C4));
+    final hub = TextPainter(
+      text: const TextSpan(text: '콕', style: TextStyle(fontFamily: 'Pretendard', fontSize: 15, fontWeight: FontWeight.w900, color: kAccent)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    hub.paint(c, center - Offset(hub.width / 2, hub.height / 2));
+    // 위 바늘
+    final top = Offset(center.dx, center.dy - r - 6);
+    final needle = ui.Path()
+      ..moveTo(top.dx - 9, top.dy - 2)
+      ..lineTo(top.dx + 9, top.dy - 2)
+      ..lineTo(top.dx, top.dy + 14)
+      ..close();
+    c.drawShadow(needle, Colors.black, 2, false);
+    c.drawPath(needle, Paint()..color = kInk);
+    c.drawCircle(Offset(top.dx, top.dy + 1), 2.6, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BannerWheel o) => o.angle != angle;
 }
 
 // 테마 코스 카드
@@ -1675,7 +1885,7 @@ class VideoView extends StatelessWidget {
       }
     }
     items.sort((a, b) => b.$1.date.compareTo(a.$1.date));
-    Widget item((Video, Place) it) {
+    Widget item((Video, Place) it, bool phone) {
       final (v, p) = it;
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         GestureDetector(
@@ -1688,40 +1898,49 @@ class VideoView extends StatelessWidget {
                 ytWide(v),
                 Center(
                   child: Container(
-                    width: 44,
-                    height: 44,
+                    width: phone ? 34 : 44,
+                    height: phone ? 34 : 44,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), shape: BoxShape.circle),
-                    child: const LineIcon('play', size: 17),
+                    child: LineIcon('play', size: phone ? 13 : 17),
                   ),
                 ),
               ]),
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        Text(v.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kInk, height: 1.35)),
-        const SizedBox(height: 4),
-        Row(children: [
-          Expanded(
-            child: Text('${v.channel} · ${p.name}',
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w300, color: kSub)),
-          ),
-          GestureDetector(
+        const SizedBox(height: 7),
+        Text(v.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: phone ? 12.5 : 14, fontWeight: FontWeight.w600, color: kInk, height: 1.3)),
+        const SizedBox(height: 3),
+        Text('${v.channel} · ${p.name}',
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: phone ? 10.5 : 11.5, fontWeight: FontWeight.w300, color: kSub)),
+        const SizedBox(height: 3),
+        Semantics(
+          button: true,
+          label: '이 집 어디야',
+          onTap: () => onWhere(p),
+          excludeSemantics: true,
+          child: GestureDetector(
             onTap: () => onWhere(p),
-            child: const Text('이 집 어디야', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: kAccent)),
+            child: Text('📍 이 집 어디야', style: TextStyle(fontSize: phone ? 11 : 11.5, fontWeight: FontWeight.w700, color: kAccent)),
           ),
-        ]),
+        ),
       ]);
     }
 
     return SafeArea(
       bottom: false,
       child: LayoutBuilder(builder: (_, c) {
-        // 휴대폰은 한 줄에 1개, 태블릿(가로 600 이상)은 2개
-        final cols = c.maxWidth >= 600 ? 2 : 1;
-        final width = math.min(c.maxWidth, cols == 1 ? kHomeMax : 1040.0);
-        final itemW = (width - 40 - 16 * (cols - 1)) / cols;
+        // 휴대폰도 태블릿도 한 줄에 2개 (태블릿은 넓게)
+        const cols = 2;
+        final phone = c.maxWidth < 600;
+        final width = math.min(c.maxWidth, 1040.0);
+        final gap = phone ? 12.0 : 16.0;
+        final side = phone ? 16.0 : 20.0;
+        final itemW = (width - side * 2 - gap) / cols;
         return Align(
           alignment: Alignment.topCenter,
           child: SizedBox(
@@ -1736,15 +1955,15 @@ class VideoView extends StatelessWidget {
                         child: Text(d == null ? '' : '${area.name} 유튜브 영상은 모으는 중입니다.', style: const TextStyle(fontSize: 13, color: kSub)),
                       )
                     : GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                        padding: EdgeInsets.fromLTRB(side, 4, side, 24),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: cols,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 22,
-                          mainAxisExtent: itemW * 9 / 16 + 80,
+                          crossAxisSpacing: gap,
+                          mainAxisSpacing: phone ? 18 : 22,
+                          mainAxisExtent: itemW * 9 / 16 + (phone ? 84 : 80),
                         ),
                         itemCount: items.length,
-                        itemBuilder: (_, i) => item(items[i]),
+                        itemBuilder: (_, i) => item(items[i], phone),
                       ),
               ),
             ]),
