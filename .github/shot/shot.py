@@ -54,6 +54,15 @@ def run(pg):
         pg.mouse.wheel(0, dy)
         time.sleep(wait)
 
+    def drag(x, y0, y1, wait=2.0, steps=14):
+        pg.mouse.move(x, y0)
+        pg.mouse.down()
+        for i in range(1, steps + 1):
+            pg.mouse.move(x, y0 + (y1 - y0) * i / steps)
+            time.sleep(0.02)
+        pg.mouse.up()
+        time.sleep(wait)
+
     def labels():
         try:
             return pg.evaluate("""() => Array.from(document.querySelectorAll('flt-semantics, [role]'))
@@ -158,7 +167,13 @@ def run(pg):
         shot("가게")
         if tap_text("콕 하기", 1.5):
             shot("가게_콕")
-        wheel(195, 700, 900, 1.5)
+        b = find("길찾기")
+        log.append(f"길찾기 단추 위치 {b}")
+        top = (b["y"] - 120) if b else 560
+        drag(120, top, 90, 2.5)   # 시트를 끌어올려 끝까지
+        shot("가게_끝까지")
+        drag(120, 700, 300, 2.0)  # 안에서 위로 넘기기
+        shot("가게_아래")
         if tap_text("정보 수정 신고", 2):
             tap_text("영업시간", 0.8)
             shot("정보수정신고")

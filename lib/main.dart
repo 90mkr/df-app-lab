@@ -34,6 +34,7 @@ class DfApp extends StatelessWidget {
     return MaterialApp(
       title: '콕플',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const MaterialScrollBehavior().copyWith(dragDevices: ui.PointerDeviceKind.values.toSet()),
       theme: ThemeData(
         fontFamily: 'Pretendard',
         colorScheme: ColorScheme.fromSeed(seedColor: kBlue, primary: kBlue, surface: Colors.white),
@@ -1371,12 +1372,16 @@ class _MapPageState extends State<MapPage> {
   void openPlace(Place p) {
     noteRecent(p);
     map.move(p.point, math.max(map.camera.zoom, 16));
+    // 처음엔 낮게: 이름 · 별점·거리·영업·주소 + 오른쪽 바로가기 (+ 편의 칸) 까지만, 끌어올리면 끝까지
+    final mq = MediaQuery.of(context);
+    final px = 238.0 + (oneLine(p).isNotEmpty ? 24 : 0) + (p.feat.any(kFeat.containsKey) ? 74 : 0) + mq.padding.bottom;
+    final peek = (px / mq.size.height).clamp(0.26, 0.6).toDouble();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.08),
-      builder: (_) => PlaceSheet(place: p, recentDays: data?.recentDays ?? 90, kok: isKok(p), onKok: (v) => toggleKok(p, v)),
+      builder: (_) => PlaceSheet(place: p, recentDays: data?.recentDays ?? 90, kok: isKok(p), onKok: (v) => toggleKok(p, v), peek: peek),
     );
   }
 
@@ -2429,17 +2434,27 @@ class ScoreTag extends StatelessWidget {
 
 // ---------------- 아래에서 올라오는 판 ----------------
 
-class _Sheet extends StatelessWidget {
+class _Sheet extends StatefulWidget {
   final double initial;
+  final List<double>? snaps; // 걸리는 높이 (있으면 낮게 → 끝까지 두 단계, 아래로 내리면 닫힘)
   final Widget Function(ScrollController) builder;
-  const _Sheet({required this.initial, required this.builder});
+  const _Sheet({required this.initial, required this.builder, this.snaps});
+  @override
+  State<_Sheet> createState() => _SheetState();
+}
 
+class _SheetState extends State<_Sheet> {
+  bool closing = false;
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: initial,
-      minChildSize: 0.25,
+    final snaps = widget.snaps;
+    final min = snaps == null ? 0.25 : 0.08;
+    final sheet = DraggableScrollableSheet(
+      initialChildSize: widget.initial,
+      minChildSize: min,
       maxChildSize: 0.92,
+      snap: snaps != null,
+      snapSizes: snaps,
       expand: false,
       builder: (_, scroll) => Container(
         decoration: BoxDecoration(
@@ -2454,9 +2469,20 @@ class _Sheet extends StatelessWidget {
             height: 4,
             decoration: BoxDecoration(color: kLine, borderRadius: BorderRadius.circular(2)),
           ),
-          Expanded(child: builder(scroll)),
+          Expanded(child: widget.builder(scroll)),
         ]),
       ),
+    );
+    if (snaps == null) return sheet;
+    return NotificationListener<DraggableScrollableNotification>(
+      onNotification: (n) {
+        if (!closing && n.extent <= n.minExtent + 0.015) {
+          closing = true;
+          Navigator.of(context).maybePop();
+        }
+        return false;
+      },
+      child: sheet,
     );
   }
 }
@@ -2466,7 +2492,8 @@ class PlaceSheet extends StatelessWidget {
   final int recentDays;
   final bool kok;
   final ValueChanged<bool>? onKok;
-  const PlaceSheet({super.key, required this.place, required this.recentDays, this.kok = false, this.onKok});
+  final double peek; // 처음 열리는 높이 (화면 비율)
+  const PlaceSheet({super.key, required this.place, required this.recentDays, this.kok = false, this.onKok, this.peek = 0.36});
 
   @override
   Widget build(BuildContext context) {
@@ -2476,8 +2503,16 @@ class PlaceSheet extends StatelessWidget {
     final route = 'https://map.kakao.com/link/to/${Uri.encodeComponent(p.name)},${p.lat},${p.lng}';
     final open = openInfo(p);
     final today = '${kDays[nowKst().weekday % 7]}요일';
+    // 오른쪽 바로가기 (요약 옆 빈자리): 전화 · 길찾기 · 메뉴 · 블로그
+    final quick = <Widget>[
+      if (p.tel.isNotEmpty) _Quick(icon: Icons.call_outlined, label: '전화', strong: true, onTap: () => openUrl('tel:${p.tel}')),
+      _Quick(icon: Icons.directions_outlined, label: '길찾기', onTap: () => openUrl(route)),
+      _Quick(icon: Icons.photo_library_outlined, label: '메뉴', onTap: () => openUrl(p.kakao.isNotEmpty ? p.kakao : naver)),
+      if (p.home.isNotEmpty) _Quick(icon: Icons.public, label: p.home.contains('blog') ? '블로그' : '홈페이지', onTap: () => openUrl(p.home)),
+    ];
     return _Sheet(
-      initial: 0.55,
+      initial: peek,
+      snaps: [peek],
       builder: (scroll) => ListView(
         controller: scroll,
         padding: const EdgeInsets.fromLTRB(20, 2, 20, 30),
@@ -2498,6 +2533,9 @@ class PlaceSheet extends StatelessWidget {
             if (onKok != null) ...[const SizedBox(width: 8), KokButton(on: kok, onChanged: onKok!)],
           ]),
           const SizedBox(height: 10),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (p.greviews > 0)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
@@ -2532,6 +2570,11 @@ class PlaceSheet extends StatelessWidget {
               child: Text(open.text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: open.open ? kBlue : kGray)),
             ),
           if (p.addr.isNotEmpty) Text(p.addr, style: const TextStyle(fontSize: 13, color: kInk, height: 1.4)),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(width: 114, child: Wrap(spacing: 6, runSpacing: 6, children: quick)),
+          ]),
           if (p.feat.any(kFeat.containsKey)) ...[
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
@@ -2539,20 +2582,6 @@ class PlaceSheet extends StatelessWidget {
                 if (kFeat[f] != null) FeatTile(icon: kFeat[f]!.$1, label: kFeat[f]!.$2, color: kFeat[f]!.$3),
             ]),
           ],
-          const SizedBox(height: 14),
-          Row(children: [
-            Expanded(child: _Btn(label: '길찾기', onTap: () => openUrl(route))),
-            const SizedBox(width: 8),
-            Expanded(child: _Btn(label: '메뉴·사진', onTap: () => openUrl(p.kakao.isNotEmpty ? p.kakao : naver))),
-            if (p.home.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Expanded(child: _Btn(label: '가게 블로그', onTap: () => openUrl(p.home))),
-            ],
-            if (p.tel.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Expanded(child: _Btn(label: '전화', primary: true, onTap: () => openUrl('tel:${p.tel}'))),
-            ],
-          ]),
           const SizedBox(height: 22),
           const _Title(text: '영업시간'),
           const SizedBox(height: 8),
@@ -2675,6 +2704,45 @@ class PlaceSheet extends StatelessWidget {
             _Btn(label: '인스타 보기', onTap: () => openUrl(p.insta)),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _Quick extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool strong; // 전화: 파랑 하나만 강조
+  final VoidCallback onTap;
+  const _Quick({required this.icon, required this.label, required this.onTap, this.strong = false});
+  @override
+  Widget build(BuildContext context) {
+    final c = strong ? kBlue : kInk;
+    return Semantics(
+      button: true,
+      label: label,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: strong ? kBlue.withValues(alpha: 0.5) : kLine, width: 1),
+            ),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon, size: 21, color: c),
+              const SizedBox(height: 3),
+              Text(label, maxLines: 1, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: c, height: 1.1)),
+            ]),
+          ),
+        ),
       ),
     );
   }
