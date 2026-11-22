@@ -970,16 +970,235 @@ class _PendingTabState extends State<_PendingTab> {
   }
 }
 
-// ---- 후보 확인 (쯔양 등 주소 안 적는 유튜버) — 자료가 생기면 열린다 ----
-class _PicksTab extends StatelessWidget {
+// ---- 후보 확인 (쯔양 등 주소 안 적는 유튜버): 맞음(공개) · 틀림(다른 가게로) · 제외 · 직접 연결 ----
+class _PicksTab extends StatefulWidget {
   const _PicksTab();
   @override
-  Widget build(BuildContext context) => const Center(
+  State<_PicksTab> createState() => _PicksTabState();
+}
+
+class _PicksTabState extends State<_PicksTab> {
+  List<Map<String, dynamic>>? items;
+  List<Map<String, dynamic>> nofind = [];
+  Map<String, Map<String, dynamic>> dec = {};
+  bool done = false, lost = false; // 정한 것도 보기 · 못 찾은 영상 보기
+  String updated = '';
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    try {
+      final r = await http.get(Uri.parse('${dataUrl('picks.json')}?t=${DateTime.now().millisecondsSinceEpoch}'));
+      final j = r.statusCode == 200 ? jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic> : <String, dynamic>{};
+      final q = await fsdb.collection('picks').get();
+      if (!mounted) return;
+      setState(() {
+        items = [for (final e in (j['items'] ?? []) as List) Map<String, dynamic>.from(e as Map)];
+        nofind = [for (final e in (j['nofind'] ?? []) as List) Map<String, dynamic>.from(e as Map)];
+        updated = '${j['updated'] ?? ''}';
+        dec = {for (final d in q.docs) d.id: d.data()};
+      });
+    } catch (_) {
+      if (mounted) setState(() => items = []);
+    }
+  }
+
+  Future<void> decide(String key, Map<String, dynamic> it, String status, {Map<String, dynamic>? place, String query = ''}) async {
+    final d = <String, dynamic>{
+      'status': status,
+      'vid': it['vid'] ?? '',
+      't': it['t'] ?? '',
+      'cid': it['cid'] ?? '',
+      if (place != null) 'place': place,
+      if (query.isNotEmpty) 'query': query,
+      'name': it['name'] ?? '',
+      'by': fbUser?.email ?? '',
+      'at': fs.FieldValue.serverTimestamp(),
+    };
+    try {
+      await fsdb.collection('picks').doc(key).set(d);
+      if (mounted) setState(() => dec[key] = d);
+    } catch (e) {
+      if (mounted) admToast(context, '저장하지 못했어요: $e');
+    }
+  }
+
+  // 틀림: 다른 후보 고르기 또는 가게 이름을 직접 적기
+  Future<void> wrong(String key, Map<String, dynamic> it) async {
+    final cands = [for (final c in (it['cands'] ?? []) as List) Map<String, dynamic>.from(c as Map)];
+    final q = TextEditingController(text: '${it['name'] ?? ''}');
+    final r = await showModalBottomSheet<Object>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(ctx).viewInsets.bottom + MediaQuery.of(ctx).padding.bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('「${it['name']}」 다른 가게로 고르기', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          for (var i = 0; i < cands.length; i++)
+            InkWell(
+              onTap: () => Navigator.pop(ctx, i),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                child: Row(children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${cands[i]['name']}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      Text('${cands[i]['addr']} · ${'${cands[i]['cat']}'.split(' > ').last}', style: const TextStyle(fontSize: 12, color: kSub)),
+                    ]),
+                  ),
+                  const Text('이 집', style: TextStyle(fontSize: 13, color: kBlue, fontWeight: FontWeight.w700)),
+                ]),
+              ),
+            ),
+          const Divider(color: kHair),
+          const Text('목록에 없으면 가게 이름(지역 포함)을 적어 주세요. 다음 자료 갱신 때 카카오에서 찾아 후보로 다시 올려요.', style: TextStyle(fontSize: 12, color: kSub)),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: TextField(controller: q, decoration: admDeco('예: 인천 구월동 ○○식당'))),
+            const SizedBox(width: 8),
+            admBtn('직접 연결', () => Navigator.pop(ctx, q.text.trim()), strong: true),
+          ]),
+        ]),
+      ),
+    );
+    if (r is int) {
+      await decide(key, it, 'ok', place: cands[r]);
+    } else if (r is String && r.isNotEmpty) {
+      await decide(key, it, 'manual', query: r);
+    }
+    q.dispose();
+  }
+
+  Widget thumb(String vid) => ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.network('https://i.ytimg.com/vi/$vid/mqdefault.jpg',
+            width: 96, height: 54, fit: BoxFit.cover, webHtmlElementStrategy: WebHtmlElementStrategy.fallback, errorBuilder: (_, __, ___) => Container(width: 96, height: 54, color: const Color(0xFFEDEDF0))),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final l = items;
+    if (l == null) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    if (l.isEmpty && nofind.isEmpty) {
+      return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text('쯔양 영상에서 뽑은 가게 후보가 여기에 모여요.\n구글 AI 키를 넣으면 시작합니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: kSub, height: 1.5)),
+          child: Text('쯔양 영상에서 뽑은 가게 후보가 여기에 모여요.\n구글 AI 키를 넣고 자료를 모으면 시작합니다.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: kSub, height: 1.5)),
         ),
       );
+    }
+    final open = [for (final it in l) if (done || !dec.containsKey('${it['key']}')) it];
+    final lostOpen = [for (final it in nofind) if (done || !dec.containsKey('${it['vid']}_m')) it];
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+        child: Row(children: [
+          Expanded(
+            child: Text('남은 후보 ${l.where((x) => !dec.containsKey('${x['key']}')).length} · 못 찾은 영상 ${nofind.length} · $updated',
+                style: const TextStyle(fontSize: 12, color: kSub)),
+          ),
+          admBtn(lost ? '후보 보기' : '못 찾은 영상', () => setState(() => lost = !lost)),
+          const SizedBox(width: 6),
+          admBtn(done ? '남은 것만' : '정한 것도', () => setState(() => done = !done)),
+        ]),
+      ),
+      const Divider(height: 1, color: kHair),
+      Expanded(
+        child: lost
+            ? ListView.separated(
+                itemCount: lostOpen.length,
+                separatorBuilder: (_, __) => const Divider(height: 1, color: kHair),
+                itemBuilder: (_, i) {
+                  final it = lostOpen[i];
+                  final key = '${it['vid']}_m';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(children: [
+                      GestureDetector(onTap: () => openUrl('https://www.youtube.com/watch?v=${it['vid']}'), child: thumb('${it['vid']}')),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('${it['t']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: kInk)),
+                          Text('${it['ch']} · ${it['date']}${it['inc'] == true ? ' · 인천' : ''}', style: const TextStyle(fontSize: 11.5, color: kSub)),
+                        ]),
+                      ),
+                      if (dec.containsKey(key))
+                        Text('${dec[key]!['query'] ?? ''}', style: const TextStyle(fontSize: 12, color: kBlue))
+                      else
+                        admBtn('직접 연결', () => wrong(key, {...it, 'name': '', 'cands': const []})),
+                    ]),
+                  );
+                },
+              )
+            : ListView.separated(
+                itemCount: open.length,
+                separatorBuilder: (_, __) => const Divider(height: 1, color: kHair),
+                itemBuilder: (_, i) {
+                  final it = open[i];
+                  final key = '${it['key']}';
+                  final cands = (it['cands'] ?? []) as List;
+                  final b = (it['best'] ?? -1) as int;
+                  final best = b >= 0 && b < cands.length ? Map<String, dynamic>.from(cands[b] as Map) : null;
+                  final d = dec[key];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      GestureDetector(onTap: () => openUrl('https://www.youtube.com/watch?v=${it['vid']}'), child: thumb('${it['vid']}')),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Row(children: [
+                            if (it['check'] == true)
+                              Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                decoration: BoxDecoration(border: Border.all(color: kAccent), borderRadius: BorderRadius.circular(3)),
+                                child: const Text('확인 필요', style: TextStyle(fontSize: 10.5, color: kAccent, fontWeight: FontWeight.w700)),
+                              ),
+                            Expanded(
+                              child: Text('${it['name']}${'${it['region'] ?? ''}'.isNotEmpty ? ' · ${it['region']}' : ''}',
+                                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kInk)),
+                            ),
+                          ]),
+                          const SizedBox(height: 2),
+                          Text(best == null ? '카카오에서 못 찾음' : '→ ${best['name']} · ${best['addr']}',
+                              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: best == null ? kAccent : kInk)),
+                          Text('${it['t']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: kSub)),
+                          if (d != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(
+                                  switch ('${d['status']}') {
+                                    'ok' => '맞음 · ${(d['place'] as Map?)?['name'] ?? ''} (다음 자료 갱신 때 지도에)',
+                                    'skip' => '제외함',
+                                    'manual' => '직접 연결: ${d['query']}',
+                                    _ => '${d['status']}',
+                                  },
+                                  style: const TextStyle(fontSize: 12, color: kBlue, fontWeight: FontWeight.w600)),
+                            ),
+                        ]),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(children: [
+                        admBtn('맞음', best == null ? null : () => decide(key, it, 'ok', place: best), strong: true),
+                        const SizedBox(height: 4),
+                        admBtn('틀림', () => wrong(key, it)),
+                        const SizedBox(height: 4),
+                        admBtn('제외', () => decide(key, it, 'skip'), danger: true),
+                      ]),
+                    ]),
+                  );
+                },
+              ),
+      ),
+    ]);
+  }
 }
 
 // ---- 앱 켤 때 팝업 ----
