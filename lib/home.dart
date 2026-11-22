@@ -931,6 +931,20 @@ class HomeView extends StatelessWidget {
   Widget _courses(SongdoData d) {
     final list = coursesOf(d, area);
     if (list.isEmpty) return const SizedBox();
+    final used = <String>{};
+    final covers = <Video?>[];
+    for (final c in list) {
+      Video? pick;
+      for (final p in c.stops) {
+        final l = p.vids.where((x) => !x.short && !used.contains(x.id)).toList();
+        if (l.isNotEmpty) {
+          pick = l.firstWhere((x) => x.hd, orElse: () => l.first);
+          break;
+        }
+      }
+      if (pick != null) used.add(pick.id);
+      covers.add(pick);
+    }
     return Padding(
       padding: const EdgeInsets.only(top: 30),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -943,7 +957,7 @@ class HomeView extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: list.length,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, i) => ThemeCard(list[i], onTap: () => onCourse(list[i])),
+            itemBuilder: (_, i) => ThemeCard(list[i], cover: covers[i], onTap: () => onCourse(list[i])),
           ),
         ),
       ]),
@@ -968,7 +982,7 @@ class HomeView extends StatelessWidget {
         const SizedBox(height: 6),
         for (var i = 0; i < list.length; i++) ...[
           if (i > 0) const Divider(height: 1, thickness: 1, color: kHair, indent: 18, endIndent: 18),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: YtRow(place: list[i], rank: i + 1, thumb: 118, onTap: () => onWhere(list[i]))),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: YtRow(place: list[i], rank: i + 1, thumb: 112, pill: false, onTap: () => onWhere(list[i]))),
         ],
       ]),
       padding: const EdgeInsets.fromLTRB(0, 22, 0, 8),
@@ -1356,21 +1370,13 @@ class _HomeHeroState extends State<HomeHero> {
 // 테마 카드: 사진 한 장을 크게 깔고 그 위에 글자 (아래쪽만 살짝 어둡게)
 class ThemeCard extends StatelessWidget {
   final Course c;
+  final Video? cover; // 카드 사진 (앞 카드와 겹치지 않게 골라서 넘김)
   final VoidCallback onTap;
-  const ThemeCard(this.c, {super.key, required this.onTap});
+  const ThemeCard(this.c, {super.key, this.cover, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    Video? cover;
-    Place? coverPlace;
-    for (final p in c.stops) {
-      final l = p.vids.where((x) => !x.short).toList();
-      if (l.isNotEmpty) {
-        cover = l.firstWhere((x) => x.hd, orElse: () => l.first);
-        coverPlace = p;
-        break;
-      }
-    }
-    final kind = (coverPlace ?? (c.stops.isNotEmpty ? c.stops.first : null))?.kind ?? 'food';
+    final cover = this.cover;
+    final kind = c.stops.isNotEmpty ? c.stops.first.kind : 'food';
     final tint = kindTint(kind);
     final plain = Container(
       decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [tint, tint.withValues(alpha: 0.7)])),
@@ -1392,21 +1398,17 @@ class ThemeCard extends StatelessWidget {
             height: 200,
             child: Stack(fit: StackFit.expand, children: [
               if (cover == null) plain else ytWide(cover, fallback: plain),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0.42, 1.0],
-                    colors: [Color(0x00000000), Color(0x9E000000)],
-                  ),
-                ),
-              ),
               Positioned(
-                left: 18,
-                right: 18,
-                bottom: 16,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                    child: Container(
+                      color: const Color(0x73000000),
+                      padding: const EdgeInsets.fromLTRB(18, 13, 18, 14),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text.rich(
                     TextSpan(children: [
                       TextSpan(text: c.bold, style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -1416,9 +1418,12 @@ class ThemeCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 21, color: Colors.white, letterSpacing: -0.5, height: 1.25),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(c.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: Color(0xE6FFFFFF))),
                 ]),
+                    ),
+                  ),
+                ),
               ),
             ]),
           ),
@@ -2253,7 +2258,8 @@ class YtRow extends StatelessWidget {
   final int rank;
   final VoidCallback onTap;
   final double thumb; // 썸네일 너비
-  const YtRow({super.key, required this.place, required this.rank, required this.onTap, this.thumb = 92});
+  final bool pill; // 오른쪽 알약 (끄면 유튜버 수를 둘째 줄 앞에)
+  const YtRow({super.key, required this.place, required this.rank, required this.onTap, this.thumb = 92, this.pill = true});
   @override
   Widget build(BuildContext context) {
     final n = ytCount(place);
@@ -2274,19 +2280,27 @@ class YtRow extends StatelessWidget {
               Text(place.name,
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: kInk, letterSpacing: -0.3)),
               const SizedBox(height: 3),
-              Text([if (myPos.value != null) distText(meters(myPos.value!, place.point)), metaOf(place)].join(' · '),
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w400, color: kSub)),
+              Text.rich(
+                  TextSpan(children: [
+                    if (!pill && n > 0) TextSpan(text: '유튜버 $n명 · ', style: const TextStyle(fontWeight: FontWeight.w700, color: kAccent)),
+                    TextSpan(text: [if (myPos.value != null) distText(meters(myPos.value!, place.point)), metaOf(place)].join(' · ')),
+                  ]),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w400, color: kSub)),
               if (oneLine(place).isNotEmpty) ...[
                 const SizedBox(height: 3),
                 Text(oneLine(place), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: kInk)),
               ],
             ]),
           ),
-          const SizedBox(width: 8),
-          if (n > 0)
-            _Pill('유튜버 $n명')
-          else if (place.grate > 0)
-            _Pill('★ ${place.grate.toStringAsFixed(1)}'),
+          if (pill) ...[
+            const SizedBox(width: 8),
+            if (n > 0)
+              _Pill('유튜버 $n명')
+            else if (place.grate > 0)
+              _Pill('★ ${place.grate.toStringAsFixed(1)}'),
+          ],
         ]),
       ),
     );
