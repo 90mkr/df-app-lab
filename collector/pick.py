@@ -212,6 +212,7 @@ def kakao(q):
     url = "https://dapi.kakao.com/v2/local/search/keyword.json?" + urllib.parse.urlencode({"query": q, "size": 5})
     j = get(url, headers={"Authorization": f"KakaoAK {KAKAO}"})
     return [{"id": d["id"], "name": d["place_name"], "addr": d.get("road_address_name") or d.get("address_name", ""),
+             "jibun": d.get("address_name", ""),
              "cat": d.get("category_name", ""), "g": d.get("category_group_code", ""), "lat": float(d["y"]), "lng": float(d["x"]),
              "url": d.get("place_url", "")} for d in j.get("documents", [])]
 
@@ -225,7 +226,8 @@ def match(p):
         except Exception as e:
             print("카카오 찾기 실패", q, str(e)[:80])
             cands = []
-        cands = [c for c in cands if c["g"] in ("FD6", "CE7")] or cands
+        if not re.search(r"시장|골목|거리", name):  # 시장·골목 영상은 시장 자체를 찾는다
+            cands = [c for c in cands if c["g"] in ("FD6", "CE7")] or cands
         if cands:
             break
     best, score = -1, 0.0
@@ -234,8 +236,50 @@ def match(p):
         if s > score:
             best, score = i, s
     conf = float(p.get("confidence") or 0) * 0.5 + min(score, 1.0) * 0.5
-    return {"name": name, "region": region, "why": (p.get("evidence") or "")[:120], "conf": round(conf, 2),
-            "cands": cands[:5], "best": best, "check": best < 0 or conf < 0.7}
+    return rescore({"name": name, "region": region, "why": (p.get("evidence") or "")[:120], "conf": round(conf, 2),
+                    "cands": cands[:5], "best": best, "check": best < 0 or conf < 0.7})
+
+
+# 지역 단서가 주소와 맞는지: 시·군·구·도 같은 큰 이름이 하나도 안 맞으면 다른 곳으로 본다
+# (동·역·골목 같은 작은 이름은 도로명 주소에 안 나오는 일이 많아 맞을 때만 쓴다)
+BIG = re.compile(r"^(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)|(?:특별시|광역시|특별자치도|특별자치시|도|시|군|구)$")
+
+
+def region_ok(region, addr):
+    toks = [t for t in re.split(r"[\s/,·()]+", region or "") if len(t) >= 2]
+    if not toks:
+        return None
+    big = False
+    for t in toks:
+        cut = re.sub(r"(특별시|광역시|특별자치도|특별자치시|역|점|시장|골목|도)$", "", t)
+        if t in addr or (len(cut) >= 2 and cut in addr):
+            return True
+        if BIG.search(t) or not re.search(r"(동|로|길|역|점|시장|골목|거리|리)$", t):
+            big = True
+    return False if big else None
+
+
+def rescore(m):
+    """뽑은 후보를 다시 따져 「확인 필요」와 그 까닭을 단다 (카카오를 다시 부르지 않음)."""
+    cands, best = m.get("cands") or [], m.get("best", -1)
+    notes = []
+    if best < 0 or best >= len(cands):
+        notes.append("카카오에서 못 찾음")
+    else:
+        c = cands[best]
+        if region_ok(m.get("region", ""), c.get("addr", "") + " " + c.get("jibun", "")) is False:
+            notes.append("지역이 다름")
+        if c.get("g") not in ("FD6", "CE7") and not re.search(r"시장|골목|거리", m.get("name", "") + c.get("name", "")):
+            notes.append("음식점이 아님")
+        if sim(m.get("name", ""), c.get("name", "")) < 0.6:
+            notes.append("이름이 다름")
+        if "시장" in m.get("name", "") and "시장" not in c.get("cat", ""):
+            notes.append("시장 안 가게로 찾음")
+        if not m.get("region") and sum(1 for x in cands if sim(m.get("name", ""), x.get("name", "")) >= 0.9) >= 2:
+            notes.append("같은 이름이 여러 곳")
+    m["note"] = " · ".join(notes)
+    m["check"] = bool(notes) or float(m.get("conf") or 0) < 0.7
+    return m
 
 
 # ---- 5. 관리자가 고른 집 → 따라가기 자료에 붙이기 ----
@@ -406,6 +450,7 @@ def main():
             nofind.append({"vid": vid, "t": v.get("t", ""), "date": v.get("date", ""), "ch": c["name"], "inc": any(k in text for k in INCHEON)})
             continue
         for i, p in enumerate(a["p"]):
+            rescore(p)
             items.append({"key": f"{vid}_{i}", "vid": vid, "t": v.get("t", ""), "date": v.get("date", ""), "ch": c["name"], "cid": c.get("id", ""),
                           **p, "inc": any(k in (v.get("t", "") + v.get("d", "")[:600]) for k in INCHEON)})
     items.sort(key=lambda x: (x["check"], x["inc"], x["date"]), reverse=True)

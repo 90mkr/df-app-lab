@@ -1163,7 +1163,8 @@ class _PicksTabState extends State<_PicksTab> {
                                 margin: const EdgeInsets.only(right: 6),
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                 decoration: BoxDecoration(border: Border.all(color: kAccent), borderRadius: BorderRadius.circular(3)),
-                                child: const Text('확인 필요', style: TextStyle(fontSize: 10.5, color: kAccent, fontWeight: FontWeight.w700)),
+                                child: Text('${it['note'] ?? ''}'.isNotEmpty ? '${it['note']}' : '확인 필요',
+                                    style: const TextStyle(fontSize: 10.5, color: kAccent, fontWeight: FontWeight.w700)),
                               ),
                             Expanded(
                               child: Text('${it['name']}${'${it['region'] ?? ''}'.isNotEmpty ? ' · ${it['region']}' : ''}',
