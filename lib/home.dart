@@ -2445,50 +2445,107 @@ class VideoView extends StatelessWidget {
       }
     }
     items.sort((a, b) => b.$1.date.compareTo(a.$1.date));
+    // 영상 카드: 위는 영상(누르면 재생), 아래는 가게(누르면 지도에서 그 집) — 지도로 이어지는 걸 한눈에 알게
     Widget item((Video, Place) it, bool phone) {
       final (v, p) = it;
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        GestureDetector(
-          onTap: () => openUrl('https://www.youtube.com/watch?v=${v.id}'),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Stack(fit: StackFit.expand, children: [
-                ytWide(v),
-                Center(
-                  child: Container(
-                    width: phone ? 34 : 44,
-                    height: phone ? 34 : 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), shape: BoxShape.circle),
-                    child: LineIcon('play', size: phone ? 13 : 17),
-                  ),
+      final o = openInfo(p);
+      final dn = dongOf(p);
+      final small = phone ? 10.5 : 11.5;
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kLine, width: 1),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12)],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Semantics(
+            button: true,
+            label: '영상 보기: ${v.title}',
+            onTap: () => openUrl('https://www.youtube.com/watch?v=${v.id}'),
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: () => openUrl('https://www.youtube.com/watch?v=${v.id}'),
+              behavior: HitTestBehavior.opaque,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Stack(fit: StackFit.expand, children: [
+                    ytWide(v),
+                    Center(
+                      child: Container(
+                        width: phone ? 34 : 44,
+                        height: phone ? 34 : 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), shape: BoxShape.circle),
+                        child: LineIcon('play', size: phone ? 13 : 17),
+                      ),
+                    ),
+                  ]),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(v.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: phone ? 12.5 : 14, fontWeight: FontWeight.w600, color: kInk, height: 1.3)),
+                    const SizedBox(height: 3),
+                    Text(v.channel,
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: small, fontWeight: FontWeight.w300, color: kSub, height: 1.3)),
+                  ]),
                 ),
               ]),
             ),
           ),
-        ),
-        const SizedBox(height: 7),
-        Text(v.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: phone ? 12.5 : 14, fontWeight: FontWeight.w600, color: kInk, height: 1.3)),
-        const SizedBox(height: 3),
-        Text('${v.channel} · ${p.name}',
-            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: phone ? 10.5 : 11.5, fontWeight: FontWeight.w300, color: kSub)),
-        const SizedBox(height: 3),
-        Semantics(
-          button: true,
-          label: '이 집 어디야',
-          onTap: () => onWhere(p),
-          excludeSemantics: true,
-          child: GestureDetector(
+          const Spacer(),
+          const Divider(height: 1, thickness: 1, color: kLine),
+          Semantics(
+            button: true,
+            label: '${p.name} 지도에서 보기',
             onTap: () => onWhere(p),
-            child: Text('📍 이 집 어디야', style: TextStyle(fontSize: phone ? 11 : 11.5, fontWeight: FontWeight.w700, color: kAccent)),
+            excludeSemantics: true,
+            child: InkWell(
+              onTap: () => onWhere(p),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(9, 8, 9, 9),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Row(children: [
+                    Icon(Icons.place_rounded, size: phone ? 15 : 17, color: kAccent),
+                    const SizedBox(width: 3),
+                    Expanded(
+                      child: Text(p.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: phone ? 12.5 : 13.5, fontWeight: FontWeight.w700, color: kInk, height: 1.25)),
+                    ),
+                  ]),
+                  const SizedBox(height: 2),
+                  Row(children: [
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(children: [
+                          if (dn.isNotEmpty) TextSpan(text: dn),
+                          if (o != null)
+                            TextSpan(
+                                text: '${dn.isNotEmpty ? ' · ' : ''}${o.short}',
+                                style: TextStyle(color: o.open ? kPointText : kGray, fontWeight: FontWeight.w600)),
+                        ]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: small, color: kSub, height: 1.3),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text('지도에서 보기 ›', style: TextStyle(fontSize: small, fontWeight: FontWeight.w600, color: kInk, height: 1.3)),
+                  ]),
+                ]),
+              ),
+            ),
           ),
-        ),
-      ]);
+        ]),
+      );
     }
 
     return SafeArea(
@@ -2501,6 +2558,7 @@ class VideoView extends StatelessWidget {
         final gap = phone ? 12.0 : 16.0;
         final side = phone ? 16.0 : 20.0;
         final itemW = (width - side * 2 - gap) / cols;
+        final ts = MediaQuery.textScalerOf(context).scale(10) / 10;
         return Align(
           alignment: Alignment.topCenter,
           child: SizedBox(
@@ -2524,7 +2582,7 @@ class VideoView extends StatelessWidget {
                           crossAxisCount: cols,
                           crossAxisSpacing: gap,
                           mainAxisSpacing: phone ? 18 : 22,
-                          mainAxisExtent: itemW * 9 / 16 + (phone ? 84 : 80),
+                          mainAxisExtent: itemW * 9 / 16 + (phone ? 114 : 126) * ts, // 영상 + 제목 두 줄·채널 + 가게 칸 (휴대폰 글자 크기만큼 늘림)
                         ),
                         itemCount: items.length,
                         itemBuilder: (_, i) => item(items[i], phone),
