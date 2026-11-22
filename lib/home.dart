@@ -737,6 +737,9 @@ class KokHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 14, 6, 12),
       child: Row(children: [
         if (title == null) ...[
+          // 앱 로고: 캐릭터 + 「콕플」
+          Image.asset(kIntroMark, height: 30, filterQuality: FilterQuality.medium),
+          const SizedBox(width: 6),
           const Text('콕', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w900, color: kAccent, letterSpacing: -1, height: 1.1)),
           const Text('플', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w300, color: kInk, letterSpacing: -1, height: 1.1)),
           const SizedBox(width: 8),
