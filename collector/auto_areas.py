@@ -17,9 +17,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from collect import fs_docs, load_json, save_json, REGIONS, DATA_DIR, USAGE, GOOGLE_MONTH, GOOGLE_NEW_MAX  # noqa: E402
+from collect import (fs_docs, load_json, save_json, REGIONS, DATA_DIR, USAGE, GOOGLE_MONTH, GOOGLE_MONTH_B, GOOGLE_PAID,  # noqa: E402
+                     GOOGLE_NEW_MAX, GOOGLE_NEW_CAP, GOOGLE_YT_REST, google_left)
 
-NEW_MIN = 120  # collect.py가 새 동네를 시작하는 최소 남은 구글 무료량 (같은 값)
+NEW_MIN = 120  # collect.py가 새 동네를 시작하는 최소 남은 구글 조회 수 (같은 값)
+MAX_ADD = int(os.environ.get("AUTO_MAX_ADD", "6"))  # 한 번 수집에 새로 더하는 동네 수 (수집 시간 안에 끝나게)
 PROGRESS = os.path.join(DATA_DIR, "progress.json")
 GROUP = {"서울": "서울", "부산": "부산", "제주": "제주", "경기": "경기", "인천": "인천", "강원": "강원",
          "경북": "경상", "경남": "경상", "대구": "경상", "울산": "경상",
@@ -95,8 +97,10 @@ def build(regions, follow, views):
         gus = INCHEON_GU.get(a["id"], [a.get("gu", "")])
         mine = [(la, ln) for s, c, la, ln in places if s == "인천" and c in gus]
         b = a.get("bbox") or box_of(mine, (a["lat"], a["lng"]))
-        covered = next((o["name"] for o in areas if o is not a and o.get("bbox") and o.get("collect")
-                        and inside(o["bbox"], a["lat"], a["lng"])), "")
+        # 손으로 정해 둔 범위(신포 등) 안에 가운데가 들어가는 동네는 따로 모으지 않음 (모으는 중이거나 다 모은 동네는 제외)
+        covered = "" if (a.get("collect") or a.get("ready")) else next(
+            (o["name"] for o in areas if o is not a and o.get("bbox") and not o.get("bbox_auto") and o.get("collect")
+             and inside(o["bbox"], a["lat"], a["lng"])), "")
         yt = len(mine) if mine else (sum(1 for s, c, la, ln in places if inside(b, la, ln)) if b else 0)
         rows.append({"sido": "인천", "city": a.get("gu", ""), "name": a["name"], "id": a["id"], "area": a, "bbox": b,
                      "yt": yt, "views": sum(int(v.get("n", 0)) for k, v in views.items() if k.startswith("인천_") and k.split("_", 1)[1] in gus),
@@ -137,42 +141,66 @@ def state_of(r):
     return "queue"
 
 
-def add_next(regions, rows, left):
-    if any(state_of(r) == "run" for r in rows):
-        r = next(r for r in rows if state_of(r) == "run")
-        print(f"지금 모으는 동네가 있어 새로 더하지 않습니다: {r['sido']} {r['name']}")
-        return None
-    if left < NEW_MIN:
-        print(f"이번 달 구글 무료량이 {left}번 남아 다음 동네는 다음 달 1일에 시작합니다")
-        return None
-    r = next((r for r in rows if state_of(r) == "queue" and r.get("bbox")), None)
-    if r is None:
-        print("더할 동네가 없습니다")
-        return None
+def plan(r):
+    """새 동네 하나에 드는 구글 조회 수 (collect.py와 같은 셈): 유튜버 집 전부 + 블로그 인기 집"""
+    if r["phase"] == 0:
+        return GOOGLE_NEW_MAX
+    return min(GOOGLE_NEW_CAP, max(GOOGLE_NEW_MAX, r["yt"] + GOOGLE_YT_REST))
+
+
+def has_data(r):
+    a = r.get("area") or {}
+    return os.path.exists(os.path.join(DATA_DIR, f"{a.get('id', r['id'])}.json"))
+
+
+def add_one(regions, r):
     if r["area"] is not None:  # 인천처럼 이미 적어 둔 동네: 수집만 켠다
         r["area"]["collect"] = True
-        r["area"].setdefault("bbox", r["bbox"])
+        if not r["area"].get("bbox"):
+            r["area"]["bbox"] = r["bbox"]
+            r["area"]["bbox_auto"] = True
         r["area"].setdefault("q", f"인천 {r['area'].get('gu', '')}".strip())
+        return
+    group = GROUP.get(r["sido"], r["sido"])
+    sido = next((s for s in regions["sido"] if s["name"] == group), None)
+    if sido is None:
+        sido = {"name": group, "areas": []}
+        regions["sido"].append(sido)
+    la = sorted(x[0] for x in r["pts"])
+    ln = sorted(x[1] for x in r["pts"])
+    a = {"id": r["id"], "name": r["city"], "gu": r["city"],
+         "lat": round(la[len(la) // 2], 5), "lng": round(ln[len(ln) // 2], 5), "zoom": 13,
+         "ready": False, "collect": True, "auto": True, "auto_key": f"{r['sido']} {r['city']}",
+         "bbox": r["bbox"], "q": f"{r['sido'].split('·')[0]} {r['city']}"}
+    sido["areas"].append(a)
+    r["area"] = a
+
+
+def add_next(regions, rows, left):
+    """이번 달 남은 구글 조회 안에서 순서대로 여러 동네를 더한다 (아직 안 모은 동네 몫은 먼저 뺀다)"""
+    pending = [r for r in rows if state_of(r) == "run" and not has_data(r)]
+    room = left - sum(plan(r) for r in pending)
+    added = []
+    for r in rows:
+        if len(added) >= MAX_ADD:
+            break
+        if state_of(r) != "queue" or not r.get("bbox"):
+            continue
+        need = plan(r)
+        if room < max(NEW_MIN, need):
+            break
+        add_one(regions, r)
+        room -= need
+        added.append(r)
+    if added:
+        save_json(REGIONS, regions)
+        print("이번에 새로 모을 동네:", ", ".join(f"{r['sido']} {r['name']}(약 {plan(r)}번)" for r in added))
     else:
-        group = GROUP.get(r["sido"], r["sido"])
-        sido = next((s for s in regions["sido"] if s["name"] == group), None)
-        if sido is None:
-            sido = {"name": group, "areas": []}
-            regions["sido"].append(sido)
-        la = sorted(x[0] for x in r["pts"])
-        ln = sorted(x[1] for x in r["pts"])
-        a = {"id": r["id"], "name": r["city"], "gu": r["city"],
-             "lat": round(la[len(la) // 2], 5), "lng": round(ln[len(ln) // 2], 5), "zoom": 13,
-             "ready": False, "collect": True, "auto": True, "auto_key": f"{r['sido']} {r['city']}",
-             "bbox": r["bbox"], "q": f"{r['sido'].split('·')[0]} {r['city']}"}
-        sido["areas"].append(a)
-        r["area"] = a
-    save_json(REGIONS, regions)
-    print(f"다음 동네 수집 시작: {r['sido']} {r['name']} (유튜버 가게 {r['yt']}곳)")
-    return r
+        print(f"새로 더할 동네 없음 (남은 구글 조회 {left}번, 모으는 중인 동네 몫 {left - room}번)")
+    return added
 
 
-def write_progress(rows, used):
+def write_progress(rows, usage):
     today = dt.date.today()
     nxt = (today.replace(day=1) + dt.timedelta(days=32)).replace(day=1)
     out = []
@@ -190,11 +218,14 @@ def write_progress(rows, used):
             row.update(area_stats(a))
             row["up"] = a.get("updated", "")
         out.append(row)
-    left = GOOGLE_MONTH - used
+    m = today.strftime("%Y-%m")
+    left = google_left(usage, m)
+    paid = GOOGLE_PAID.get(m, 0)
+    used = usage.get(m, 0) + usage.get(m + ":B", 0)
     data = {
         "updated": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
-        "google": {"month": today.strftime("%Y-%m"), "used": used, "limit": GOOGLE_MONTH, "new_min": NEW_MIN,
-                   "per_area": GOOGLE_NEW_MAX, "refill": nxt.isoformat()},
+        "google": {"month": m, "used": used, "limit": GOOGLE_MONTH + GOOGLE_MONTH_B + paid, "free": GOOGLE_MONTH + GOOGLE_MONTH_B,
+                   "paid": paid, "left": left, "new_min": NEW_MIN, "per_area": GOOGLE_NEW_MAX, "refill": nxt.isoformat()},
         "wait": left < NEW_MIN,
         "phases": PHASES,
         "rows": out,
@@ -213,11 +244,11 @@ def main():
     except Exception as e:  # 규칙이 아직 없으면 읽지 못함 → 유튜버 많은 순으로만
         print("자주 찾는 지역 기록을 받지 못했습니다:", str(e)[:100])
         views = {}
-    used = load_json(USAGE, {}).get(dt.date.today().strftime("%Y-%m"), 0)
+    usage = load_json(USAGE, {})
     rows = build(regions, follow, views)
     if not report:
-        add_next(regions, rows, GOOGLE_MONTH - used)
-    write_progress(rows, used)
+        add_next(regions, rows, google_left(usage))
+    write_progress(rows, usage)
 
 
 if __name__ == "__main__":

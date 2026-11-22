@@ -210,6 +210,7 @@ def menus(desc):
     for n in found:
         n = re.sub(r"^[\W\d_]+", "", n).strip(" -·:")
         n = re.sub(r"\s*\(.*$", "", n).strip()
+        n = re.sub(r"\s*\d+\s*(인분|인|개|마리|접시|그릇|g|kg)$", "", n).strip()   # 「모듬안주 1인」 → 모듬안주
         if 2 <= len(n) <= 12 and not BAD_MENU.search(n) and n not in out:
             out.append(n)
     return out[:8]

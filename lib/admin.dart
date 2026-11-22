@@ -1666,7 +1666,7 @@ class _RegionProgressTabState extends State<RegionProgressTab> {
           decoration: kokCard().copyWith(borderRadius: BorderRadius.circular(12)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              const Text('이번 달 구글 무료량', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
+              const Text('이번 달 구글 조회', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
               const Spacer(),
               Text('$used / $limit번', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
             ]),
@@ -1677,8 +1677,14 @@ class _RegionProgressTabState extends State<RegionProgressTab> {
             ),
             const SizedBox(height: 7),
             Text(
-              d['wait'] == true ? '새 동네를 시작할 만큼 남지 않아 $refillText에 다시 채워지면 이어서 모읍니다' : '새 동네 하나에 최대 ${g['per_area'] ?? 160}번 씁니다',
-              style: const TextStyle(fontSize: 12, color: kSub, height: 1.35),
+              [
+                if (((g['paid'] as num?)?.toInt() ?? 0) > 0)
+                  '무료 ${g['free'] ?? 1800}번 + 승인한 유료 ${g['paid']}번 (약 42달러, 이번 달만)'
+                else
+                  '모두 무료 (조회 종류 두 가지 × 900번)',
+                d['wait'] == true ? '새 동네를 시작할 만큼 남지 않아 $refillText에 다시 채워지면 이어서 모읍니다' : '남은 조회 ${g['left'] ?? '-'}번 · 유튜버 집부터 별점·영업시간을 받습니다',
+              ].join('\n'),
+              style: const TextStyle(fontSize: 12, color: kSub, height: 1.4),
             ),
             const SizedBox(height: 12),
             Row(children: [

@@ -6,6 +6,9 @@ on:
   schedule:
     # 매일 오후 5시 37분(한국 시각)에 맛집 자료를 새로 모은다 — 유튜브 하루 사용량이 오후 5시에 새로 채워지므로 그 직후
     - cron: '37 8 * * *'
+    # 동네를 빨리 넓히는 동안 하루 두 번 더 (구글 조회는 상한 안에서만 — 다 쓰면 그냥 넘어감)
+    - cron: '17 1 * * *'
+    - cron: '47 13 * * *'
   workflow_dispatch:
     inputs:
       areas:
@@ -23,6 +26,11 @@ on:
         default: ''
       pick_only:
         description: '쯔양 등 영상 가게 후보만 뽑기'
+        type: boolean
+        required: false
+        default: false
+      collect_only:
+        description: '동네 맛집 자료만 모으기 (유튜버·후보 뽑기 건너뜀)'
         type: boolean
         required: false
         default: false
@@ -49,7 +57,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: 유튜버 따라가기 모으기
-        if: ${{ !inputs.pick_only }}
+        if: ${{ !inputs.pick_only && !inputs.collect_only }}
         timeout-minutes: 40
         continue-on-error: true
         env:
@@ -60,6 +68,7 @@ jobs:
         run: python3 -u collector/follow.py
 
       - name: 쯔양 등 영상에서 가게 후보 뽑기
+        if: ${{ !inputs.collect_only }}
         timeout-minutes: 40
         continue-on-error: true
         env:
@@ -76,7 +85,7 @@ jobs:
 
       - name: 맛집 자료 모으기
         if: ${{ !inputs.follow_only && !inputs.pick_only }}
-        timeout-minutes: 45
+        timeout-minutes: 150
         env:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
