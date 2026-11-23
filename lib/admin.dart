@@ -1657,6 +1657,9 @@ class _RegionProgressTabState extends State<RegionProgressTab> {
     final rf = RegExp(r'(\d{4})-(\d{2})').firstMatch('${g['refresh_from'] ?? ''}');
     final refreshText = rf == null ? '' : '${rf.group(1)}년 ${int.parse(rf.group(2)!)}월';
     final full = g['full'] is List ? g['full'] as List : null, lite = g['lite'] is List ? g['lite'] as List : null;
+    final blog = d['blog'] as Map?;
+    final blogUsed = (blog?['used'] as num?)?.toInt() ?? 0, blogLimit = math.max(1, (blog?['limit'] as num?)?.toInt() ?? 30000);
+    final blogCap = (blog?['cap'] as num?)?.toInt() ?? blogLimit;
     final run = rows.where((r) => r['st'] == 'run').firstOrNull;
     final next = rows.where((r) => r['st'] == 'queue').firstOrNull;
     return RefreshIndicator(
@@ -1682,6 +1685,7 @@ class _RegionProgressTabState extends State<RegionProgressTab> {
             const SizedBox(height: 7),
             Text(
               [
+                for (final line in [
                 if (full != null && lite != null && full.length > 1 && lite.length > 1)
                   '편의 정보까지 ${full[0]} / ${full[1]}번 · 기본 정보 ${lite[0]} / ${lite[1]}번',
                 if (((g['paid'] as num?)?.toInt() ?? 0) > 0)
@@ -1692,9 +1696,32 @@ class _RegionProgressTabState extends State<RegionProgressTab> {
                     ? '새 동네를 시작할 만큼 남지 않아 $refillText에 다시 채워지면 이어서 모읍니다'
                     : '남은 조회 ${g['left'] ?? '-'}번 · 유튜버 집은 편의 정보까지, 블로그 후보는 기본 정보부터',
                 if (refreshText.isNotEmpty) '이미 받은 가게 다시 받기는 $refreshText부터 (그 전엔 전부 새 동네에)',
+                ]) keepWords(line), // 낱말 가운데서 줄이 꺾이지 않게
               ].join('\n'),
               style: const TextStyle(fontSize: 12, color: kSub, height: 1.4),
             ),
+            // 카카오 블로그 검색: 하루 무료 3만 번 (11-23 대표님 승인: 하루 사용량 관리)
+            if (blog != null) ...[
+              const SizedBox(height: 14),
+              Row(children: [
+                const Text('오늘 블로그 검색', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
+                const Spacer(),
+                Text('${commas(blogUsed)} / ${commas(blogLimit)}번', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kInk)),
+              ]),
+              const SizedBox(height: 7),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                    value: (blogUsed / blogLimit).clamp(0.0, 1.0), minHeight: 6, backgroundColor: kHair, color: blogUsed >= blogCap ? kAccent : kInk),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                keepWords(blogUsed >= blogCap
+                    ? '오늘 몫을 다 썼어요 · 한국 시각 자정에 다시 채워지면 새 동네를 이어서 엽니다'
+                    : '하루 무료 ${commas(blogLimit)}번 · 새 동네는 남은 양 안에서만 열어요 (하루 2~3곳)'),
+                style: const TextStyle(fontSize: 12, color: kSub, height: 1.4),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(children: [
               for (final (t, n) in [('완료', count('done')), ('모으는 중', count('run')), ('대기', count('queue'))]) ...[

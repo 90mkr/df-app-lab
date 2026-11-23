@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import time
+import threading
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -54,7 +55,13 @@ GOOGLE_KEY = (os.environ.get("GOOGLE_KEY", "") or YOUTUBE_KEY).strip()
 GOOGLE_MAX = int(os.environ.get("GOOGLE_MAX") or "30")   # 하루 새로 조회하는 최대 수 (무료 범위 유지)
 GOOGLE_DAYS = int(os.environ.get("GOOGLE_DAYS", "180"))  # 순위 밖 가게: 여섯 달마다 갱신 (서울까지 넓혀도 매달 무료량 안에서)
 GOOGLE_DAYS_TOP = 60   # 순위권 가게: 두 달마다 갱신
-BLOG_DAYS = 14         # 1차 블로그 건수는 2주마다 새로 (무료)
+BLOG_DAYS = 14         # 1차 블로그 건수: 순위 후보 쪽(인기·유튜버·지난 순위·글 3개 이상)은 2주마다 새로 (무료)
+# 대표님 승인(2026-11-23) 「블로그 하루 사용량 관리」: 카카오 블로그 검색은 하루 무료 3만 번(한국 시각 자정에 다시 채워짐)
+BLOG_DAYS_FAR = 90     # 순위와 거리가 먼 집(인기·유튜버·글이 없던 집)은 3달마다
+DEEP_DAYS = 7          # 2단계(순위 후보 자세히 보기)는 일주일에 한 번 (전에는 수집마다, 하루 세 번)
+BLOG_DAY = 28500       # 하루에 이만큼까지만 씀 (3만 번 중 1,500번은 남겨 둠)
+BLOG_NEW_MARGIN = 1200  # 새 동네 하나: 1차 확인 말고도 자세히 보기·방송 확인에 드는 몫
+BLOG_USAGE = os.path.join(os.path.dirname(__file__), "blog_usage.json")   # 한국 날짜별 블로그 검색 수
 # 대표님 지시(2026-11-22): 무료분(조회 종류마다 1,000번)을 다 쓰고 조금 넘는 과금은 괜찮음 — 상한 1,200은 오류로 폭주하는 것만 막는 용도
 GOOGLE_MONTH = 1200    # A 한 달 상한: 글 찾기 한 번에 별점·영업시간까지 (무료 1,000 + 넘으면 1,000번에 40달러)
 # 구글 무료량은 조회 종류마다 따로라, B 길을 하나 더 둔다: 가게 찾기(Pro, 무료 5,000) → 별점·영업시간 받기(상세, 무료 1,000)
@@ -96,6 +103,65 @@ def save_json(path, data):
     os.replace(tmp, path)
 
 
+class NotToday(Exception):
+    """오늘 남은 블로그 검색으로는 이 새 동네를 다 볼 수 없음 — 다음 수집(다음 날)으로 미룸"""
+
+
+_BLOG_LOCK = threading.Lock()
+BLOG_COUNT = {"day": "", "n": 0, "all": None}
+
+
+def kst_day():
+    return dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date().isoformat()
+
+
+def _blog_sync():  # 잠근 채로 부름: 날짜가 바뀌면(자정) 새 날 몫으로
+    day = kst_day()
+    if BLOG_COUNT["all"] is None:
+        BLOG_COUNT["all"] = load_json(BLOG_USAGE, {})
+    if BLOG_COUNT["day"] != day:
+        if BLOG_COUNT["day"]:
+            BLOG_COUNT["all"][BLOG_COUNT["day"]] = BLOG_COUNT["n"]
+        BLOG_COUNT["day"] = day
+        BLOG_COUNT["n"] = BLOG_COUNT["all"].get(day, 0)
+
+
+def blog_add(k=1):
+    with _BLOG_LOCK:
+        _blog_sync()
+        BLOG_COUNT["n"] += k
+
+
+def blog_used():
+    with _BLOG_LOCK:
+        _blog_sync()
+        return BLOG_COUNT["n"]
+
+
+def blog_left():
+    return max(0, BLOG_DAY - blog_used())
+
+
+def blog_room(k=1):
+    return blog_left() >= k
+
+
+def blog_full():
+    """카카오가 한도로 막으면 오늘은 더 쓰지 않는다 (같은 실패를 수천 번 되풀이하지 않게)"""
+    with _BLOG_LOCK:
+        _blog_sync()
+        BLOG_COUNT["n"] = max(BLOG_COUNT["n"], BLOG_DAY)
+
+
+def blog_save():
+    with _BLOG_LOCK:
+        _blog_sync()
+        BLOG_COUNT["all"][BLOG_COUNT["day"]] = BLOG_COUNT["n"]
+        BLOG_COUNT["all"] = dict(sorted(BLOG_COUNT["all"].items())[-14:])
+        data = dict(BLOG_COUNT["all"])
+    save_json(BLOG_USAGE, data)
+
+
 class KakaoDown(Exception):
     """카카오가 계속 응답하지 않음 → 이번 수집은 멈추고 기존 자료를 그대로 둔다."""
 
@@ -112,6 +178,8 @@ def check_kakao():
 
 def get_json(url, headers=None, tries=3):
     kakao = "kakao.com" in url
+    if "/v2/search/blog" in url:
+        blog_add(1)   # 하루 한도를 세는 블로그 검색
     if kakao and KAKAO_FAILS[0] >= KAKAO_LIMIT:
         raise KakaoDown()   # 이미 멈춘 것으로 확인됨: 기다리지 않고 바로 포기
     for i in range(tries):
@@ -1271,12 +1339,18 @@ def main():
     if not KAKAO_KEY:
         print("열쇠가 없습니다: KAKAO_REST_KEY")
         sys.exit(1)
-    print("블로그 검색:", "네이버" if (NAVER_ID and NAVER_SECRET) else "다음(카카오)")
-    try:  # 블로그 검색 점검: 막혀 있으면 블로그 단계를 건너뛰고 지난 글을 그대로 쓴다
-        kakao_blog(f"{AREA_NAME} 맛집", pages=1)
-    except Exception as e:
+    print("블로그 검색:", "네이버" if (NAVER_ID and NAVER_SECRET) else "다음(카카오)", f"· 오늘 {blog_used():,}/{BLOG_DAY:,}번 씀")
+    if not blog_room(50):
         BLOG_UP[0] = False
-        print("블로그 검색이 막혀 있어 지난 글을 그대로 씁니다:", str(e)[:600])
+        print("블로그 검색 오늘 몫을 다 써서 지난 글을 그대로 씁니다 (자정에 다시 채워짐)")
+    else:
+        try:  # 블로그 검색 점검: 막혀 있으면 블로그 단계를 건너뛰고 지난 글을 그대로 쓴다
+            kakao_blog(f"{AREA_NAME} 맛집", pages=1)
+        except Exception as e:
+            BLOG_UP[0] = False
+            if str(e).startswith("400"):
+                blog_full()   # 하루 한도로 막힘: 오늘은 더 시도하지 않음
+            print("블로그 검색이 막혀 있어 지난 글을 그대로 씁니다:", str(e)[:600])
 
     prev, rank_of, prev_full, top_fresh = {}, {}, {}, set()
     try:
@@ -1347,6 +1421,20 @@ def main():
         h = cache.get(str(pid))
         return h and h.get("n", 0) < MIN_REVIEWS and (today0 - dt.date.fromisoformat(h["d"])).days < GOOGLE_DAYS
 
+    def due(c, hit):
+        """1차 블로그를 다시 볼 때가 됐는지: 순위 후보 쪽은 2주, 순위와 먼 집(인기·유튜버·지난 순위·글이 없던 집)은 3달"""
+        if not hit or not hit.get("d"):
+            return True
+        pid = str(c["p"]["id"])
+        far = c["pop"] == 0 and pid not in ytids and pid not in prev and hit.get("e", 0) < 3
+        return (today0 - dt.date.fromisoformat(hit["d"])).days >= (BLOG_DAYS_FAR if far else BLOG_DAYS)
+
+    need_blog = sum(1 for c in cands if not known_small(c["p"]["id"]) and due(c, bc.get(str(c["p"]["id"]))))
+    print(f"블로그 새로 볼 집 {need_blog:,}곳 · 오늘 남은 블로그 검색 {blog_left():,}번")
+    if NEW_AREA and (not BLOG_UP[0] or need_blog + BLOG_NEW_MARGIN > blog_left()):
+        raise NotToday(need_blog)   # 오늘 몫으로 다 못 보는 새 동네는 열지 않고 다음 날로 (블로그 없이 열리지 않게)
+    bfail = [0]
+
     def one(c):
         p = c["p"]
         kind = "cafe" if p.get("category_group_code") == "CE7" else "food"
@@ -1354,18 +1442,25 @@ def main():
             return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": 0,
                     "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
         hit = bc.get(str(p["id"]))
-        if hit and (today0 - dt.date.fromisoformat(hit["d"])).days < BLOG_DAYS:
+        if hit and not due(c, hit):
             return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": hit["e"],
                     "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
-        if not BLOG_UP[0]:
+        if not BLOG_UP[0] or not blog_room(1):
             return {"p": p, "kind": kind, "pop": c["pop"], "posts": [], "ads": 0, "est": (hit or {}).get("e", 0),
                     "home": "", "vids": prev.get(str(p["id"]), []), "g": {"r": 0, "n": 0, "u": ""}}
         try:
             posts, ads, est, home = blog_stats(p, pages=1)
-            bc[str(p["id"])] = {"e": est, "d": today0.isoformat()}
+            bc[str(p["id"])] = {**(hit or {}), "e": est, "d": today0.isoformat()}
+            bfail[0] = 0
         except Exception as e:
-            print("블로그 실패", p["place_name"], str(e)[:120])
-            posts, ads, est, home = [], 0, 0, ""
+            bfail[0] += 1
+            if bfail[0] <= 5:
+                print("블로그 실패", p["place_name"], str(e)[:120])
+            if bfail[0] == 30 and BLOG_UP[0]:   # 잇달아 막힘: 하루 한도로 보고 오늘은 그만 (실패 수천 줄을 막음)
+                BLOG_UP[0] = False
+                blog_full()
+                print("블로그 검색이 잇달아 막혀(하루 한도로 보임) 오늘은 더 쓰지 않고 지난 값을 씁니다")
+            posts, ads, est, home = [], 0, (hit or {}).get("e", 0), ""
         done[0] += 1
         if done[0] % 300 == 0:
             print(f"  블로그 {done[0]}/{len(cands)}")
@@ -1390,7 +1485,7 @@ def main():
         for r in tv_found:
             r["tvx"] = r.get("tvx") or 1
         print(f"방송 집: {ah['d']}에 찾아 둔 {len(tv_found)}곳 그대로 (한 달마다 새로 찾음)")
-    elif BLOG_UP[0]:
+    elif BLOG_UP[0] and blog_room(200):
         tv_found, ok = tv_discover(rows, tvc)
         if ok:   # 검색이 대부분 됐을 때만 한 달 동안 그대로 씀 (막힌 날 빈 결과를 한 달 붙들지 않게)
             tvc[akey] = {"d": dt.date.today().isoformat(), "k": TV_VER, "ids": [str(r["p"]["id"]) for r in tv_found]}
@@ -1502,50 +1597,87 @@ def main():
             old = prev_full.get(str(r["p"]["id"]))
             if old:
                 r["est"] = old.get("blog", r["est"])
-    if use_google and BLOG_UP[0]:
+    if use_google:
         detail = [r for r in rows if r["g"]["n"] >= MIN_REVIEWS]
+        todo, kept = [], 0
+        for r in detail:   # 일주일 안에 자세히 본 집은 그 값을 그대로 (글 목록은 지난번 앱 자료에서)
+            pid = str(r["p"]["id"])
+            h = bc.get(pid) or {}
+            if h.get("dd") and (today0 - dt.date.fromisoformat(h["dd"])).days < DEEP_DAYS:
+                r["est"], r["ads"], r["dc"] = h.get("de", r["est"]), h.get("da", 0), True
+                old = prev_full.get(pid)
+                if old and old.get("posts"):
+                    r["posts"] = old["posts"]
+                    r["home"] = r["home"] or old.get("home", "")
+                kept += 1
+            else:
+                todo.append(r)
+        later = []
+        if BLOG_UP[0] and todo:
+            room = blog_left() // 2   # 자세히 보기는 한 집에 2번
+            todo.sort(key=lambda r: -r["g"]["n"])   # 리뷰 많은 집(순위에 들 집)부터
+            todo, later = todo[:room], todo[room:]
 
-        def deep(r):
-            try:
-                r["posts"], r["ads"], r["est"], h = blog_stats(r["p"], pages=2)
-                r["home"] = r["home"] or h
-            except Exception as e:
-                print("블로그 상세 실패", r["p"]["place_name"], str(e)[:100])
+            def deep(r):
+                try:
+                    r["posts"], r["ads"], r["est"], h = blog_stats(r["p"], pages=2)
+                    r["home"] = r["home"] or h
+                    pid = str(r["p"]["id"])
+                    bc[pid] = {**(bc.get(pid) or {}), "de": r["est"], "da": r["ads"], "dd": today0.isoformat()}
+                except Exception as e:
+                    r["dl"] = True
+                    print("블로그 상세 실패", r["p"]["place_name"], str(e)[:100])
 
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            list(ex.map(deep, detail))
-        print(f"블로그 상세 확인 {len(detail)}곳")
-        check_kakao()
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                list(ex.map(deep, todo))
+            save_json(BLOG_CACHE, bc)
+            check_kakao()
+        else:
+            todo, later = [], todo
+        for r in later:
+            r["dl"] = True   # 이번엔 못 봄: 새로 뜨는 집 셈에서 뺌
+        print(f"블로그 상세 확인 {len(todo)}곳 (일주일 안에 본 {kept}곳은 그대로"
+              + (f", 오늘 몫이 모자라 {len(later)}곳은 다음에" if later else "") + ")")
 
     # 새로 뜨는 집: 최근 30일 글 수가 그 전(31~90일) 하루 평균보다 1.8배 이상 늘었거나, 그 전엔 글이 없다가 새로 생긴 집
-    if use_google and BLOG_UP[0]:
+    if use_google:
         today_s = dt.date.today()
         cand = []
         for r in rows:
-            if r["g"]["n"] < MIN_REVIEWS or not r["posts"]:
+            if r["g"]["n"] < MIN_REVIEWS or r.get("dl"):
                 continue
-            ds = sorted(dt.datetime.strptime(x["date"], "%Y%m%d").date() for x in r["posts"] if (x.get("date") or "").isdigit())
-            if not ds:
-                continue
-            span = min(RECENT_DAYS, (today_s - ds[0]).days)
-            r30 = sum(1 for x in ds if (today_s - x).days <= 30)
-            older = len(ds) - r30
-            r["r30"] = r30
-            if r30 < 6:
-                continue
-            if older == 0:
-                ratio = 9.9 if span <= 30 else 5.0  # 그 전엔 글이 없던 새 가게
-            elif span <= 40:
-                continue  # 글이 너무 많아 비교할 기간이 안 됨 (원래 인기 많은 집)
+            pid = str(r["p"]["id"])
+            if r.get("dc"):   # 이번엔 자세히 보기를 건너뛴 집: 지난번(일주일 안) 셈을 그대로
+                h = bc.get(pid) or {}
+                r30, ratio = h.get("r30", 0), h.get("rr", 0)
             else:
-                ratio = (r30 / 30) / (older / (span - 30))
-            if ratio >= 1.8:
+                if not r["posts"] or not BLOG_UP[0]:
+                    continue
+                ds = sorted(dt.datetime.strptime(x["date"], "%Y%m%d").date() for x in r["posts"] if (x.get("date") or "").isdigit())
+                if not ds:
+                    continue
+                span = min(RECENT_DAYS, (today_s - ds[0]).days)
+                r30 = sum(1 for x in ds if (today_s - x).days <= 30)
+                older = len(ds) - r30
+                if r30 < 6:
+                    ratio = 0
+                elif older == 0:
+                    ratio = 9.9 if span <= 30 else 5.0  # 그 전엔 글이 없던 새 가게
+                elif span <= 40:
+                    ratio = 0  # 글이 너무 많아 비교할 기간이 안 됨 (원래 인기 많은 집)
+                else:
+                    ratio = (r30 / 30) / (older / (span - 30))
+                if pid in bc:
+                    bc[pid]["r30"], bc[pid]["rr"] = r30, round(ratio, 1)
+            r["r30"] = r30
+            if r30 >= 6 and ratio >= 1.8:
                 r["rr"] = round(ratio, 1)
                 cand.append(r)
         cand.sort(key=lambda r: (r["rr"], r["r30"]), reverse=True)
         for r in cand[:12]:
             r["rise"] = True
         print("새로 뜨는 집: " + ", ".join(f"{r['p']['place_name']}({r['r30']}건, {r['rr']}배)" for r in cand[:12]))
+        save_json(BLOG_CACHE, bc)
 
     # 유튜브: 종류별 상위 후보만 (하루 사용량 한도)
     if YOUTUBE_KEY:
@@ -1595,7 +1727,7 @@ def main():
         old = h or {}
         redo = old.get("k") != TV_VER
         need = stale or redo or "v" not in old or (o["kind"] == "cafe" and "b" not in old)
-        if BLOG_UP[0] and need:
+        if BLOG_UP[0] and need and blog_room(4):
             try:
                 t = tv_check(*tv_args(o["name"], o.get("addr") or "", o.get("dong") or "", o.get("cat") or "")) \
                     if (stale or redo or "t" not in old) else old["t"]
@@ -1656,12 +1788,20 @@ def run_all():
     # 카카오 블로그 검색은 하루 3만 번 한도(한국 시각 자정에 다시 채워짐). 막힌 날 새 동네를 열면
     # 블로그 없이 순위가 매겨지고 구글 조회도 덜 정확하게 쓰이니, 새 동네는 검색이 되는 날로 미룬다.
     blog_ok = True
+    allpc0 = load_json(PLACES_CACHE, {})
     if KAKAO_KEY and any(not a.get("ready") for a in areas):
-        try:
-            kakao_blog("인천 맛집", pages=1)
-        except Exception as e:
+        print(f"블로그 검색 오늘 {blog_used():,}/{BLOG_DAY:,}번 씀 (한국 시각 자정에 다시 채워짐)")
+        if not blog_room(BLOG_NEW_MARGIN):
             blog_ok = False
-            print("블로그 검색이 막혀(하루 한도) 새 동네는 다음 수집으로 미룹니다:", str(e)[:120])
+            print("블로그 검색 오늘 몫이 모자라 새 동네는 다음 수집으로 미룹니다")
+        else:
+            try:
+                kakao_blog("인천 맛집", pages=1)
+            except Exception as e:
+                blog_ok = False
+                if str(e).startswith("400"):
+                    blog_full()
+                print("블로그 검색이 막혀(하루 한도) 새 동네는 다음 수집으로 미룹니다:", str(e)[:120])
     for a in areas:
         AREA = tuple(a["bbox"])
         AREA_NAME = a.get("q") or a["name"]
@@ -1674,6 +1814,12 @@ def run_all():
         if NEW_AREA and not blog_ok:
             print(f"\n{a['name']}: 블로그 검색이 막혀 다음 수집 때 엽니다")
             continue
+        if NEW_AREA:   # 가게 목록을 받아 둔 동네는 그 수로, 아니면 넉넉히 8,000곳으로 어림
+            _pc = allpc0.get(a["id"]) or {}
+            guess = (len(_pc.get("FD6", [])) + len(_pc.get("CE7", []))) or 8000
+            if guess + BLOG_NEW_MARGIN > blog_left():
+                print(f"\n{a['name']}: 블로그 검색이 오늘 {blog_left():,}번 남아(필요 약 {guess:,}번) 다음 날 엽니다")
+                continue
         if NEW_AREA:
             # 새 동네는 이번 달 구글 무료량이 넉넉히 남았을 때만 시작한다 (모자라면 다음 달 1일에 저절로 시작)
             left = google_left()
@@ -1687,7 +1833,13 @@ def run_all():
             main()
         except KakaoDown:
             print("카카오가 응답하지 않아 이 동네는 여기서 멈춥니다. 앱에는 기존 자료가 그대로 보입니다.")
+            blog_save()
             continue
+        except NotToday as e:
+            print(f"{AREA_LABEL}: 블로그로 볼 집 {e.args[0]:,}곳 — 오늘 남은 블로그 검색({blog_left():,}번)으로는 다 못 봐서 다음 날 엽니다")
+            blog_save()
+            continue
+        blog_save()
         try:
             with open(OUT, encoding="utf-8") as f:
                 js = json.load(f)
@@ -1704,6 +1856,8 @@ def run_all():
             print(f"{AREA_LABEL}: {n}곳 — 이제 앱에서 열 수 있습니다")
         save_json(REGIONS, regions)   # 동네마다 저장 — 시간 제한으로 끊겨도 다 모은 동네는 남음
     save_json(REGIONS, regions)
+    blog_save()
+    print(f"블로그 검색 오늘 {blog_used():,}/{BLOG_DAY:,}번 씀")
 
 
 if __name__ == "__main__":

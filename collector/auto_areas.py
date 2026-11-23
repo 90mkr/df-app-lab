@@ -19,10 +19,12 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from collect import (fs_docs, load_json, save_json, REGIONS, DATA_DIR, USAGE, GOOGLE_MONTH, GOOGLE_MONTH_B, GOOGLE_PAID,  # noqa: E402
                      GOOGLE_MONTH_C, GOOGLE_MONTH_D, REFRESH_FROM,
-                     GOOGLE_NEW_MAX, GOOGLE_NEW_CAP, GOOGLE_YT_REST, google_left)
+                     GOOGLE_NEW_MAX, GOOGLE_NEW_CAP, GOOGLE_YT_REST, google_left, BLOG_USAGE, BLOG_DAY, kst_day)
 
 NEW_MIN = 120  # collect.py가 새 동네를 시작하는 최소 남은 구글 조회 수 (같은 값)
-MAX_ADD = int(os.environ.get("AUTO_MAX_ADD", "4"))  # 한 번 수집에 새로 더하는 동네 수 (수집이 길어져 앱 만들기를 오래 막지 않게 — 6에서 4로)
+MAX_ADD = int(os.environ.get("AUTO_MAX_ADD", "4"))
+# 대표님 승인(2026-11-23) 블로그 하루 사용량 관리: 새 동네는 하루 2~3곳만 열 수 있으니, 기다리는 동네가 이만큼 쌓이면 더 넣지 않는다
+PENDING_MAX = int(os.environ.get("AUTO_PENDING_MAX", "3"))  # 한 번 수집에 새로 더하는 동네 수 (수집이 길어져 앱 만들기를 오래 막지 않게 — 6에서 4로)
 PROGRESS = os.path.join(DATA_DIR, "progress.json")
 GROUP = {"서울": "서울", "부산": "부산", "제주": "제주", "경기": "경기", "인천": "인천", "강원": "강원",
          "경북": "경상", "경남": "경상", "대구": "경상", "울산": "경상",
@@ -182,8 +184,11 @@ def add_next(regions, rows, left):
     pending = [r for r in rows if state_of(r) == "run" and not has_data(r)]
     room = left - sum(plan(r) for r in pending)
     added = []
+    if len(pending) >= PENDING_MAX:
+        print(f"새로 더할 동네 없음: 아직 못 연 동네가 {len(pending)}곳 기다리는 중 (블로그 하루 한도로 하루 2~3곳씩 엶)")
+        return added
     for r in rows:
-        if len(added) >= MAX_ADD:
+        if len(added) >= min(MAX_ADD, PENDING_MAX - len(pending)):
             break
         if state_of(r) != "queue" or not r.get("bbox"):
             continue
@@ -199,6 +204,12 @@ def add_next(regions, rows, left):
     else:
         print(f"새로 더할 동네 없음 (남은 구글 조회 {left}번, 모으는 중인 동네 몫 {left - room}번)")
     return added
+
+
+def blog_today():
+    """카카오 블로그 검색 오늘 사용량 (한국 날짜, 하루 무료 3만 번)"""
+    day = kst_day()
+    return {"day": day, "used": load_json(BLOG_USAGE, {}).get(day, 0), "limit": 30000, "cap": BLOG_DAY}
 
 
 def write_progress(rows, usage):
@@ -230,6 +241,7 @@ def write_progress(rows, usage):
                    "full": [full_used, full_cap], "lite": [lite_used, lite_cap],
                    "paid": paid, "left": left, "new_min": NEW_MIN, "per_area": GOOGLE_NEW_MAX, "refill": nxt.isoformat(),
                    "refresh_from": REFRESH_FROM.isoformat()},
+        "blog": blog_today(),
         "wait": left < NEW_MIN,
         "phases": PHASES,
         "rows": out,

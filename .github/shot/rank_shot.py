@@ -118,6 +118,13 @@ def run(pg):
         shot("방송집_가게_아래")
         drag(330, 760, 260, 2)
         shot("방송집_가게_더아래")
+    # 5) 관리자 「지역 수집」: 구글 조회 + 오늘 블로그 검색
+    pg.goto(URL + "&view=progress", wait_until="load", timeout=120000)
+    time.sleep(10)
+    shot("관리자_지역수집")
+    pg.set_viewport_size({"width": 360, "height": 780})
+    time.sleep(1.5)
+    shot("관리자_지역수집_360")
 
 
 with sync_playwright() as p:
