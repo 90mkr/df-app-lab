@@ -38,6 +38,10 @@ on:
         description: '이번에 AI로 볼 영상 수'
         required: false
         default: '120'
+      google_max:
+        description: '이미 연 동네마다 이번에 새로 볼 구글 조회 수 (비우면 30, 0이면 저장된 자료로 순위만 다시)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -93,6 +97,7 @@ jobs:
           YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           AREAS: ${{ inputs.areas }}
+          GOOGLE_MAX: ${{ inputs.google_max }}
         run: python3 -u collector/collect.py
 
       - name: 후기 모음 (지금도 맛있다 투표·추천 메뉴)

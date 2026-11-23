@@ -36,7 +36,9 @@ GOOGLE_NEW_CAP = 420
 GOOGLE_YT_REST = 40     # 유튜버 집이 많은 동네(서울 등)에서 더 보는 블로그 인기 집 수
 RECENT_DAYS = 90
 YOUTUBE_TOP = int(os.environ.get("YOUTUBE_TOP", "25"))  # 종류별 유튜브 확인 수
-TOP_N = int(os.environ.get("TOP_N", "20"))  # 종류별로 앱에 남기는 수
+# 대표님 지시(2026-11-23): 20위는 적어 50위까지 — 이미 받은 구글 자료로 순위만 길게 (조회 수는 그대로)
+TOP_N = int(os.environ.get("TOP_N", "50"))  # 종류별로 앱에 남기는 수
+TOP_FRESH = 20   # 2027년 6월부터 두 달마다 다시 받는 순위권은 종류별 20위 안만 (50위로 늘려도 재조회 양은 그대로)
 KINDS = [("food", "FD6", "맛집"), ("cafe", "CE7", "카페")]
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "web", "data")
 OUT = os.path.join(DATA_DIR, "songdo.json")
@@ -49,7 +51,7 @@ NAVER_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "").strip()
 YOUTUBE_KEY = os.environ.get("YOUTUBE_KEY", "").strip()
 # 구글 지도(별점·리뷰 수) 열쇠 — 따로 없으면 유튜브 열쇠를 같이 쓴다
 GOOGLE_KEY = (os.environ.get("GOOGLE_KEY", "") or YOUTUBE_KEY).strip()
-GOOGLE_MAX = int(os.environ.get("GOOGLE_MAX", "30"))   # 하루 새로 조회하는 최대 수 (무료 범위 유지)
+GOOGLE_MAX = int(os.environ.get("GOOGLE_MAX") or "30")   # 하루 새로 조회하는 최대 수 (무료 범위 유지)
 GOOGLE_DAYS = int(os.environ.get("GOOGLE_DAYS", "180"))  # 순위 밖 가게: 여섯 달마다 갱신 (서울까지 넓혀도 매달 무료량 안에서)
 GOOGLE_DAYS_TOP = 60   # 순위권 가게: 두 달마다 갱신
 BLOG_DAYS = 14         # 1차 블로그 건수는 2주마다 새로 (무료)
@@ -70,6 +72,8 @@ REFRESH_FROM = dt.date(2027, 6, 1)
 USAGE =os.path.join(os.path.dirname(__file__), "google_usage.json")
 TV_CACHE = os.path.join(os.path.dirname(__file__), "tv_cache.json")   # 방송 출연 확인 결과
 TV_DAYS = 30           # 방송 출연은 한 달마다 다시 확인 (무료)
+TV_VER = 2             # 확인 방식 판 — 바뀌면 저장된 결과를 새 방식으로 다시 확인 (2: 체인 지점·흔한 이름 가려내기)
+TV_FIND_MAX = 30       # 순위 밖에서 찾은 방송 집은 동네마다 이만큼까지
 MIN_REVIEWS = int(os.environ.get("MIN_REVIEWS", "30"))  # 구글 리뷰가 이보다 적으면 순위 제외
 CACHE = os.path.join(os.path.dirname(__file__), "..", "web", "data", "google_cache.json")
 PLACES_CACHE = os.path.join(os.path.dirname(__file__), "places_cache.json")  # 가게 목록 (7일마다 새로)
@@ -385,39 +389,203 @@ TV_SHOWS = [  # (띄어쓰기 없앤 검색어, 앱에 보일 이름)
     ("흑백요리사", "흑백요리사"), ("한식대첩", "한식대첩"), ("마스터셰프", "마스터셰프 코리아"), ("냉장고를부탁해", "냉장고를 부탁해"),
 ]
 TV_NEAR = 60   # 가게 이름과 방송 이름이 이 글자 수 안에 함께 나와야 인정
+TV_HINT_NEAR = 30   # 체인 지점·흔한 이름: 지점·동네 이름이 가게 이름 이만큼 안에 함께 나와야 그 집 이야기로 봄
+TV_KEYS = {k for k, _ in TV_SHOWS}
+TV_QUERY = {  # 동네 + 방송으로 찾을 때 쓰는 짧은 이름 (블로그 글에 흔히 쓰는 말)
+    "식객 허영만의 백반기행": "백반기행", "백종원의 3대천왕": "3대천왕", "백종원의 골목식당": "골목식당",
+    "김영철의 동네 한 바퀴": "동네 한바퀴", "찾아라 맛있는 TV": "맛있는TV", "마스터셰프 코리아": "마스터셰프",
+}
 
 
-def tv_check(name):
-    """블로그 글 2묶음(가게+방송 / 가게+출연)을 보고, 같은 방송이 글 2개 이상(또는 제목 1개)에서 나오면 출연으로 본다."""
+def tv_hints(name, addr="", dong=""):
+    """그 가게만 가리키는 말: 지점 이름(부평직영점 → 부평직영), 구(부평구 → 부평), 동(송도동 → 송도)"""
+    base = base_name(name)
+    suf = name.strip()[len(base):].strip()
+    out = []
+    core = re.sub(r"점$", "", suf)
+    if len(norm(core)) >= 2:
+        out.append(core)
+    for t in (addr or "").split()[1:3]:
+        m = re.match(r"(.+?)(구|군)$", t)
+        if m and len(m.group(1)) >= 2:
+            out.append(m.group(1))
+    d = re.sub(r"(동\d*가|\d*가|동|읍|면|리)$", "", dong or "")
+    if len(d) >= 2:
+        out.append(d)
+    return [h for h in dict.fromkeys(norm(x) for x in out) if len(h) >= 2]
+
+
+def tv_generic(name, cat=""):
+    """가게 이름이 음식 이름 그대로인 집(예: 「해장국」) — 다른 집 글에도 그 말이 나온다"""
+    key = norm(base_name(name))
+    return bool(key) and key in norm(cat)
+
+
+def tv_strict(name, generic=False):
+    """본점이 아닌 지점이거나 흔한 이름이면, 글에 지점·동네 이름이 함께 나와야 인정한다.
+    (예: 「청실홍실 부평직영점」에 신포 본점의 방송이 붙던 문제)"""
+    base = base_name(name)
+    suf = name.strip()[len(base):].strip()
+    return generic or (bool(suf) and "본점" not in suf)
+
+
+def tv_scan(docs, key, hints, strict, near, strong, seen):
+    """블로그 글에서 가게 이름 가까이 나온 방송을 센다 (strict면 지점·동네 이름이 가게 이름 곁에 있는 글만)"""
+    for d in docs:
+        u = d.get("url") or ""
+        if u in seen:
+            continue
+        seen.add(u)
+        title = norm(clean(d.get("title")))
+        text = title + "|" + norm(clean(d.get("contents")))
+        spots = [m.start() for m in re.finditer(re.escape(key), text)]
+        if strict:
+            hp = [m.start() for h in hints for m in re.finditer(re.escape(h), text)]
+            spots = [sp for sp in spots if any(abs(sp - x) <= TV_HINT_NEAR + len(key) for x in hp)]
+        if not spots:
+            continue
+        title_ok = key in title and (not strict or any(h in title for h in hints))
+        for k, label in TV_SHOWS:
+            if title_ok and k in title:
+                strong.add(label)
+                continue
+            for m in re.finditer(re.escape(k), text):
+                if any(abs(m.start() - sp) <= TV_NEAR for sp in spots):
+                    near.setdefault(label, set()).add(u)
+                    break
+
+
+def tv_check(name, hints=(), generic=False):
+    """블로그 글 2묶음(가게+방송 / 가게+출연)을 보고, 같은 방송이 글 2개 이상(또는 제목 1개)에서 나오면 출연으로 본다.
+    본점이 아닌 지점·흔한 이름은 지점·동네 이름이 함께 나온 글만 센다."""
     base = base_name(name)
     key = norm(base)
     if len(key) < 3:
         return []
+    hs = [h for h in hints if h and h != key]
+    strict = tv_strict(name, generic)
+    if strict and not hs:
+        return []   # 가려낼 말이 없으면 붙이지 않는다 (잘못 붙는 것보다 낫다)
     near, strong, seen = {}, set(), set()
     for word in ("방송", "출연"):
         q = urllib.parse.urlencode({"query": f"{base} {AREA_NAME} {word}", "sort": "accuracy", "size": 50})
         res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
-        for d in res.get("documents", []):
-            u = d.get("url") or ""
-            if u in seen:
-                continue
-            seen.add(u)
-            title = norm(clean(d.get("title")))
-            text = title + "|" + norm(clean(d.get("contents")))
-            spots = [m.start() for m in re.finditer(re.escape(key), text)]
-            if not spots:
-                continue
-            for k, label in TV_SHOWS:
-                if k in title and key in title:
-                    strong.add(label)
-                    continue
-                for m in re.finditer(re.escape(k), text):
-                    if any(abs(m.start() - sp) <= TV_NEAR for sp in spots):
-                        near.setdefault(label, set()).add(u)
-                        break
+        tv_scan(res.get("documents", []), key, hs, strict, near, strong, seen)
         time.sleep(0.05)
     found = [lb for lb in dict.fromkeys(list(strong) + [lb for lb, us in near.items() if len(us) >= 2])]
     return found[:2]
+
+
+def tv_args(name, addr, dong, cat):
+    g = tv_generic(name, cat)
+    return name, tv_hints(name, addr, dong), g
+
+
+def tv_discover(rows, tvc):
+    """대표님 지시(2026-11-23): 동네 이름 + 방송 이름(예: 「부평 생활의 달인」)으로 블로그를 찾아, 순위 밖의 방송 집도 올린다.
+    ① 같은 방송이 가게 이름 가까이 글 2개 이상(또는 제목 1개)에서 나온 집을 후보로 ② 그 가게 이름으로 다시 찾아 확인된 방송만.
+    흔한 이름·방송 이름과 겹치는 이름은 후보에서 빼고, 지점은 지점·동네 이름이 함께 나와야 인정. 동네마다 TV_FIND_MAX곳까지."""
+    idx = {}
+    for r in rows:
+        p = r["p"]
+        nm = p.get("place_name") or ""
+        key = norm(base_name(nm))
+        if len(key) < 3 or tv_generic(nm, p.get("category_name") or "") or any(key in k or k in key for k in TV_KEYS):
+            continue
+        idx.setdefault(key, []).append(r)
+    parts = [x for x in dict.fromkeys(s.strip() for s in AREA_LABEL.split("/")) if len(x) >= 2]
+    labels = list(dict.fromkeys(lb for _, lb in TV_SHOWS))
+    ev, seen, calls, fails = {}, set(), 0, 0
+    for part in parts:
+        for lb in labels:
+            q = urllib.parse.urlencode({"query": f"{part} {TV_QUERY.get(lb, lb)}", "sort": "accuracy", "size": 50})
+            try:
+                res = get_json("https://dapi.kakao.com/v2/search/blog?" + q, {"Authorization": f"KakaoAK {KAKAO_KEY}"})
+            except KakaoDown:
+                return [], False
+            except Exception as e:
+                fails += 1
+                if fails <= 3:
+                    print("방송 집 찾기 실패:", str(e)[:100])
+                if fails >= 10 and fails > calls:   # 블로그 검색이 막힘(하루 한도 등): 이번엔 그만 — 다음 수집 때 다시
+                    print("방송 집 찾기: 블로그 검색이 막혀 다음에 다시 찾습니다")
+                    return [], False
+                continue
+            calls += 1
+            for d in res.get("documents", []):
+                u = d.get("url") or ""
+                if u in seen:
+                    continue
+                seen.add(u)
+                title = norm(clean(d.get("title")))
+                text = title + "|" + norm(clean(d.get("contents")))
+                shows = [(m.start(), lb2) for k, lb2 in TV_SHOWS for m in re.finditer(re.escape(k), text)]
+                if not shows:
+                    continue
+                for key in idx:
+                    if key not in text:
+                        continue
+                    spots = [m.start() for m in re.finditer(re.escape(key), text)]
+                    e = ev.setdefault(key, {"strong": set(), "near": {}, "docs": []})
+                    hit = False
+                    for pos, lb2 in shows:
+                        if key in title and pos < len(title):
+                            e["strong"].add(lb2)
+                            hit = True
+                        elif any(abs(pos - sp) <= TV_NEAR for sp in spots):
+                            e["near"].setdefault(lb2, set()).add(u)
+                            hit = True
+                    if hit and len(e["docs"]) < 12:
+                        e["docs"].append(text)
+            time.sleep(0.05)
+    cands = []
+    for key, e in ev.items():
+        n_near = sum(len(us) for lb2, us in e["near"].items() if len(us) >= 2)
+        if not e["strong"] and not n_near:
+            continue
+        rs = idx[key]
+        if len(rs) > 1:   # 같은 이름 가게가 여럿(지점): 본점 하나면 본점, 아니면 글에 지점 이름이 나온 한 곳만
+            mains = [r for r in rs if "본점" in r["p"]["place_name"]]
+            if len(mains) == 1:
+                rs = mains
+            else:
+                def hint_hits(r):
+                    h = tv_hints(r["p"]["place_name"])
+                    return sum(1 for t in e["docs"] if h and h[0] in t)
+                sc = sorted(((hint_hits(r), r) for r in rs), key=lambda x: -x[0])
+                if not sc or sc[0][0] == 0 or (len(sc) > 1 and sc[1][0] == sc[0][0]):
+                    continue
+                rs = [sc[0][1]]
+        cands.append((3 * len(e["strong"]) + n_near, sorted(e["strong"]), rs[0]))
+    cands.sort(key=lambda x: -x[0])
+    today = dt.date.today()
+    out = []
+    for score, strong, r in cands[:TV_FIND_MAX + 15]:
+        p = r["p"]
+        pid = str(p["id"])
+        h = tvc.get(pid) or {}
+        if h.get("k") == TV_VER and h.get("d") and (today - dt.date.fromisoformat(h["d"])).days < TV_DAYS:
+            t = h.get("t", [])
+        else:
+            nm, hs, g = tv_args(p["place_name"], p.get("road_address_name") or p.get("address_name"), dong_of(p), p.get("category_name") or "")
+            try:
+                t = tv_check(nm, hs, g)
+            except KakaoDown:
+                break
+            except Exception as e:
+                print("방송 확인 실패", nm, str(e)[:80])
+                continue
+            if not t and strong and not tv_strict(nm, g):
+                t = strong[:2]   # 다시 찾기에는 안 걸렸어도 글 제목에 가게 이름과 방송이 함께 있으면 인정 (지점·흔한 이름 빼고)
+            tvc[pid] = {**h, "t": t, "d": today.isoformat(), "k": TV_VER}
+        if t:
+            r["tvx"] = score
+            out.append(r)
+        if len(out) >= TV_FIND_MAX:
+            break
+    print(f"방송 집 찾기: 검색 {calls}번(실패 {fails}), 후보 {len(cands)}곳 → 확인 {len(out)}곳: "
+          + ", ".join(f"{r['p']['place_name']}({'·'.join(tvc[str(r['p']['id'])]['t'])})" for r in out))
+    return out, fails <= max(3, calls // 5)
 
 
 BIG_KEYS = ("대형카페", "초대형카페", "대형베이커리카페")
@@ -1110,13 +1278,16 @@ def main():
         BLOG_UP[0] = False
         print("블로그 검색이 막혀 있어 지난 글을 그대로 씁니다:", str(e)[:600])
 
-    prev, rank_of, prev_full = {}, {}, {}
+    prev, rank_of, prev_full, top_fresh = {}, {}, {}, set()
     try:
         with open(OUT, encoding="utf-8") as f:
             _pl = json.load(f).get("places", [])
             prev = {str(o["id"]): o.get("vids", []) for o in _pl}
             prev_full = {str(o["id"]): o for o in _pl}
             rank_of = {str(o["id"]): i for i, o in enumerate(sorted(_pl, key=lambda o: -o.get("score", 0)))}
+            for _k in ("food", "cafe"):
+                _ks = sorted([o for o in _pl if o.get("top") and o.get("kind") == _k], key=lambda o: -o.get("score", 0))
+                top_fresh.update(str(o["id"]) for o in _ks[:TOP_FRESH])
     except Exception:
         pass
     cache = {}
@@ -1207,6 +1378,26 @@ def main():
     save_json(BLOG_CACHE, bc)
     check_kakao()
 
+    # 방송 나온 집 찾기 (대표님 지시 2026-11-23): 순위 밖 노포 같은 방송 집 — 카카오 블로그 검색이라 무료
+    #  카카오 블로그 검색은 하루 3만 번 한도라, 동네마다 한 달에 한 번만 새로 찾고 그 사이엔 찾아 둔 집을 그대로 쓴다
+    tvc = load_json(TV_CACHE, {})
+    tv_found = []
+    akey = "_area:" + AREA_ID
+    ah = tvc.get(akey) or {}
+    if ah.get("k") == TV_VER and ah.get("d") and (dt.date.today() - dt.date.fromisoformat(ah["d"])).days < TV_DAYS:
+        ids = set(ah.get("ids", []))
+        tv_found = [r for r in rows if str(r["p"]["id"]) in ids and (tvc.get(str(r["p"]["id"])) or {}).get("t")]
+        for r in tv_found:
+            r["tvx"] = r.get("tvx") or 1
+        print(f"방송 집: {ah['d']}에 찾아 둔 {len(tv_found)}곳 그대로 (한 달마다 새로 찾음)")
+    elif BLOG_UP[0]:
+        tv_found, ok = tv_discover(rows, tvc)
+        if ok:   # 검색이 대부분 됐을 때만 한 달 동안 그대로 씀 (막힌 날 빈 결과를 한 달 붙들지 않게)
+            tvc[akey] = {"d": dt.date.today().isoformat(), "k": TV_VER, "ids": [str(r["p"]["id"]) for r in tv_found]}
+        save_json(TV_CACHE, tvc)
+        check_kakao()
+    tvids = {str(r["p"]["id"]) for r in tv_found}
+
     # 구글 별점·리뷰: 조회 종류마다 따로 있는 무료분(+대표님이 정한 상한) 안에서만 조회한다.
     #  - A·B는 편의 정보까지, C·D는 기본 정보(별점·리뷰 수·영업시간·홈페이지)만 — 각 길의 한 달 상한을 넘지 않음
     #  - 이미 모은 동네는 한 번에 GOOGLE_MAX곳까지, 새 동네는 유튜버 집 수만큼 더
@@ -1226,8 +1417,10 @@ def main():
         pri = sorted(rows, key=lambda r: (r["pop"] > 0, r["est"]), reverse=True)
         keep = [r for r in pri if str(r["p"]["id"]) in ranked]
         yt = [r for r in pri if str(r["p"]["id"]) in ytids and str(r["p"]["id"]) not in ranked]
-        rest = [r for r in pri if str(r["p"]["id"]) not in ranked and str(r["p"]["id"]) not in ytids and (r["pop"] > 0 or r["est"] >= 3)]
-        pri = keep + yt + rest[:max(GOOGLE_YT_REST, GOOGLE_PER_AREA - len(keep) - len(yt))]
+        tvl = [r for r in pri if str(r["p"]["id"]) in tvids and str(r["p"]["id"]) not in ranked and str(r["p"]["id"]) not in ytids]
+        rest = [r for r in pri if str(r["p"]["id"]) not in ranked and str(r["p"]["id"]) not in ytids
+                and str(r["p"]["id"]) not in tvids and (r["pop"] > 0 or r["est"] >= 3)]
+        pri = keep + yt + tvl + rest[:max(GOOGLE_YT_REST, GOOGLE_PER_AREA - len(keep) - len(yt) - len(tvl))]
         new_max = min(GOOGLE_NEW_CAP, max(GOOGLE_NEW_MAX, len(yt) + GOOGLE_YT_REST))
         need = []
         for r in pri:
@@ -1238,10 +1431,10 @@ def main():
                 if not refresh:
                     continue   # 대표님 지시: 6개월(2027년 5월까지)은 조회를 전부 새 동네에 — 이미 받은 가게는 그대로 씀
                 age = (today - dt.date.fromisoformat(hit["d"])).days
-                if pid in ranked and (hit.get("v", 1) < 4 or hit.get("lite")):
+                if pid in top_fresh and (hit.get("v", 1) < 4 or hit.get("lite")):
                     need.append((0, rank_of.get(pid, 99), r))  # 순위권인데 영업시간·편의 정보·홈페이지가 없음(기본 정보로 받은 집 포함): 맨 먼저
                     continue
-                limit = GOOGLE_DAYS_TOP if pid in ranked else GOOGLE_DAYS
+                limit = GOOGLE_DAYS_TOP if pid in top_fresh else GOOGLE_DAYS
                 if age < limit:
                     continue
                 need.append((2, -age, r))   # 갱신: 오래된 것부터
@@ -1382,26 +1575,33 @@ def main():
         all_out += out
         print(f"[{label}] " + " / ".join(f"{o['name']}({o['score']}, 구글 {o['greviews']})" for o in out))
     tops = {o["id"] for o in all_out}
-    all_out += [to_out(r) for r in rows if r.get("rise") and r["p"]["id"] not in tops]
+    all_out += [to_out(r) for r in rows if r.get("rise") and r["p"]["id"] not in tops and not r["g"].get("bs")]
+    tops |= {o["id"] for o in all_out}
+    tvx = [r for r in tv_found if r["p"]["id"] not in tops and not r["g"].get("bs")
+           and not (r["g"].get("n", 0) >= 10 and r["g"].get("r", 0) < 3.5)]
+    all_out += [to_out(r) for r in tvx]
+    print(f"순위 밖 방송 집 {len(tvx)}곳 더함")
 
     # 방송 출연·대형 카페: 순위에 든 집만, 한 달에 한 번 (카카오가 멈추면 지난 결과를 그대로 씀)
-    tvc = load_json(TV_CACHE, {})
     checked = 0
     for o in all_out:
         pid = str(o["id"])
         h = tvc.get(pid)
         if not o.get("top"):
-            o["tv"], o["big"], o["view"] = (h or {}).get("t", []), bool((h or {}).get("b")), bool((h or {}).get("v"))
+            o["tv"] = (h or {}).get("t", []) if (h or {}).get("k") == TV_VER else []   # 옛 방식 결과는 다시 확인될 때까지 안 붙임
+            o["big"], o["view"] = bool((h or {}).get("b")), bool((h or {}).get("v"))
             continue
         stale = not (h and (dt.date.today() - dt.date.fromisoformat(h["d"])).days < TV_DAYS)
         old = h or {}
-        need = stale or "v" not in old or (o["kind"] == "cafe" and "b" not in old)
+        redo = old.get("k") != TV_VER
+        need = stale or redo or "v" not in old or (o["kind"] == "cafe" and "b" not in old)
         if BLOG_UP[0] and need:
             try:
-                t = tv_check(o["name"]) if (stale or "t" not in old) else old["t"]
+                t = tv_check(*tv_args(o["name"], o.get("addr") or "", o.get("dong") or "", o.get("cat") or "")) \
+                    if (stale or redo or "t" not in old) else old["t"]
                 b = (big_check(o["name"]) if (stale or "b" not in old) else old["b"]) if o["kind"] == "cafe" else False
                 v = view_check(o["name"]) if (stale or "v" not in old) else old["v"]
-                h = {"t": t, "b": b, "v": v, "d": dt.date.today().isoformat() if stale else old["d"]}
+                h = {"t": t, "b": b, "v": v, "d": dt.date.today().isoformat() if stale else old["d"], "k": TV_VER}
                 tvc[pid] = h
                 checked += 1
             except Exception as e:
@@ -1453,6 +1653,15 @@ def run_all():
         areas = [a for a in areas if a["id"] in only]
     # 새 동네를 먼저: 이미 연 동네는 저장된 자료가 있어 하루 늦어도 괜찮다
     areas.sort(key=lambda a: bool(a.get("ready")))
+    # 카카오 블로그 검색은 하루 3만 번 한도(한국 시각 자정에 다시 채워짐). 막힌 날 새 동네를 열면
+    # 블로그 없이 순위가 매겨지고 구글 조회도 덜 정확하게 쓰이니, 새 동네는 검색이 되는 날로 미룬다.
+    blog_ok = True
+    if KAKAO_KEY and any(not a.get("ready") for a in areas):
+        try:
+            kakao_blog("인천 맛집", pages=1)
+        except Exception as e:
+            blog_ok = False
+            print("블로그 검색이 막혀(하루 한도) 새 동네는 다음 수집으로 미룹니다:", str(e)[:120])
     for a in areas:
         AREA = tuple(a["bbox"])
         AREA_NAME = a.get("q") or a["name"]
@@ -1462,6 +1671,9 @@ def run_all():
         MUST = a.get("must", [])
         OUT = os.path.join(DATA_DIR, f"{a['id']}.json")
         NEW_AREA = not a.get("ready")
+        if NEW_AREA and not blog_ok:
+            print(f"\n{a['name']}: 블로그 검색이 막혀 다음 수집 때 엽니다")
+            continue
         if NEW_AREA:
             # 새 동네는 이번 달 구글 무료량이 넉넉히 남았을 때만 시작한다 (모자라면 다음 달 1일에 저절로 시작)
             left = google_left()

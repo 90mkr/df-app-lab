@@ -460,7 +460,7 @@ Course? tour(String id, String bold, String light, List<Place> top) {
 List<Course> coursesOf(SongdoData d, Area a) {
   final top = popRank(d);
   final yt = ytRank(d);
-  final tv = top.where((p) => p.tv.isNotEmpty).toList();
+  final tv = [...top.where((p) => p.tv.isNotEmpty), ...d.places.where((p) => !p.top && p.tv.isNotEmpty)];
   final cook = tv.where((p) => p.tv.any(kCookShows.contains)).toList();
   final out = <Course?>[
     collect('proven', '검증 ', '맛집', yt.where((p) => ytCount(p) >= 3), desc: '유튜버 3명 이상 다녀간 집'),
@@ -2587,11 +2587,19 @@ class YtRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Row(children: [
+          // 두 자리 순위(10~50위)도 한 줄로: 칸을 넓히고 글씨를 조금 작게 (「1/6」처럼 숫자가 꺾이던 문제)
           SizedBox(
-            width: 20,
-            child: Text('$rank', textAlign: TextAlign.center, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: rank == 1 ? kAccent : kInk)),
+            width: 26,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('$rank',
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: rank >= 10 ? 15.5 : 17, fontWeight: FontWeight.w800, color: rank == 1 ? kAccent : kInk, letterSpacing: -0.6)),
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           ytSmall(place, thumb),
           const SizedBox(width: 12),
           Expanded(
@@ -3327,12 +3335,62 @@ class _KokButtonState extends State<KokButton> {
 }
 
 // ---- 시트 목록 (유튜버 한 명 · 유튜버 전체 · 순위 전체 · 코스 순서) ----
-class SheetList extends StatelessWidget {
-  final Widget head;
-  final List<Widget> rows;
-  const SheetList({super.key, required this.head, required this.rows});
+// 순위 목록은 20위까지 먼저 보이고, 아래 단추로 21위부터 펼친다 (11-23: 순위를 종류별 50위까지 늘리며)
+const kRankFold = 20;
+
+class MoreButton extends StatelessWidget {
+  final String label;
+  final int count;
+  final VoidCallback onTap;
+  final EdgeInsets pad;
+  const MoreButton({super.key, required this.label, required this.count, required this.onTap, this.pad = const EdgeInsets.fromLTRB(12, 12, 12, 4)});
   @override
   Widget build(BuildContext context) {
+    return Padding(
+      padding: pad,
+      child: Material(
+        color: kPageBg,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Semantics(
+            button: true,
+            label: '$label, $count곳',
+            excludeSemantics: true,
+            child: SizedBox(
+              height: 48,
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kInk, letterSpacing: -0.2)),
+                const SizedBox(width: 6),
+                Text('$count곳', style: const TextStyle(fontSize: 12.5, color: kGray)),
+                const SizedBox(width: 2),
+                const Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: kSub),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SheetList extends StatefulWidget {
+  final Widget head;
+  final List<Widget> rows;
+  final int fold; // 0이면 모두, 아니면 이만큼 먼저 보이고 「○위부터 더 보기」
+  const SheetList({super.key, required this.head, required this.rows, this.fold = 0});
+  @override
+  State<SheetList> createState() => _SheetListState();
+}
+
+class _SheetListState extends State<SheetList> {
+  bool all = false;
+  @override
+  Widget build(BuildContext context) {
+    final rows = widget.rows;
+    final cut = !all && widget.fold > 0 && rows.length > widget.fold + 3; // 몇 곳 차이면 접지 않고 다
+    final shown = cut ? rows.take(widget.fold).toList() : rows;
     return Align(
       alignment: Alignment.bottomCenter,
       heightFactor: 1,
@@ -3344,8 +3402,12 @@ class SheetList extends StatelessWidget {
           child: Column(children: [
             const SizedBox(height: 10),
             Container(width: 40, height: 4, decoration: BoxDecoration(color: kLine, borderRadius: BorderRadius.circular(2))),
-            Padding(padding: const EdgeInsets.fromLTRB(20, 14, 20, 8), child: head),
-            Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(8, 0, 8, 24), children: rows)),
+            Padding(padding: const EdgeInsets.fromLTRB(20, 14, 20, 8), child: widget.head),
+            Expanded(
+                child: ListView(padding: const EdgeInsets.fromLTRB(8, 0, 8, 24), children: [
+              ...shown,
+              if (cut) MoreButton(label: '${widget.fold + 1}위부터 더 보기', count: rows.length - widget.fold, onTap: () => setState(() => all = true)),
+            ])),
           ]),
         ),
       ),

@@ -145,7 +145,7 @@ class Place {
   final List<String> tv; // 출연한 방송 이름 (블로그 글로 확인)
   final bool big; // 대형 카페 (블로그 글로 확인)
   final bool view; // 뷰 맛집·오션뷰 카페 (블로그 글로 확인)
-  final bool top; // 순위(종류별 20위) 안
+  final bool top; // 순위(종류별 50위) 안
   final bool rise; // 새로 뜨는 집 (최근 30일 글이 크게 늘어남)
   final int r30; // 최근 30일 블로그 글 수
   final double rr; // 그 전보다 몇 배
@@ -650,7 +650,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final byId = <String, Place>{for (final p in followPlaces) p.id: p};
     for (final d in loaded.values) {
       for (final p in d.places) {
-        if (!(p.top || p.rise || p.vids.isNotEmpty)) continue;
+        if (!(p.top || p.rise || p.vids.isNotEmpty || p.tv.isNotEmpty)) continue; // 순위 밖이어도 방송 나온 집은 지도에
         final fp = byId[p.id];
         if (followCh.isNotEmpty && fp == null && !p.vids.any((v) => v.cid == followCh)) continue;
         byId[p.id] = fp == null ? p : mergePlaces(p, fp);
@@ -679,7 +679,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     };
     for (final d in loaded.values) {
       for (final p in d.places) {
-        if (!(p.top || p.rise || p.vids.isNotEmpty)) continue;
+        if (!(p.top || p.rise || p.vids.isNotEmpty || p.tv.isNotEmpty)) continue; // 순위 밖이어도 방송 나온 집은 지도에
         final fp = byId[p.id];
         byId[p.id] = fp == null ? p : mergePlaces(p, fp);
       }
@@ -1842,6 +1842,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.08),
       builder: (ctx) => SheetList(
+        fold: kRankFold,
         head: Align(
             alignment: Alignment.centerLeft,
             child: yt.isNotEmpty ? mixTitle('유튜버가 ', '많이 찾은 집', size: 18) : mixTitle('${area.name} ', '인기 많은 집', size: 18)),
@@ -2086,6 +2087,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
     final where = here.isNotEmpty ? here : area.name;
     final who = followCh.isEmpty ? '' : '${follow?.names[followCh] ?? ''} ';
+    var all = false; // 20위까지 먼저, 단추로 21위부터
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2093,12 +2095,22 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       barrierColor: Colors.black.withValues(alpha: 0.08),
       builder: (ctx) => _Sheet(
         initial: 0.7,
-        builder: (scroll) => ListView.separated(
+        builder: (scroll) => StatefulBuilder(builder: (_, set) {
+          final cut = !all && list.length > kRankFold + 3;
+          final n = cut ? kRankFold : list.length;
+          return ListView.separated(
           controller: scroll,
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 30),
-          itemCount: list.length + 1,
-          separatorBuilder: (_, i) => i == 0 ? const SizedBox(height: 6) : const Divider(height: 1, color: kLine),
+          itemCount: n + 1 + (cut ? 1 : 0),
+          separatorBuilder: (_, i) => i == 0 ? const SizedBox(height: 6) : (cut && i == n ? const SizedBox.shrink() : const Divider(height: 1, color: kLine)),
           itemBuilder: (_, i) {
+            if (cut && i == n + 1) {
+              return MoreButton(
+                  label: '${kRankFold + 1}위부터 더 보기',
+                  count: list.length - kRankFold,
+                  pad: const EdgeInsets.only(top: 12),
+                  onTap: () => set(() => all = true));
+            }
             if (i == 0) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -2175,7 +2187,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
             ));
           },
-        ),
+        );
+        }),
       ),
     );
   }
