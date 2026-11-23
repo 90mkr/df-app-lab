@@ -29,6 +29,7 @@ AREA_NAME = "송도"      # 검색어 앞에 붙이는 동네 이름
 AREA_ID = "songdo"
 AREA_LABEL = "송도/연수"
 EXTRA_Q = []            # 그 동네만의 검색어 (통째로 검색)
+AREA_GU = ""           # 서울 구처럼 네모 칸으로 잡은 동네의 구 이름 (그 구 주소 가게만 순위에)
 NEW_AREA = False        # 처음 여는 동네면 구글 조회를 한 번에 더 많이
 REGIONS = os.path.join(os.path.dirname(__file__), "..", "web", "data", "regions.json")
 GOOGLE_PER_AREA = 150   # 동네마다 구글로 확인하는 후보 상한 (블로그·인기 상위부터) — 유튜버가 다녀간 집은 이와 따로 전부
@@ -1409,6 +1410,11 @@ def main():
                                     "x": str(f.get("lng")), "y": str(f.get("lat"))}, "pop": 0, "hits": 0}
     except Exception as e:
         print("유튜버 집 목록을 못 읽음:", str(e)[:120])
+    if AREA_GU:   # 네모 칸에 걸친 옆 구 가게는 빼고(그 구 순위에서 보임) 이 구 가게만 본다 — 블로그·구글 몫도 아낌
+        _n0 = len(by_id)
+        by_id = {k: v for k, v in by_id.items() if in_area_gu(v["p"])}
+        ytids = {i for i in ytids if i in by_id}
+        print(f"{AREA_GU} 밖 가게 {_n0 - len(by_id):,}곳 뺌 (옆 구 순위에서 보임)")
     cands = list(by_id.values())
     print(f"블로그 확인 대상 {len(cands)}곳 (유튜버가 다녀간 집 {len(ytids)}곳)")
     done = [0]
@@ -1797,9 +1803,19 @@ def kakao_reachable(waits=(0, 30, 60, 90)):
     return False
 
 
+def in_area_gu(p):
+    """네모 칸으로 잡은 동네(구 이름이 있는 동네)에서 그 구 주소의 가게인지. 주소가 없으면 그대로 둔다."""
+    if not AREA_GU:
+        return True
+    ad = " ".join(x for x in (p.get("road_address_name"), p.get("address_name")) if x)
+    if not ad.strip():
+        return True
+    return re.search(r"(^|\s)" + re.escape(AREA_GU) + r"(\s|$)", ad) is not None
+
+
 def run_all():
     """regions.json에서 collect가 켜진 동네를 차례로 모은다. 자료가 잘 나오면 그 동네를 앱에서 열 수 있게(ready) 한다."""
-    global AREA, AREA_NAME, AREA_ID, AREA_LABEL, EXTRA_Q, MUST, OUT, NEW_AREA
+    global AREA, AREA_NAME, AREA_ID, AREA_LABEL, EXTRA_Q, MUST, OUT, NEW_AREA, AREA_GU
     regions = load_json(REGIONS, {})
     areas = [a for s in regions.get("sido", []) for a in s.get("areas", []) if a.get("collect")]
     only = [x for x in os.environ.get("AREAS", "").split(",") if x]
@@ -1839,6 +1855,7 @@ def run_all():
         MUST = a.get("must", [])
         OUT = os.path.join(DATA_DIR, f"{a['id']}.json")
         NEW_AREA = not a.get("ready")
+        AREA_GU = a.get("gu") or ""
         if NEW_AREA and not blog_ok:
             print(f"\n{a['name']}: 블로그 검색이 막혀 다음 수집 때 엽니다")
             continue
