@@ -1861,7 +1861,7 @@ def run_all():
             continue
         if NEW_AREA:   # 가게 목록을 받아 둔 동네는 그 수로, 아니면 넉넉히 8,000곳으로 어림
             _pc = allpc0.get(a["id"]) or {}
-            guess = (len(_pc.get("FD6", [])) + len(_pc.get("CE7", []))) or 8000
+            guess = sum(1 for k in ("FD6", "CE7") for p in _pc.get(k, []) if in_area_gu(p)) or 8000   # 구 동네는 그 구 가게만 셈
             if guess + BLOG_NEW_MARGIN > blog_left():
                 print(f"\n{a['name']}: 블로그 검색이 오늘 {blog_left():,}번 남아(필요 약 {guess:,}번) 다음 날 엽니다")
                 continue
