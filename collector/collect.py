@@ -1775,6 +1775,28 @@ def main():
     print(f"저장 완료: {len(all_out)}곳 ({os.path.getsize(OUT) // 1024}KB), 기준: {data['basis']}")
 
 
+def kakao_reachable(waits=(0, 30, 60, 90)):
+    """카카오에 닿는지 먼저 본다. 수집 서버는 깃허브가 그때그때 고르는데, 서버에 따라 카카오가 아예 안 닿는 때가 있다.
+    그런 때 동네마다 헛걸음(동네당 약 2분)하지 않도록 몇 번 기다려 보고, 끝내 안 되면 이번 수집을 건너뛴다."""
+    url = "https://dapi.kakao.com/v2/local/search/keyword.json?" + urllib.parse.urlencode({"query": "인천시청", "size": 1})
+    last = None
+    for w in waits:
+        if w:
+            time.sleep(w)
+        KAKAO_FAILS[0] = 0
+        try:
+            get_json(url, {"Authorization": f"KakaoAK {KAKAO_KEY}"}, tries=1)
+            return True
+        except Exception as e:
+            last = e
+            if re.match(r"^\d{3} ", str(e)):   # 카카오가 대답은 했음(키 문제 등): 연결 자체는 됨
+                return True
+        finally:
+            KAKAO_FAILS[0] = 0
+    print("카카오 연결 확인 실패:", str(last)[:160])
+    return False
+
+
 def run_all():
     """regions.json에서 collect가 켜진 동네를 차례로 모은다. 자료가 잘 나오면 그 동네를 앱에서 열 수 있게(ready) 한다."""
     global AREA, AREA_NAME, AREA_ID, AREA_LABEL, EXTRA_Q, MUST, OUT, NEW_AREA
@@ -1787,6 +1809,10 @@ def run_all():
     areas.sort(key=lambda a: bool(a.get("ready")))
     # 카카오 블로그 검색은 하루 3만 번 한도(한국 시각 자정에 다시 채워짐). 막힌 날 새 동네를 열면
     # 블로그 없이 순위가 매겨지고 구글 조회도 덜 정확하게 쓰이니, 새 동네는 검색이 되는 날로 미룬다.
+    if KAKAO_KEY and not kakao_reachable():
+        print("이번 수집 서버에서는 카카오에 연결되지 않아 이번 수집은 건너뜁니다. 앱에는 기존 자료가 그대로 보이고, 다음 수집 때 다시 모읍니다.")
+        blog_save()
+        return
     blog_ok = True
     allpc0 = load_json(PLACES_CACHE, {})
     if KAKAO_KEY and any(not a.get("ready") for a in areas):
@@ -1801,7 +1827,9 @@ def run_all():
                 blog_ok = False
                 if str(e).startswith("400"):
                     blog_full()
-                print("블로그 검색이 막혀(하루 한도) 새 동네는 다음 수집으로 미룹니다:", str(e)[:120])
+                    print("블로그 검색이 하루 한도로 막혀 새 동네는 다음 수집으로 미룹니다")
+                else:
+                    print("블로그 검색이 응답하지 않아 새 동네는 다음 수집으로 미룹니다:", str(e)[:120])
     for a in areas:
         AREA = tuple(a["bbox"])
         AREA_NAME = a.get("q") or a["name"]
