@@ -1191,7 +1191,9 @@ class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin
     WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
   }
 
-  YoutubePlayerController _player() => YoutubePlayerController.fromVideoId(
+  // 유튜브 규칙(2025~): 앱 안 재생은 출처를 밝혀야 함 — 5.x 기본값(youtube.com)은 오류 152·153으로 막힘 → youtube-nocookie 로 (11-28 영상 안 나옴)
+  YoutubePlayerController _player() {
+    final c = YoutubePlayerController.fromVideoId(
         videoId: widget.video!.id,
         startSeconds: widget.video!.start > 0 ? widget.video!.start.toDouble() : null, // 이 가게 장면부터
         autoPlay: true, // 누른 다음에만 만든다
@@ -1201,8 +1203,24 @@ class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin
           playsInline: true,
           strictRelatedVideos: true,
           showVideoAnnotations: false,
+          origin: 'https://www.youtube-nocookie.com',
         ),
       );
+    // 그래도 재생이 막히면 유튜브 앱(없으면 브라우저)으로 바로 열기 — 영상은 어떻게든 보이게
+    var opened = false;
+    c.listen((v) {
+      if (opened || v.error == YoutubeError.none || !mounted) return;
+      opened = true;
+      final w = widget.video;
+      if (w != null) openUrl(ytWatch(w));
+      setState(() {
+        sound = false;
+        yt = null;
+      });
+      c.close();
+    });
+    return c;
+  }
 
   // 누르면 그때 소리 켜고 재생 (재생한 가게는 다음부터 추천에서 뺀다 — 새 영상이 올라오면 다시)
   void playSound() {
