@@ -714,3 +714,198 @@ class _AskAdminTabState extends State<AskAdminTab> {
     );
   }
 }
+
+// ---------------- 오류·개선 의견 보내기 (우동콕과 같은 방식, 대표님 지시 11-28) ----------------
+// 「오류 신고 / 개선 제안」 둘 중 고르고 글만 적어 보낸다. 문의함(asks)으로 접수 — 답변은 「내 문의」에서.
+// 저장 규칙이 받는 종류가 정해져 있어 둘 다 「개선 제안」 칸으로 넣고 제목 머리말로 구분한다.
+Future<void> openFeedback(BuildContext context) async {
+  if (!reviews.demo && fbUser == null) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('로그인하면 의견을 보내고 답변도 받을 수 있어요')));
+    await openLogin(context);
+    if (fbUser == null || !context.mounted) return;
+  }
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.white,
+    barrierColor: Colors.black.withValues(alpha: 0.08),
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (_) => const _FeedbackSheet(),
+  );
+}
+
+class _FeedbackSheet extends StatefulWidget {
+  const _FeedbackSheet();
+  @override
+  State<_FeedbackSheet> createState() => _FeedbackSheetState();
+}
+
+class _FeedbackSheetState extends State<_FeedbackSheet> {
+  String kind = 'bug';
+  final text = TextEditingController();
+  late final contact = TextEditingController(text: fbUser?.email ?? '');
+  bool busy = false;
+  String? error;
+
+  @override
+  void dispose() {
+    text.dispose();
+    contact.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final t = text.text.trim();
+    if (t.length < 5) {
+      setState(() => error = '내용을 조금 더 적어 주세요 (5자 넘게)');
+      return;
+    }
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    final head = kind == 'bug' ? '[오류 신고] ' : '[개선 제안] ';
+    final first = t.split('\n').first.trim();
+    final e = await sendAsk(kind: 'idea', title: head + _cut(first, 40 - head.length), text: t, contact: contact.text);
+    if (!mounted) return;
+    setState(() => busy = false);
+    if (e != null) {
+      setState(() => error = e);
+      return;
+    }
+    final nav = Navigator.of(context);
+    final bug = kind == 'bug';
+    nav.pop();
+    await showDialog(
+      context: nav.context,
+      barrierColor: Colors.black.withValues(alpha: 0.18),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('잘 받았습니다', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: kInk)),
+        content: Text(bug ? '알려 주셔서 고맙습니다.\n확인하고 빠르게 고치겠습니다.' : '좋은 의견 고맙습니다.\n적극 반영해 더 좋은 콕플을 만들겠습니다.',
+            style: const TextStyle(fontSize: 13.5, height: 1.5, color: kInk)),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('확인', style: TextStyle(color: kAccent, fontWeight: FontWeight.w800)))],
+      ),
+    );
+  }
+
+  Widget _kind(String id, String label, IconData ic) {
+    final on = kind == id;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => kind = id),
+        child: Container(
+          height: 48,
+          decoration: BoxDecoration(
+            color: on ? kAccentTint : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: on ? kAccent : kPillLine, width: 1),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(ic, size: 18, color: on ? kAccent : kSub),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(fontSize: 14, fontWeight: on ? FontWeight.w800 : FontWeight.w600, color: on ? kAccent : kInk)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _deco(String hint) => InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(fontSize: 13.5, color: Color(0xFFA5A9B2), height: 1.4),
+        isDense: true,
+        counterText: '',
+        filled: true,
+        fillColor: const Color(0xFFF5F5F7),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kAccent.withValues(alpha: 0.5), width: 1)),
+      );
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(22, 20, 22, 20 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          mixTitle('오류·개선 ', '의견 보내기', size: 19),
+          const SizedBox(height: 5),
+          const Text('보내 주신 의견은 개발자가 직접 읽고 적극 반영해 드리겠습니다.', style: TextStyle(fontSize: 13, color: kSub)),
+          const SizedBox(height: 16),
+          Row(children: [
+            _kind('bug', '오류 신고', Icons.error_outline_rounded),
+            const SizedBox(width: 10),
+            _kind('idea', '개선 제안', Icons.lightbulb_outline_rounded),
+          ]),
+          const SizedBox(height: 12),
+          TextField(
+            controller: text,
+            minLines: 5,
+            maxLines: 8,
+            maxLength: 1000,
+            style: const TextStyle(fontSize: 14, color: kInk, height: 1.45),
+            decoration: _deco(kind == 'bug' ? '어느 화면에서 무엇이 안 되는지 적어 주세요\n예) 지도에서 가게를 누르면 창이 안 열려요' : '이런 기능이 있으면 좋겠어요, 여기가 불편해요 등\n편하게 적어 주세요'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: contact,
+            maxLength: 60,
+            style: const TextStyle(fontSize: 14, color: kInk),
+            decoration: _deco('답을 받을 이메일·연락처 (적지 않아도 돼요)'),
+          ),
+          if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(fontSize: 13, color: kAccent, fontWeight: FontWeight.w600))),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 50,
+            child: TextButton(
+              onPressed: busy ? null : _send,
+              style: TextButton.styleFrom(backgroundColor: kAccent, foregroundColor: Colors.white, disabledForegroundColor: Colors.white70, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: Text(busy ? '보내는 중…' : '보내기', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ]),
+      );
+}
+
+// 내 콕 아래 강조 칸: 오류 신고 · 개선 제안
+class FeedbackBanner extends StatelessWidget {
+  const FeedbackBanner({super.key});
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => openFeedback(context),
+          child: Ink(
+            padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFF6A3D), kAccent]),
+              boxShadow: [BoxShadow(color: kAccent.withValues(alpha: 0.2), blurRadius: 16)],
+            ),
+            child: Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: '오류 신고 ', style: TextStyle(fontWeight: FontWeight.w800)),
+                      TextSpan(text: '· 개선 제안', style: TextStyle(fontWeight: FontWeight.w300)),
+                    ]),
+                    style: TextStyle(fontSize: 17, color: Colors.white, letterSpacing: -0.5),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('보내 주신 의견, 적극 반영해 드리겠습니다', style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.92), letterSpacing: -0.3)),
+                ]),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+                child: const Text('의견 보내기', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: kAccent)),
+              ),
+            ]),
+          ),
+        ),
+      );
+}

@@ -3592,6 +3592,7 @@ class SettingsPage extends StatelessWidget {
               ]),
               const SizedBox(height: 24),
               group('문의', [
+                row('오류 신고 · 개선 제안', sub: '적극 반영해 드려요', onTap: () => openFeedback(context)),
                 row('문의하기', sub: '앱 안에서 바로 접수돼요', onTap: () => openAsk(context, 'ask')),
                 row('제휴 문의', sub: '광고·협업 제안', onTap: () => openAsk(context, 'biz')),
                 row('내 문의', sub: '보낸 글과 답변', onTap: () => openMyAsks(context)),
