@@ -1191,7 +1191,8 @@ class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin
     WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
   }
 
-  // 유튜브 규칙(2025~): 앱 안 재생은 출처를 밝혀야 함 — 5.x 기본값(youtube.com)은 오류 152·153으로 막힘 → youtube-nocookie 로 (11-28 영상 안 나옴)
+  // 유튜브 규칙(2025~): 앱 안 재생은 「어느 앱인지」 출처를 밝혀야 함 — 유튜브 주소를 출처로 대면 오류 152·153으로 막힘
+  // → 재생 부품 6.x: 출처는 우리 앱 이름(kr.designfeel.kokple), 영상 틀은 youtube-nocookie 에서 (11-28 밤, 5.x + nocookie 출처로도 여전히 오류)
   YoutubePlayerController _player() {
     final c = YoutubePlayerController.fromVideoId(
         videoId: widget.video!.id,
@@ -1203,7 +1204,7 @@ class _HomeHeroState extends State<HomeHero> with SingleTickerProviderStateMixin
           playsInline: true,
           strictRelatedVideos: true,
           showVideoAnnotations: false,
-          origin: 'https://www.youtube-nocookie.com',
+          origin: kIsWeb ? null : 'https://kr.designfeel.kokple',
         ),
       );
     // 그래도 재생이 막히면 유튜브 앱(없으면 브라우저)으로 바로 열기 — 영상은 어떻게든 보이게
