@@ -260,6 +260,7 @@ jobs:
       - name: 안드로이드 설치 파일 만들기
         env:
           KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+          ONLY_ARM64: '1'
         run: |
           flutter pub get
           # 직접 받는 설치 파일은 요즘 휴대폰용(arm64) 하나만 — 용량이 절반 아래로. 플레이 스토어는 AAB 라 휴대폰마다 맞는 것만 받음

@@ -123,6 +123,21 @@ for gp in ("android/app/build.gradle.kts", "android/app/build.gradle"):
             print("::error::앱 고유 이름(applicationId)을 바꾸지 못했습니다")
             sys.exit(1)
         open(gp, "w", encoding="utf-8").write(g2)
+# 직접 받는 설치 파일(APK)은 64비트 폰용만 — 네이버 지도 부품이 다른 종류(32비트·에뮬레이터용)까지 따라 들어와 96MB 되던 것
+#   ONLY_ARM64=1 일 때만 (출시용 AAB 는 구글이 휴대폰마다 골라 주므로 그대로)
+import glob as _glob
+for g in _glob.glob("android/app/build.gradle*"):
+    t = open(g, encoding="utf-8").read()
+    if "ONLY_ARM64" in t:
+        continue
+    if g.endswith(".kts"):
+        add = '        if (System.getenv("ONLY_ARM64") == "1") {\n            ndk { abiFilters.clear(); abiFilters.add("arm64-v8a") }\n        }\n'
+    else:
+        add = '        if (System.getenv("ONLY_ARM64") == "1") {\n            ndk { abiFilters "arm64-v8a" }\n        }\n'
+    t2 = t.replace("    defaultConfig {\n", "    defaultConfig {\n" + add, 1)
+    if t2 != t:
+        open(g, "w", encoding="utf-8").write(t2)
+        print("APK 64비트만:", g)
 print("안드로이드 설정 완료")
 
 # 후기 사진: 방향 바로잡기 · 1080px로 줄이기 · 작은 사진(320px) · 얼굴이 크게 나온 사진 찾기 (안드로이드 기본 얼굴 찾기 — 따로 받는 부품 없음)
