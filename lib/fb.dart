@@ -234,14 +234,15 @@ Future<void> restoreGuard(Place p, Map<String, dynamic>? before) async {
 }
 
 // ---- 회원 ----
+// 방금 로그인이 「처음 가입」이었는지 — 가입 안내 창을 띄울지 (대표님 11-28: 말없이 바로 로그인되면 허술해 보임, 우동콕과 같은 방식)
+bool lastLoginNew = false;
+
 Future<String?> signInGoogle() async {
   try {
     final p = fa.GoogleAuthProvider();
-    if (kIsWeb) {
-      await fbAuth.signInWithPopup(p);
-    } else {
-      await fbAuth.signInWithProvider(p);
-    }
+    lastLoginNew = false;
+    final c = kIsWeb ? await fbAuth.signInWithPopup(p) : await fbAuth.signInWithProvider(p);
+    lastLoginNew = c.additionalUserInfo?.isNewUser ?? false;
     return null;
   } on fa.FirebaseAuthException catch (e) {
     return authMsg(e.code);
@@ -254,7 +255,9 @@ Future<String?> signInGoogle() async {
 Future<String?> signInKakao() async {
   try {
     final p = fa.OAuthProvider('oidc.kakao');
+    lastLoginNew = false;
     final c = kIsWeb ? await fbAuth.signInWithPopup(p) : await fbAuth.signInWithProvider(p);
+    lastLoginNew = c.additionalUserInfo?.isNewUser ?? false;
     final u = c.user;
     final prof = c.additionalUserInfo?.profile ?? const <String, dynamic>{};
     final nick = (prof['nickname'] ?? prof['name'] ?? '').toString().trim();
@@ -275,8 +278,10 @@ Future<String?> signInKakao() async {
 
 Future<String?> signInEmail(String email, String pass, {bool join = false}) async {
   try {
+    lastLoginNew = false;
     if (join) {
       final c = await fbAuth.createUserWithEmailAndPassword(email: email, password: pass);
+      lastLoginNew = true;
       await c.user?.sendEmailVerification();
     } else {
       await fbAuth.signInWithEmailAndPassword(email: email, password: pass);

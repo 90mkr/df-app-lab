@@ -158,11 +158,58 @@ Future<bool> openLogin(BuildContext context) async {
     barrierColor: Colors.black.withValues(alpha: 0.08),
     builder: (_) => const LoginSheet(),
   );
-  if (ok == 'join' && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        duration: Duration(seconds: 6), content: Text('가입했어요. 메일함에 온 인증 링크를 눌러 주세요')));
+  // 처음 가입이면 안내 창 — 「가입되었습니다 + 자동으로 로그인되었어요」 (카카오·구글·이메일 모두)
+  if (ok != null && lastLoginNew && context.mounted) {
+    lastLoginNew = false;
+    await showWelcome(context, mail: ok == 'join');
   }
   return ok != null;
+}
+
+// 가입 안내 창 (우동콕과 같은 방식)
+Future<void> showWelcome(BuildContext context, {bool mail = false}) {
+  final n = (fbUser?.displayName ?? '').trim();
+  return showDialog(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.18),
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Image.asset('assets/brand/mark.png', height: 76),
+            const SizedBox(height: 16),
+            const Text('가입되었습니다', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.6, color: kInk)),
+            const SizedBox(height: 8),
+            Text(
+              '${n.isNotEmpty ? '$n님, ' : ''}콕플 회원이 되신 걸 환영해요.\n자동으로 로그인되었어요.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, height: 1.45, color: kSub, letterSpacing: -0.3),
+            ),
+            if (mail) ...[
+              const SizedBox(height: 10),
+              const Text('보내 드린 메일의 인증 링크도 눌러 주세요.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kSub)),
+            ],
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: TextButton.styleFrom(backgroundColor: kAccent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                child: const Text('확인', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    ),
+  );
 }
 
 // ---------------- 관리자 화면 ----------------
