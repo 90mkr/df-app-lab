@@ -262,11 +262,44 @@ jobs:
           KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: |
           flutter pub get
-          flutter build apk --release
+          # 직접 받는 설치 파일은 요즘 휴대폰용(arm64) 하나만 — 용량이 절반 아래로. 플레이 스토어는 AAB 라 휴대폰마다 맞는 것만 받음
+          flutter build apk --release --target-platform android-arm64
+          ls -la build/app/outputs/flutter-apk/app-release.apk
+          grep -hoE 'applicationId[^\n]*' android/app/build.gradle* | head -2
           cp build/app/outputs/flutter-apk/app-release.apk df-app-lab.apk
           cp df-app-lab.apk kokple.apk  # 받는 파일 이름도 앱 이름으로 (예전 링크도 계속 되게 둘 다 올림)
           # 앱 지문 (파이어베이스·카카오에 등록하는 값 — 공개해도 되는 값)
           if [ -f android/app/upload.jks ]; then keytool -list -v -keystore android/app/upload.jks -storepass "$KEY_PASS" -alias kokple | grep -E "SHA1|SHA256" || true; fi
+
+      # 플레이 출시용 앱 묶음(AAB): 올리는 글 제목에 [출시]가 있을 때만
+      - name: 출시용 앱 묶음 만들기
+        if: contains(github.event.head_commit.message, '[출시]')
+        env:
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          if [ ! -f android/app/upload.jks ]; then echo "::error::서명 키가 없어 출시용 묶음을 만들 수 없습니다"; exit 1; fi
+          # 버전 코드는 제작 번호로 — 올릴 때마다 저절로 커져서 플레이가 늘 받아 줌
+          flutter build appbundle --release --build-number=${{ github.run_number }}
+          cp build/app/outputs/bundle/release/app-release.aab kokple.aab
+          ls -la kokple.aab
+          echo "== 서명 확인 =="; jarsigner -verify kokple.aab | tail -1 || true
+          echo "== 대상·최소 API =="; grep -rhoE "(targetSdk|minSdk|compileSdk)[^\n]*" android/app/build.gradle* | head -5
+          echo "== 실제 들어간 권한 =="; M=$(find build/app/intermediates -path "*release*" -name AndroidManifest.xml | grep -i merged | head -1); echo "$M"; grep -o 'uses-permission[^>]*' "$M" | sort -u
+          grep -o 'android:targetSdkVersion="[0-9]*"' "$M" | head -1 || true
+
+      - name: 출시용 묶음 올리기
+        if: contains(github.event.head_commit.message, '[출시]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          NOTE="플레이 콘솔에 올리는 출시용 파일 · 버전 ${V%%+*} (코드 ${{ github.run_number }}) · 만든 시각 $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')"
+          if gh release view store >/dev/null 2>&1; then
+            gh release upload store kokple.aab --clobber
+            gh release edit store --notes "$NOTE" --title "콕플 출시용 (AAB)" || true
+          else
+            gh release create store kokple.aab --title "콕플 출시용 (AAB)" --notes "$NOTE" --target main --prerelease
+          fi
 
       - name: 설치 파일 올리기
         uses: actions/upload-artifact@v7

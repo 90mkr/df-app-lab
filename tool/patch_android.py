@@ -112,6 +112,17 @@ if os.path.exists(grv):
     buildTypes {""", 1)
         g = g.replace("signingConfig signingConfigs.debug", 'signingConfig file("upload.jks").exists() ? signingConfigs.upload : signingConfigs.debug', 1)
         open(grv, "w", encoding="utf-8").write(g)
+# 앱 고유 이름: 플레이 스토어·파이어베이스·네이버 지도에 등록하는 이름은 kr.designfeel.kokple (대표님 11-28)
+# 코드 폴더 이름(namespace)은 그대로 두고 설치되는 앱의 이름(applicationId)만 바꾼다
+APP_ID = "kr.designfeel.kokple"
+for gp in ("android/app/build.gradle.kts", "android/app/build.gradle"):
+    if os.path.exists(gp):
+        g = open(gp, encoding="utf-8").read()
+        g2 = re.sub(r'applicationId\s*=?\s*"[^"]*"', lambda m: ('applicationId = "%s"' if "=" in m.group(0) else 'applicationId "%s"') % APP_ID, g, count=1)
+        if g2 == g and APP_ID not in g:
+            print("::error::앱 고유 이름(applicationId)을 바꾸지 못했습니다")
+            sys.exit(1)
+        open(gp, "w", encoding="utf-8").write(g2)
 print("안드로이드 설정 완료")
 
 # 후기 사진: 방향 바로잡기 · 1080px로 줄이기 · 작은 사진(320px) · 얼굴이 크게 나온 사진 찾기 (안드로이드 기본 얼굴 찾기 — 따로 받는 부품 없음)

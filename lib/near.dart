@@ -33,7 +33,7 @@ class NearPage extends StatefulWidget {
 }
 
 class _NearPageState extends State<NearPage> {
-  final map = MapController();
+  late final map = KokMapCtl(widget.me ?? widget.area.center, 14);
   final sheet = DraggableScrollableController();
   LatLng? at; // 거리를 재는 기준
   bool mine = false; // 기준이 내 위치인지
@@ -213,20 +213,16 @@ class _NearPageState extends State<NearPage> {
       body: Stack(children: [
         // 위 반: 지도
         Positioned.fill(
-          child: FlutterMap(
-            mapController: map,
-            options: MapOptions(
-              initialCenter: c ?? widget.area.center,
-              initialZoom: 14,
-              minZoom: 6,
-              maxZoom: 19,
-              interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
-            ),
-            children: [
-              TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'kr.designfeel.df_app_lab'),
-              MarkerLayer(markers: [
-                for (final (p, _) in list.reversed)
-                  if (p.id != sel)
+          child: KokMapView(
+            ctl: map,
+            center: c ?? widget.area.center,
+            zoom: 14,
+            pins: [
+              for (final (p, _) in list.reversed)
+                if (p.id != sel)
+                  KPin(
+                    sig: 'icon|${p.kind}|${ytCount(p)}|${voteOf(p)?.$1}',
+                    onTap: () => open(p),
                     Marker(
                         key: ValueKey('n${p.id}'),
                         point: p.point,
@@ -234,8 +230,13 @@ class _NearPageState extends State<NearPage> {
                         height: IconMarker.boxOf(p).height,
                         alignment: Alignment.topCenter,
                         child: IconMarker(place: p, onTap: () => open(p))),
-                for (final (p, _) in list)
-                  if (p.id == sel)
+                  ),
+              for (final (p, _) in list)
+                if (p.id == sel)
+                  KPin(
+                    sig: 'near|${p.id}|${voteOf(p)?.$1}',
+                    onTap: () => open(p),
+                    images: [if (thumbOf(p).isNotEmpty) thumbOf(p)],
                     Marker(
                       key: ValueKey('s${p.id}'),
                       point: p.point,
@@ -244,7 +245,10 @@ class _NearPageState extends State<NearPage> {
                       alignment: Alignment.topCenter,
                       child: PlaceMarker(place: p, rank: 1, open: true, numbered: false, focus: true, onTap: () => open(p)),
                     ),
-                if (c != null)
+                  ),
+              if (c != null)
+                KPin(
+                  sig: 'me$mine',
                   Marker(
                     key: const ValueKey('me'),
                     point: c,
@@ -256,7 +260,7 @@ class _NearPageState extends State<NearPage> {
                       child: Container(decoration: BoxDecoration(color: mine ? kGps : kRegion, shape: BoxShape.circle)),
                     ),
                   ),
-              ]),
+                ),
             ],
           ),
         ),

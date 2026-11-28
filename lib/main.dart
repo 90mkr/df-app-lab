@@ -19,6 +19,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'nmap.dart';
+
 part 'home.dart';
 part 'fb.dart';
 part 'admin.dart';
@@ -28,6 +30,7 @@ part 'region.dart';
 part 'near.dart';
 part 'nav.dart';
 part 'mypage.dart';
+part 'kmap.dart';
 part 'ask.dart';
 
 const kPoint = kAccent; // 콕플 주색 (빨강주황): 단추·고른 탭·강조
@@ -50,7 +53,7 @@ Future<void> main() async {
   fbReady().then((ok) {
     if (ok) watchAuth();
   });
-  await Future.wait([introWarmUp(), loadHeroSeen()]); // 시작 화면 그림·최근 본 추천 영상을 먼저 읽어 둔다
+  await Future.wait([introWarmUp(), loadHeroSeen(), initNaverMap(kNaverMapId)]); // 시작 화면 그림·최근 본 추천 영상을 먼저 읽어 둔다
   runApp(const DfApp());
 }
 
@@ -596,7 +599,7 @@ class MapPage extends StatefulWidget {
 }
 
 class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
-  final map = MapController();
+  final map = KokMapCtl(kDefaultArea.center, 13);
   List<Sido> sidos = [];
   Area area = kDefaultArea; // 초점 동네 (머리말·홈·순위)
   final Map<String, SongdoData> loaded = {}; // 불러온 동네 자료 (관리자가 고친 값·숨김 반영)
@@ -621,6 +624,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   List<Place> _fp = const [];
   String _fpKey = '#';
   Place? focus; // 지금 연 가게: 순위가 낮거나 지금 분류에 없어도 지도에 빨간 큰 카드로
+  // 지도 위 가게 창: 창이 떠 있어도 지도가 움직이고, 지도를 움직여 멈추면 가운데 가게로 창이 바뀐다 (야놀자식, 대표님 11-28)
+  bool sheetOpen = false;
+  double sheetPeek = 0.36;
+  bool _gest = false; // 방금 손으로 지도를 움직였는지
+  bool get sheetOn => sheetOpen && focus != null && tab == 2;
+  void closeSheet() {
+    if (sheetOpen) setState(() => sheetOpen = false);
+  }
   DateTime _checkedAt = DateTime.now(); // 마지막으로 새 정보를 확인한 때
   Future<int>? _checking;
   List<Place> get followPlaces {
@@ -1248,7 +1259,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   // 숫자 묶음 풍선 (동네·시·도·따라가기 묶음)
-  Marker bubble(String key, LatLng c, String name, int n, VoidCallback onTap) => Marker(
+  KPin bubble(String key, LatLng c, String name, int n, VoidCallback onTap) => KPin(sig: 'bubble|$name|$n', onTap: onTap, Marker(
         key: ValueKey('bubble$key'),
         point: c,
         width: 200,
@@ -1274,11 +1285,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             ),
           ),
         ),
-      );
+      ));
 
   // 따라가기 축소 화면: 화면 칸(가로 130·세로 60px)마다 묶고, 겹치는 풍선은 큰 쪽에 합친다
   // 이름: 넓게 보면 시·도, 가까이 보면 시·군·구 — 한 지역이 60% 넘으면 그 이름, 아니면 「○○ 일대」
-  List<Marker> followClusters() {
+  List<KPin> followClusters() {
     final scale = 256 * math.pow(2, zoom).toDouble();
     Offset px(LatLng p) {
       final x = (p.longitude + 180) / 360 * scale;
@@ -2050,25 +2061,55 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  // 네이버 지도용: 모양이 같으면 같은 글자 (그림을 한 번 만들어 계속 씀)
+  KPin pinFor(Place p, int i, int t, int d, {bool focus = false, bool? numbered}) {
+    final m = markerFor(p, i, t, d, focus: focus, numbered: numbered);
+    final v = voteOf(p)?.$1;
+    if (t <= 1) {
+      final th = thumbOf(p);
+      return KPin(m, sig: 'card|${p.id}|${i + 1}|${t == 0 || focus}|$d|$focus|${numbered ?? true}|$v|${p.vids.length}', onTap: () => openPlace(p), images: [if (th.isNotEmpty) th]);
+    }
+    return KPin(m, sig: 'icon|${p.kind}|${ytCount(p)}|$v', onTap: () => openPlace(p));
+  }
+
   Place richer(Place p) {
     if (p.areaId != 'follow') return p;
     final r = loaded.values.expand((d) => d.places).where((x) => x.id == p.id).firstOrNull;
     return r == null ? p : mergePlaces(r, p);
   }
 
-  void openPlace(Place p0) {
-    final p = richer(p0);
-    noteRecent(p);
-    // 처음엔 낮게: 이름 (+ 유튜버 다녀감) + 길안내 단추 줄 + 별점·거리 한두 줄까지만, 끌어올리면 끝까지
+  // 가게 창이 처음 열리는 높이: 이름 (+ 유튜버 다녀감) + 길안내 단추 줄 + 별점·거리 한두 줄까지만, 끌어올리면 끝까지
+  double peekOf(Place p) {
     final mq = MediaQuery.of(context);
     final poor = p.greviews == 0 && p.week.isEmpty;
     final px = 156.0 + (oneLine(p).isNotEmpty && p.dmenus.isEmpty ? 24 : 0) + (poor && p.vids.isNotEmpty ? 88 : 0) + (p.vids.isNotEmpty ? 28 : 0) + 66 + (poor ? 8 : 40) + mq.padding.bottom;
-    final peek = (px / mq.size.height).clamp(0.26, 0.6).toDouble();
-    // 그 집이 아래 창에 가리지 않게: 위 머리말과 아래 창 사이 가운데쯤 오도록 지도를 옮긴다
-    final z = math.max(map.camera.zoom, 16.0);
+    return (px / mq.size.height).clamp(0.26, 0.6).toDouble();
+  }
+
+  // 가게가 아래 창에 가리지 않게: 위 머리말과 아래 창 사이 가운데쯤 — 지도 가운데에서 위로 몇 픽셀인지
+  double _liftOf(double peek) {
+    final mq = MediaQuery.of(context);
     final mid = (mq.size.height - 68 - mq.padding.bottom) / 2; // 지도 가운데 (아래 탭 위)
     final want = (mq.padding.top + 130 + mq.size.height * (1 - peek)) / 2 + 30; // 카드는 점 위에 그려지니 조금 아래
-    map.move(shiftDown(p.point, z, mid - want), z);
+    return mid - want;
+  }
+
+  void openPlace(Place p0) {
+    final p = richer(p0);
+    noteRecent(p);
+    final peek = peekOf(p);
+    final z = math.max(map.camera.zoom, 16.0);
+    _gest = false;
+    map.move(shiftDown(p.point, z, _liftOf(peek)), z);
+    if (tab == 2) {
+      // 지도 화면: 창을 지도 위에 얹는다 — 지도는 그대로 움직일 수 있음
+      setState(() {
+        focus = p;
+        sheetPeek = peek;
+        sheetOpen = true;
+      });
+      return;
+    }
     setState(() => focus = p);
     showModalBottomSheet(
       context: context,
@@ -2077,6 +2118,48 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       barrierColor: Colors.black.withValues(alpha: 0.08),
       builder: (_) => PlaceSheet(place: p, recentDays: data?.recentDays ?? 90, kok: isKok(p), onKok: (v) => toggleKok(p, v), peek: peek),
     );
+  }
+
+  // 지도가 움직일 때 (미리보기 지도: 움직이는 내내 · 네이버 지도: 움직이는 중 + 멈췄을 때)
+  void _onCam(MapCamera cam, bool hasGesture, bool idle) {
+    if (hasGesture) {
+      _moved = true;
+      _gest = true;
+    }
+    if (naverMapOn && !idle) return; // 네이버 지도는 표시가 지도에 붙어 다니므로 멈췄을 때만 다시 배치
+    if ((cam.zoom - zoom).abs() >= 0.05) setState(() => zoom = cam.zoom);
+    _sync?.cancel();
+    _sync = Timer(Duration(milliseconds: naverMapOn ? 30 : 250), () {
+      if (!mounted) return;
+      _syncView(cam);
+      if (_gest) {
+        _gest = false;
+        _pickNear(cam);
+      }
+    });
+  }
+
+  // 가게 창이 떠 있을 때 지도를 손으로 움직여 멈추면: 가게 자리(창 위 가운데)에 가장 가까운 집으로 창이 바뀐다
+  void _pickNear(MapCamera cam) {
+    final f = focus;
+    if (!sheetOn || f == null) return;
+    if (cam.zoom < kClusterZoom && course == null && query.isEmpty) return; // 넓게 보는 중(숫자 묶음)에는 그대로
+    final at = shiftDown(cam.center, cam.zoom, -_liftOf(sheetPeek));
+    Place? best;
+    var bd = double.infinity;
+    for (final p in visible) {
+      final d = meters(at, p.point);
+      if (d < bd) {
+        bd = d;
+        best = p;
+      }
+    }
+    if (best == null || best.id == f.id) return;
+    final p = richer(best);
+    setState(() {
+      focus = p;
+      sheetPeek = peekOf(p);
+    });
   }
 
   void openRank() {
@@ -2201,7 +2284,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           tab = 2;
           searching = true;
         });
-    return Scaffold(
+    return PopScope(
+      canPop: !sheetOn,
+      onPopInvokedWithResult: (did, _) {
+        if (!did) closeSheet(); // 뒤로 가기: 가게 창부터 닫는다
+      },
+      child: Scaffold(
       body: IndexedStack(index: tab, children: [
         HomeView(
           onRefresh: pullRefresh,
@@ -2262,7 +2350,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         }),
         onCenter: openNear,
       ),
-    );
+    ));
   }
 
   Widget _mapTab(BuildContext context) {
@@ -2287,61 +2375,38 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       order.add(fi);
     }
     return Stack(children: [
-        FlutterMap(
-          mapController: map,
-          options: MapOptions(
-            initialCenter: kDefaultArea.center,
-            initialZoom: 13,
-            minZoom: 6,
-            maxZoom: 19,
-            // 두 손가락에 지도가 돌아가지 않게 (맛집 지도는 늘 북쪽이 위)
-            interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
-            onPositionChanged: (camera, hasGesture) {
-              if (hasGesture) _moved = true;
-              if ((camera.zoom - zoom).abs() >= 0.05) setState(() => zoom = camera.zoom);
-              _sync?.cancel();
-              _sync = Timer(const Duration(milliseconds: 250), () => _syncView(camera));
-            },
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'kr.designfeel.df_app_lab',
-            ),
-            if (course != null && course!.route)
-              PolylineLayer(polylines: [
-                Polyline(
-                  points: [for (final p in course!.stops) p.point],
-                  color: kAccent,
-                  strokeWidth: 3,
-                  pattern: StrokePattern.dashed(segments: const [10, 7]),
-                ),
-              ]),
-            MarkerLayer(
-              markers: [
-                // 넓게 보면 동네별 숫자 묶음, 확대하면 가게 하나하나 (코스는 늘 가게로)
-                if (clustered)
-                  ...followClusters()
-                else
-                  for (final i in order) markerFor(list[i], i, place[i].$1, place[i].$2, focus: i == fi, numbered: extra && i == fi ? false : null),
-                if (me != null)
-                  Marker(
-                    key: const ValueKey('me'),
-                    point: me!,
-                    width: 22,
-                    height: 22,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 6)],
-                      ),
-                      child: Container(decoration: const BoxDecoration(color: kGps, shape: BoxShape.circle)),
+        KokMapView(
+          ctl: map,
+          center: kDefaultArea.center,
+          zoom: 13,
+          onCam: _onCam,
+          onTap: closeSheet,
+          route: course != null && course!.route ? [for (final p in course!.stops) p.point] : const [],
+          pins: [
+            // 넓게 보면 동네별 숫자 묶음, 확대하면 가게 하나하나 (코스는 늘 가게로)
+            if (clustered)
+              ...followClusters()
+            else
+              for (final i in order) pinFor(list[i], i, place[i].$1, place[i].$2, focus: i == fi, numbered: extra && i == fi ? false : null),
+            if (me != null)
+              KPin(
+                sig: 'me',
+                Marker(
+                  key: const ValueKey('me'),
+                  point: me!,
+                  width: 22,
+                  height: 22,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 6)],
                     ),
+                    child: Container(decoration: const BoxDecoration(color: kGps, shape: BoxShape.circle)),
                   ),
-              ],
-            ),
+                ),
+              ),
           ],
         ),
         // 위쪽 머리말
@@ -2435,14 +2500,24 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             ]),
           ),
         ),
-        Positioned(
-          right: 6,
-          bottom: 4,
-          child: GestureDetector(
-            onTap: () => openUrl('https://www.openstreetmap.org/copyright'),
-            child: const Text('© OpenStreetMap', style: TextStyle(fontSize: 10, color: kGray)),
+        if (!naverMapOn)
+          Positioned(
+            right: 6,
+            bottom: 4,
+            child: GestureDetector(
+              onTap: () => openUrl('https://www.openstreetmap.org/copyright'),
+              child: const Text('© OpenStreetMap', style: TextStyle(fontSize: 10, color: kGray)),
+            ),
           ),
-        ),
+        // 가게 창: 지도 위에 얹혀 있어 창 밖 지도는 그대로 움직인다 — 아래로 끌어내리면 닫힘
+        if (sheetOn)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: KeyedSubtree(
+              key: ValueKey('sheet${focus!.id}'),
+              child: PlaceSheet(place: focus!, recentDays: data?.recentDays ?? 90, kok: isKok(focus!), onKok: (v) => toggleKok(focus!, v), peek: sheetPeek, onClose: closeSheet),
+            ),
+          ),
       ]);
   }
 }
@@ -3111,7 +3186,8 @@ class _Sheet extends StatefulWidget {
   final double initial;
   final List<double>? snaps; // 걸리는 높이 (있으면 낮게 → 끝까지 두 단계, 아래로 내리면 닫힘)
   final Widget Function(ScrollController) builder;
-  const _Sheet({required this.initial, required this.builder, this.snaps});
+  final VoidCallback? onClose; // 화면에 얹어 쓸 때(지도 위 가게 창): 끌어내리면 이걸 부른다
+  const _Sheet({required this.initial, required this.builder, this.snaps, this.onClose});
   @override
   State<_Sheet> createState() => _SheetState();
 }
@@ -3151,7 +3227,12 @@ class _SheetState extends State<_Sheet> {
       onNotification: (n) {
         if (!closing && n.extent <= n.minExtent + 0.015) {
           closing = true;
-          Navigator.of(context).maybePop();
+          final oc = widget.onClose;
+          if (oc != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => oc());
+          } else {
+            Navigator.of(context).maybePop();
+          }
         }
         return false;
       },
@@ -3166,7 +3247,8 @@ class PlaceSheet extends StatelessWidget {
   final bool kok;
   final ValueChanged<bool>? onKok;
   final double peek; // 처음 열리는 높이 (화면 비율)
-  const PlaceSheet({super.key, required this.place, required this.recentDays, this.kok = false, this.onKok, this.peek = 0.36});
+  final VoidCallback? onClose;
+  const PlaceSheet({super.key, required this.place, required this.recentDays, this.kok = false, this.onKok, this.peek = 0.36, this.onClose});
 
   @override
   Widget build(BuildContext context) {
@@ -3178,6 +3260,7 @@ class PlaceSheet extends StatelessWidget {
     return _Sheet(
       initial: peek,
       snaps: [peek],
+      onClose: onClose,
       builder: (scroll) => ListView(
         controller: scroll,
         padding: const EdgeInsets.fromLTRB(20, 2, 20, 30),

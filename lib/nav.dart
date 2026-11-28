@@ -78,7 +78,7 @@ Future<void> launchNav(BuildContext context, NavApp a, String name, double lat, 
   // 출발지를 비우면 내 위치에서 출발 (세 앱 모두)
   final app = switch (a.id) {
     'kakao' => 'kakaomap://route?ep=$lat,$lng&by=CAR',
-    'naver' => 'nmap://route/car?dlat=$lat&dlng=$lng&dname=$n&appname=kr.designfeel.df_app_lab',
+    'naver' => 'nmap://route/car?dlat=$lat&dlng=$lng&dname=$n&appname=kr.designfeel.kokple',
     _ => 'tmap://route?goalname=$n&goalx=$lng&goaly=$lat&rGoName=$n&rGoX=$lng&rGoY=$lat',
   };
   var ok = false;
