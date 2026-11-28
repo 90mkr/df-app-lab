@@ -322,13 +322,15 @@ Future<void> openBlocked(BuildContext context) async {
 List<Widget> myMenus(BuildContext context) {
   final u = fbOn ? fbUser : null;
   return [
+    const FeedbackBanner(),
+    const SizedBox(height: 18),
     ValueListenableBuilder<List<Notice>?>(
       valueListenable: notices,
       builder: (_, l, __) => menuGroup('콕플 안내', [
         menuRow('공지사항', icon: Icons.campaign_outlined, sub: (l == null || l.isEmpty) ? null : l.first.title, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NoticePage()))),
         menuRow('콕플 사용법', icon: Icons.help_outline_rounded, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GuidePage()))),
         // 메일 대신 앱 안에서 글로 접수 (대표님 지시 11-23) — 답변은 「내 문의」에서
-        menuRow('개선 제안하기', icon: Icons.lightbulb_outline_rounded, sub: '불편한 점, 있었으면 하는 기능', onTap: () => openAsk(context, 'idea')),
+        menuRow('오류 신고 · 개선 제안', icon: Icons.lightbulb_outline_rounded, sub: '적극 반영해 드려요', onTap: () => openFeedback(context)),
         menuRow('제휴·광고 문의', icon: Icons.handshake_outlined, sub: '가게 등록·협업 제안', onTap: () => openAsk(context, 'biz')),
         menuRow('문의하기', icon: Icons.edit_note_rounded, sub: '앱 안에서 바로 접수돼요', onTap: () => openAsk(context, 'ask')),
         ValueListenableBuilder<List<Ask>?>(
