@@ -10,7 +10,7 @@ const kFb = <String, String>{
   'storageBucket': 'kokple.firebasestorage.app',
   'messagingSenderId': '233879188710',
   'webAppId': '1:233879188710:web:543f8fd620c76f0685f727',
-  'androidAppId': '1:233879188710:android:35792ff90ca0509d85f727',
+  'androidAppId': '1:233879188710:android:959f0978d14fe4a885f727', // kr.designfeel.kokple (11-28 출시용으로 새로 등록 — 예전 df_app_lab 은 35792ff90ca0509d85f727)
 };
 const kAdminEmails = ['dfmail@naver.com', 'dfmail2580@gmail.com']; // 관리자 화면을 여는 계정 (쓰기 권한은 파이어베이스 규칙이 따로 막는다)
 
