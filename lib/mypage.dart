@@ -364,10 +364,10 @@ List<Widget> myMenus(BuildContext context) {
       menuRow('버전', icon: Icons.phone_android_rounded, trail: const Text(kAppVersion, style: TextStyle(fontSize: 12.5, color: kSub))),
     ]),
     const SizedBox(height: 14),
-    const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 4),
-      child: Text('영상과 표지 사진의 저작권은 각 유튜버에게 있습니다.\n지도 © OpenStreetMap · 모범음식점 정보 행정안전부(공공데이터포털)',
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub, height: 1.4)),
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text('영상과 표지 사진의 저작권은 각 유튜버에게 있습니다.\n지도 ${naverMapOn ? '네이버 지도' : '© OpenStreetMap'} · 모범음식점 정보 행정안전부(공공데이터포털)',
+          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w300, color: kSub, height: 1.4)),
     ),
   ];
 }

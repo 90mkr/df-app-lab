@@ -653,9 +653,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   String _mpKey = '#';
   final Map<String, double> _score = {};
   bool multi = false; // 유튜버 2명 이상 다녀간 집만
+  bool tvOnly = false; // 방송에 나온 집만 (방송 표시는 「자세히」 동네 자료에만 있음)
   List<Place> get mapPlaces {
     final f = follow;
-    final key = '$followCh|$cuisine|$multi|${identityHashCode(f)}|${identityHashCode(guards)}|${[for (final e in loaded.entries) '${e.key}:${identityHashCode(e.value)}'].join(',')}';
+    final key = '$followCh|$cuisine|$multi|$tvOnly|${identityHashCode(f)}|${identityHashCode(guards)}|${[for (final e in loaded.entries) '${e.key}:${identityHashCode(e.value)}'].join(',')}';
     if (key == _mpKey) return _mp;
     _mpKey = key;
     final byId = <String, Place>{for (final p in followPlaces) p.id: p};
@@ -670,6 +671,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     Iterable<Place> l = byId.values;
     if (cuisines.isNotEmpty) l = l.where((p) => cuisines.contains(cuisineOf(p)));
     if (multi) l = l.where((p) => ytCount(p) >= 2);
+    if (tvOnly) l = l.where((p) => p.tv.isNotEmpty);
     _mp = l.toList();
     _score
       ..clear()
@@ -1435,6 +1437,33 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         ),
       );
 
+  // 걸러 보기: 방송에 나온 집만 (단추 이름은 「방송」만 — 프로그램·유명인 이름은 쓰지 않는다)
+  Widget _tvChip() => Semantics(
+        button: true,
+        selected: tvOnly,
+        label: '방송에 나온 집만',
+        onTap: () => setState(() => tvOnly = !tvOnly),
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: () => setState(() => tvOnly = !tvOnly),
+          child: Container(
+            height: 32,
+            padding: const EdgeInsets.only(left: 10, right: 12),
+            decoration: BoxDecoration(
+              color: tvOnly ? kAccent : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: tvOnly ? kAccent : kPillLine, width: 1),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.live_tv_outlined, size: 13, color: tvOnly ? Colors.white : kInk),
+              const SizedBox(width: 4),
+              Text('방송', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tvOnly ? Colors.white : kInk)),
+            ]),
+          ),
+        ),
+      );
+
   // 걸러 보기: 음식 종류 (한식·중식·일식·양식·아시안·분식·빵·카페) — 누르면 고르는 창, 고른 뒤에는 ×로 풀기
   Widget _cuisineChip() {
     final on = cuisine.isNotEmpty;
@@ -2028,10 +2057,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final cs = course;
     if (cs != null) return cs.route ? '${cs.name} · ${cs.stops.length}곳을 순서대로 이었어요' : '${cs.name} · ${cs.stops.length}곳';
     final nm = followCh.isEmpty ? '' : '${follow?.names[followCh] ?? ''} · ';
-    final cu = cuisine.isEmpty ? '' : '$cuisine · ';
+    final cu = '${tvOnly ? '방송 · ' : ''}${cuisine.isEmpty ? '' : '$cuisine · '}';
     if (query.isNotEmpty) return total == 0 ? '「$query」 찾는 집이 없습니다' : '「$query」 $total곳';
     if (follow == null && loaded.isEmpty) return '맛집 자료를 불러오는 중';
     if (zoom < kClusterZoom) return '$nm$cu전국 ${commas(mapPlaces.length)}곳 · 확대하면 가게가 보여요';
+    if (total == 0 && tvOnly) return '$nm$cu이 화면에는 방송에 나온 집이 아직 없어요';
     if (total == 0) return '$nm$cu이 화면에는 아직 맛집이 없어요 · 지도를 넓혀 보세요';
     return '$nm$cu이 화면 $total곳 · 유튜버 많이 다녀간 순';
   }
@@ -2461,6 +2491,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   extra: Row(mainAxisSize: MainAxisSize.min, children: [
                     _multiChip(),
                     const SizedBox(width: 6),
+                    _tvChip(),
+                    const SizedBox(width: 6),
                     _cuisineChip(),
                   ]),
                 )
@@ -2476,6 +2508,24 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             ]),
           ),
         ),
+        // 「방송」을 골랐는데 이 화면에 방송 집이 없을 때: 빈 지도 대신 안내
+        if (tvOnly && course == null && query.isEmpty && !(follow == null && loaded.isEmpty) && (clustered ? mapPlaces.isEmpty : base.isEmpty) && !sheetOn)
+          Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 36),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              decoration: _card(),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.live_tv_outlined, size: 26, color: kInk),
+                const SizedBox(height: 8),
+                const Text('이 지역은 방송 맛집을 준비 중이에요', textAlign: TextAlign.center, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: kInk)),
+                const SizedBox(height: 4),
+                const Text('방송에 나온 집 표시는 「자세히」 지역부터\n차례로 채우고 있어요.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: kSub, height: 1.4)),
+                const SizedBox(height: 6),
+                TextButton(onPressed: () => setState(() => tvOnly = false), child: const Text('전체 맛집 보기', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kAccent))),
+              ]),
+            ),
+          ),
         if (follow == null && loaded.isEmpty)
           Center(
             child: Container(

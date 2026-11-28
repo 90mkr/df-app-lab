@@ -150,7 +150,7 @@ jobs:
         if: steps.webcache.outputs.cache-hit != 'true'
         run: |
           flutter create --org kr.designfeel --project-name df_app_lab --platforms web .
-          sed -i 's#<title>.*</title>#<title>콕플 – 유튜브 맛집 지도</title>#' web/index.html
+          sed -i 's#<title>.*</title>#<title>콕플 - 유튜브·방송 전국 유명 맛집·카페 지도</title>#' web/index.html
           python3 tool/brand.py web
           flutter pub get
           flutter build web --release --base-href /df-app-lab/

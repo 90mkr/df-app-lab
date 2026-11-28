@@ -15,8 +15,8 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "brand")
 NAME = "콕플"
-FULL = "콕플 – 유튜브 맛집 지도"
-DESC = "유튜버가 다녀간 맛집을 지도에서 한눈에 — 콕플"
+FULL = "콕플 - 유튜브·방송 전국 유명 맛집·카페 지도"
+DESC = "유튜브·방송에 나온 전국 유명 맛집·카페를 지도에서 한눈에 — 콕플"
 SPLASH = "#F7721C"  # 시작 화면 바탕 (인트로 그림 위쪽 색)
 
 
